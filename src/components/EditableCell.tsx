@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { NotionProperty } from '../lib/notion';
+import { Check } from 'lucide-react';
 
 interface EditableCellProps {
     field: string;
@@ -14,9 +15,15 @@ export default function EditableCell({ value, type, property, onSave }: Editable
     const [isEditing, setIsEditing] = useState(false);
     const [tempValue, setTempValue] = useState(value);
 
+    // For multi_select: parse comma-separated string into array
+    const [selectedTags, setSelectedTags] = useState<string[]>(
+        value ? value.split(', ').filter(Boolean) : []
+    );
+
     // Sync tempValue if parent value changes (optimistic updates from elsewhere)
     useEffect(() => {
         setTempValue(value);
+        setSelectedTags(value ? value.split(', ').filter(Boolean) : []);
     }, [value]);
 
     const handleSave = () => {
@@ -37,7 +44,18 @@ export default function EditableCell({ value, type, property, onSave }: Editable
         }
     };
 
+    const toggleTag = (tagName: string) => {
+        const newTags = selectedTags.includes(tagName)
+            ? selectedTags.filter(t => t !== tagName)
+            : [...selectedTags, tagName];
+        setSelectedTags(newTags);
+        const newValue = newTags.join(', ');
+        setTempValue(newValue);
+        onSave(newValue);
+    };
+
     if (isEditing) {
+        // Handle Select / Status
         if (type === 'select' || type === 'status') {
             return (
                 <select
@@ -60,6 +78,38 @@ export default function EditableCell({ value, type, property, onSave }: Editable
             );
         }
 
+        // Handle Multi-Select (Tag-style)
+        if (type === 'multi_select') {
+            return (
+                <div className="bg-white border border-indigo-500 rounded-xl p-2 shadow-lg space-y-2 max-h-48 overflow-y-auto">
+                    {property?.options?.map(opt => (
+                        <button
+                            key={opt.id}
+                            type="button"
+                            onClick={() => toggleTag(opt.name)}
+                            className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${selectedTags.includes(opt.name)
+                                    ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
+                                    : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent'
+                                }`}
+                        >
+                            <div className={`w-4 h-4 rounded flex items-center justify-center ${selectedTags.includes(opt.name) ? 'bg-indigo-500 text-white' : 'border border-slate-300'
+                                }`}>
+                                {selectedTags.includes(opt.name) && <Check size={12} />}
+                            </div>
+                            {opt.name}
+                        </button>
+                    ))}
+                    <button
+                        onClick={() => setIsEditing(false)}
+                        className="w-full mt-2 py-2 bg-indigo-600 text-white rounded-lg font-bold text-sm"
+                    >
+                        Done
+                    </button>
+                </div>
+            );
+        }
+
+        // Default: Text input
         return (
             <input
                 autoFocus
@@ -72,14 +122,25 @@ export default function EditableCell({ value, type, property, onSave }: Editable
         );
     }
 
+    // Display Mode
     return (
         <div
             onClick={() => setIsEditing(true)}
             className="cursor-pointer hover:bg-slate-100 p-2 rounded -ml-2 min-h-[2rem] flex items-center transition-colors"
         >
-            <span className={!value ? "text-slate-300 italic text-sm" : "text-slate-700 font-medium"}>
-                {value || 'Empty'}
-            </span>
+            {type === 'multi_select' && selectedTags.length > 0 ? (
+                <div className="flex flex-wrap gap-1">
+                    {selectedTags.map(tag => (
+                        <span key={tag} className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium">
+                            {tag}
+                        </span>
+                    ))}
+                </div>
+            ) : (
+                <span className={!value ? "text-slate-300 italic text-sm" : "text-slate-700 font-medium"}>
+                    {value || 'Empty'}
+                </span>
+            )}
         </div>
     );
 }

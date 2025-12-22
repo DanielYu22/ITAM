@@ -295,16 +295,20 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
 
                         <div className="p-6 border-t border-slate-100 bg-white safe-area-bottom">
                             <button
-                                onClick={() => handleComplete(selectedAsset)}
-                                className="w-full py-4 bg-emerald-500 hover:bg-emerald-600 active:scale-95 text-white font-bold text-lg rounded-2xl shadow-xl shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all"
+                                onClick={() => setSelectedAsset(null)}
+                                className="w-full py-4 bg-slate-800 hover:bg-slate-700 active:scale-95 text-white font-bold text-lg rounded-2xl shadow-xl flex items-center justify-center gap-2 transition-all"
                             >
-                                <CheckCircle size={24} />
-                                Mark as Done
+                                <ChevronLeft size={20} />
+                                Close
                             </button>
-                        </div>
+                            <CheckCircle size={24} />
+                            Mark as Done
+                        </button>
                     </div>
                 </div>
-            )}
-        </div>
+                </div>
+    )
+}
+        </div >
     );
 };
