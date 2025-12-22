@@ -150,9 +150,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ assets, onAnalyze,
             {/* Charts Row */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
                 {/* Condition Chart */}
-                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 min-h-[400px]">
+                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100" style={{ minHeight: '400px' }}>
                     <h3 className="text-lg font-bold text-slate-800 mb-6">Distribution by {selectedCategoryCol || 'Condition'}</h3>
-                    <div className="h-64 w-full">
+                    <div className="h-64 w-full" style={{ height: '300px' }}>
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                                 <Pie
