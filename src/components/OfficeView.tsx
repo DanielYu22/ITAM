@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { RefreshCw, Filter, ExternalLink, Bug, ChevronDown } from 'lucide-react';
 import { Asset, NotionProperty } from '../lib/notion';
 

@@ -10,7 +10,7 @@ interface EditableCellProps {
     onSave: (val: string) => void;
 }
 
-export default function EditableCell({ field, value, type, property, onSave }: EditableCellProps) {
+export default function EditableCell({ value, type, property, onSave }: EditableCellProps) {
     const [isEditing, setIsEditing] = useState(false);
     const [tempValue, setTempValue] = useState(value);
 
