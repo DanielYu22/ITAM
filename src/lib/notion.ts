@@ -211,6 +211,7 @@ export class NotionClient {
     async updatePage(pageId: string, propertyName: string, value: string, type: string): Promise<void> {
         try {
             const targetUrl = `/api/notion/v1/pages/${pageId}`;
+            console.log(`[Notion] Updating page ${pageId}, field: ${propertyName}, type: ${type}, value: ${value}`);
 
             const properties: any = {};
             if (type === 'select') {
@@ -229,9 +230,19 @@ export class NotionClient {
                 properties[propertyName] = { rich_text: [{ text: { content: value } }] };
             } else if (type === 'number') {
                 properties[propertyName] = { number: parseFloat(value) || null };
+            } else {
+                // Fallback: treat unknown types as rich_text
+                console.log(`[Notion] Unknown type '${type}', using rich_text fallback`);
+                properties[propertyName] = { rich_text: [{ text: { content: value } }] };
             }
 
-            await fetch(targetUrl, {
+            // Don't send empty updates
+            if (Object.keys(properties).length === 0) {
+                console.warn(`[Notion] No properties to update for type: ${type}`);
+                return;
+            }
+
+            const response = await fetch(targetUrl, {
                 method: 'PATCH',
                 headers: {
                     'Authorization': `Bearer ${this.apiKey}`,
@@ -240,6 +251,13 @@ export class NotionClient {
                 },
                 body: JSON.stringify({ properties })
             });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`[Notion] Update failed: ${response.status}`, errorText);
+            } else {
+                console.log(`[Notion] Update successful for ${propertyName}`);
+            }
         } catch (error) {
             console.error("Notion Update Error:", error);
         }
