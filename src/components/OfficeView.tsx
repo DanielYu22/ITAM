@@ -18,68 +18,7 @@ interface OfficeViewProps {
     onLoadMore: () => void;
 }
 
-const EditableCell = ({ value, type, property, onSave }: { field: string, value: string, type: string, property?: NotionProperty, onSave: (val: string) => void }) => {
-    const [isEditing, setIsEditing] = useState(false);
-    const [tempValue, setTempValue] = useState(value);
-
-    // Sync tempValue if parent value changes (optimistic updates from elsewhere)
-    useEffect(() => {
-        setTempValue(value);
-    }, [value]);
-
-    const handleSave = () => {
-        if (tempValue !== value) {
-            onSave(tempValue);
-        }
-        setIsEditing(false);
-    };
-
-    if (isEditing) {
-        if (type === 'select' || type === 'status') {
-            return (
-                <select
-                    autoFocus
-                    value={tempValue}
-                    onChange={(e) => {
-                        // Auto save on change for select for better UX
-                        setTempValue(e.target.value);
-                        if (e.target.value !== value) onSave(e.target.value);
-                        setIsEditing(false);
-                    }}
-                    onBlur={() => setIsEditing(false)}
-                    className="w-full bg-indigo-50 border border-indigo-200 rounded px-2 py-1 text-sm font-medium outline-none text-indigo-900"
-                >
-                    <option value="">(Empty)</option>
-                    {property?.options?.map(opt => (
-                        <option key={opt.id} value={opt.name}>{opt.name}</option>
-                    ))}
-                </select>
-            );
-        }
-
-        return (
-            <input
-                autoFocus
-                type="text"
-                value={tempValue}
-                onChange={(e) => setTempValue(e.target.value)}
-                onBlur={handleSave}
-                onKeyDown={(e) => e.key === 'Enter' && handleSave()}
-                className="w-full bg-white border border-indigo-500 rounded px-2 py-1 text-sm font-medium outline-none shadow-lg z-10"
-            />
-        );
-    }
-
-    return (
-        <div
-            onClick={() => setIsEditing(true)}
-            className="cursor-pointer hover:bg-slate-100 px-2 -mx-2 rounded py-1 transition-colors min-h-[1.5rem]"
-            title="Click to edit"
-        >
-            {value || <span className="text-slate-300 text-xs italic">Empty</span>}
-        </div>
-    );
-};
+import EditableCell from './EditableCell';
 
 export const OfficeView: React.FC<OfficeViewProps> = ({
     assets,

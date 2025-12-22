@@ -540,120 +540,164 @@ const App = () => {
         }
     }
 
+    const [showMobileMenu, setShowMobileMenu] = useState(false); // New state
+
     return (
         <div className="min-h-screen flex flex-col md:flex-row bg-slate-50 font-sans">
+            {/* Mobile Header */}
             {appMode !== 'FIELD' && (
-                <aside className="hidden md:flex flex-col w-64 bg-slate-900 text-slate-300 p-4 border-r border-slate-800">
-                    {/* Header */}
-                    <div className="flex items-center gap-3 px-2 mb-6">
+                <div className="md:hidden bg-slate-900 px-4 py-3 flex items-center justify-between border-b border-slate-800">
+                    <div className="flex items-center gap-2">
                         <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold">IT</div>
                         <h1 className="text-lg font-bold text-white tracking-tight">Nexus ITAM</h1>
                     </div>
+                    <button onClick={() => setShowMobileMenu(!showMobileMenu)} className="text-slate-300">
+                        {showMobileMenu ? <X size={24} /> : <div className="space-y-1.5">
+                            <div className="w-6 h-0.5 bg-current"></div>
+                            <div className="w-6 h-0.5 bg-current"></div>
+                            <div className="w-6 h-0.5 bg-current"></div>
+                        </div>}
+                    </button>
+                </div>
+            )}
 
-                    {/* Global Search */}
-                    <div className="px-2 mb-6">
-                        <div className="relative group">
-                            <Search size={16} className="absolute left-3 top-2.5 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
-                            <input
-                                type="text"
-                                placeholder="Global Search..."
-                                value={globalSearchQuery}
-                                onChange={(e) => setGlobalSearchQuery(e.target.value)}
-                                onKeyDown={(e) => e.key === 'Enter' && handleGlobalSearch(globalSearchQuery)}
-                                className="w-full bg-slate-800 text-white rounded-xl pl-10 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/50 border border-slate-700 focus:border-indigo-500 transition-all placeholder:text-slate-600"
-                            />
+            {/* Sidebar (Desktop + Mobile Overlay) */}
+            {appMode !== 'FIELD' && (
+                <>
+                    {/* Mobile Overlay Backdrop */}
+                    {showMobileMenu && (
+                        <div
+                            className="fixed inset-0 bg-black/50 z-40 md:hidden"
+                            onClick={() => setShowMobileMenu(false)}
+                        />
+                    )}
+
+                    <aside className={`
+                        flex flex-col w-64 bg-slate-900 text-slate-300 p-4 border-r border-slate-800
+                        fixed md:relative inset-y-0 left-0 z-50 transition-transform duration-300 ease-in-out
+                        ${showMobileMenu ? 'translate-x-0' : '-translate-x-full md:translate-x-0'}
+                        ${appMode === 'FIELD' ? 'hidden' : ''}
+                    `}>
+                        {/* Desktop Header (Hidden on Mobile as we have the top bar) */}
+                        <div className="hidden md:flex items-center gap-3 px-2 mb-6">
+                            <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold">IT</div>
+                            <h1 className="text-lg font-bold text-white tracking-tight">Nexus ITAM</h1>
                         </div>
-                    </div>
 
-                    <nav className="flex-1 space-y-6 overflow-y-auto">
-                        <div className="space-y-1">
-                            <p className="px-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Main</p>
-                            <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" active={appMode === 'DASHBOARD'} onClick={() => {
-                                setAppMode('DASHBOARD');
-                                setActiveFilter(DEFAULT_FILTER);
-                                setActiveTemplateId(null);
-                            }} />
-                            <NavItem icon={<Package size={20} />} label="All Assets" active={appMode === 'OFFICE' && activeTemplateId === null} onClick={() => {
-                                setAppMode('OFFICE');
-                                setActiveFilter(DEFAULT_FILTER);
-                                setActiveTemplateId(null);
-                                setAssets([]);
-                                setNextCursor(null);
-                                setHasMore(false);
-                            }} />
+                        {/* Global Search */}
+                        <div className="px-2 mb-6">
+                            <div className="relative group">
+                                <Search size={16} className="absolute left-3 top-2.5 text-slate-500 group-focus-within:text-indigo-400 transition-colors" />
+                                <input
+                                    type="text"
+                                    placeholder="Global Search..."
+                                    value={globalSearchQuery}
+                                    onChange={(e) => setGlobalSearchQuery(e.target.value)}
+                                    onKeyDown={(e) => e.key === 'Enter' && handleGlobalSearch(globalSearchQuery)}
+                                    className="w-full bg-slate-800 text-white rounded-xl pl-10 pr-3 py-2 text-sm outline-none focus:ring-2 focus:ring-indigo-500/50 border border-slate-700 focus:border-indigo-500 transition-all placeholder:text-slate-600"
+                                />
+                            </div>
                         </div>
 
-                        {/* Saved Views Section */}
-                        <div className="space-y-1">
-                            <div className="flex items-center justify-between px-3 mb-2 cursor-pointer hover:text-white transition-colors" onClick={() => setIsSavedViewsOpen(!isSavedViewsOpen)}>
-                                <div className="flex items-center gap-2">
-                                    <Database size={14} className={isSavedViewsOpen ? 'text-indigo-400' : 'text-slate-500'} />
-                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Saved Views</p>
-                                </div>
-                                <span className={`text - [10px] transition - transform ${isSavedViewsOpen ? 'rotate-90' : ''} `}>▶</span>
+                        <nav className="flex-1 space-y-6 overflow-y-auto">
+                            <div className="space-y-1">
+                                <p className="px-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2">Main</p>
+                                <NavItem icon={<LayoutDashboard size={20} />} label="Dashboard" active={appMode === 'DASHBOARD'} onClick={() => {
+                                    setAppMode('DASHBOARD');
+                                    setActiveFilter(DEFAULT_FILTER);
+                                    setActiveTemplateId(null);
+                                    setShowMobileMenu(false);
+                                }} />
+                                <NavItem icon={<Package size={20} />} label="All Assets" active={appMode === 'OFFICE' && activeTemplateId === null} onClick={() => {
+                                    setAppMode('OFFICE');
+                                    setActiveFilter(DEFAULT_FILTER);
+                                    setActiveTemplateId(null);
+                                    setAssets([]);
+                                    setNextCursor(null);
+                                    setHasMore(false);
+                                    setShowMobileMenu(false);
+                                }} />
                             </div>
 
-                            {isSavedViewsOpen && (
-                                <div className="pl-2 space-y-1 border-l border-slate-800 ml-2 animate-in slide-in-from-left-2 duration-200">
-                                    <div className="flex items-center justify-between px-2 mb-1">
-                                        <span className="text-[10px] text-slate-600">Templates</span>
-                                        <button onClick={() => setShowFilterBuilder(true)} className="text-slate-500 hover:text-white p-1 rounded-md hover:bg-slate-800"><Plus size={12} /></button>
+                            {/* Saved Views Section */}
+                            <div className="space-y-1">
+                                <div className="flex items-center justify-between px-3 mb-2 cursor-pointer hover:text-white transition-colors" onClick={() => setIsSavedViewsOpen(!isSavedViewsOpen)}>
+                                    <div className="flex items-center gap-2">
+                                        <Database size={14} className={isSavedViewsOpen ? 'text-indigo-400' : 'text-slate-500'} />
+                                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Saved Views</p>
                                     </div>
-                                    {templates.map(t => (
-                                        <div key={t.id} className="group flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-slate-800 transition-all cursor-pointer">
-                                            <PlayCircle size={14} className={activeTemplateId === t.id ? 'text-indigo-400' : 'text-slate-600'} />
-
-                                            {editingTemplateId === t.id ? (
-                                                <div className="flex-1 flex items-center gap-1" onClick={e => e.stopPropagation()}>
-                                                    <input
-                                                        value={editName}
-                                                        onChange={e => setEditName(e.target.value)}
-                                                        className="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-xs text-white outline-none focus:border-indigo-500"
-                                                        autoFocus
-                                                    />
-                                                    <button onClick={saveEdit} className="text-green-400 hover:text-green-300"><Check size={12} /></button>
-                                                    <button onClick={cancelEdit} className="text-red-400 hover:text-red-300"><X size={12} /></button>
-                                                </div>
-                                            ) : (
-                                                <span
-                                                    className={`flex - 1 truncate ${activeTemplateId === t.id ? 'text-white font-semibold' : 'text-slate-400'} `}
-                                                    onClick={() => applyTemplate(t)}
-                                                >
-                                                    {t.name}
-                                                </span>
-                                            )}
-
-                                            {editingTemplateId !== t.id && (
-                                                <div className="hidden group-hover:flex items-center gap-1">
-                                                    <button onClick={(e) => startEditing(t, e)} className="text-slate-500 hover:text-blue-400" title="Rename"><Edit2 size={12} /></button>
-                                                    <button onClick={(e) => duplicateTemplate(t.id, e)} className="text-slate-500 hover:text-white" title="Duplicate"><Copy size={12} /></button>
-                                                    <button onClick={(e) => deleteTemplate(t.id, e)} className="text-slate-500 hover:text-red-400" title="Delete"><Trash2 size={12} /></button>
-                                                </div>
-                                            )}
-                                        </div>
-                                    ))}
-                                    {templates.length === 0 && <p className="px-3 text-xs text-slate-600 italic">No saved views</p>}
+                                    <span className={`text - [10px] transition - transform ${isSavedViewsOpen ? 'rotate-90' : ''} `}>▶</span>
                                 </div>
-                            )}
-                        </div>
-                    </nav>
 
-                    <div className="mt-auto space-y-2 pt-4 border-t border-slate-800">
-                        <div className="px-3 py-3 mb-2 bg-indigo-950/30 rounded-2xl border border-indigo-500/20">
-                            <div className="flex items-center gap-2 mb-2">
-                                <Database size={14} className="text-indigo-400" />
-                                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Connected</span>
+                                {isSavedViewsOpen && (
+                                    <div className="pl-2 space-y-1 border-l border-slate-800 ml-2">
+                                        <div className="flex items-center justify-between px-2 mb-1">
+                                            <span className="text-[10px] text-slate-600">Templates</span>
+                                            <button onClick={() => setShowFilterBuilder(true)} className="text-slate-500 hover:text-white p-1 rounded-md hover:bg-slate-800"><Plus size={12} /></button>
+                                        </div>
+                                        {templates.map(t => (
+                                            <div key={t.id} className="group flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-slate-800 transition-all cursor-pointer">
+                                                <PlayCircle size={14} className={activeTemplateId === t.id ? 'text-indigo-400' : 'text-slate-600'} />
+
+                                                {editingTemplateId === t.id ? (
+                                                    <div className="flex-1 flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                                                        <input
+                                                            value={editName}
+                                                            onChange={e => setEditName(e.target.value)}
+                                                            className="w-full bg-slate-900 border border-slate-700 rounded px-1 py-0.5 text-xs text-white outline-none focus:border-indigo-500"
+                                                            autoFocus
+                                                        />
+                                                        <button onClick={saveEdit} className="text-green-400 hover:text-green-300"><Check size={12} /></button>
+                                                        <button onClick={cancelEdit} className="text-red-400 hover:text-red-300"><X size={12} /></button>
+                                                    </div>
+                                                ) : (
+                                                    <span
+                                                        className={`flex - 1 truncate ${activeTemplateId === t.id ? 'text-white font-semibold' : 'text-slate-400'} `}
+                                                        onClick={() => {
+                                                            applyTemplate(t);
+                                                            setShowMobileMenu(false);
+                                                        }}
+                                                    >
+                                                        {t.name}
+                                                    </span>
+                                                )}
+
+                                                {editingTemplateId !== t.id && (
+                                                    <div className="hidden group-hover:flex items-center gap-1">
+                                                        <button onClick={(e) => startEditing(t, e)} className="text-slate-500 hover:text-blue-400" title="Rename"><Edit2 size={12} /></button>
+                                                        <button onClick={(e) => duplicateTemplate(t.id, e)} className="text-slate-500 hover:text-white" title="Duplicate"><Copy size={12} /></button>
+                                                        <button onClick={(e) => deleteTemplate(t.id, e)} className="text-slate-500 hover:text-red-400" title="Delete"><Trash2 size={12} /></button>
+                                                    </div>
+                                                )}
+                                            </div>
+                                        ))}
+                                        {templates.length === 0 && <p className="px-3 text-xs text-slate-600 italic">No saved views</p>}
+                                    </div>
+                                )}
                             </div>
-                            <p className="text-[10px] text-slate-400 truncate font-mono">{notionConfig.databaseId}</p>
+                        </nav>
+
+                        <div className="mt-auto space-y-2 pt-4 border-t border-slate-800">
+                            <div className="px-3 py-3 mb-2 bg-indigo-950/30 rounded-2xl border border-indigo-500/20">
+                                <div className="flex items-center gap-2 mb-2">
+                                    <Database size={14} className="text-indigo-400" />
+                                    <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Connected</span>
+                                </div>
+                                <p className="text-[10px] text-slate-400 truncate font-mono">{notionConfig.databaseId}</p>
+                            </div>
+
+                            <button
+                                onClick={() => {
+                                    setAppMode('FIELD');
+                                    setShowMobileMenu(false);
+                                }}
+                                className="flex items-center justify-center gap-3 w-full px-4 py-4 text-sm font-bold bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20 active:scale-95"
+                            >
+                                <Smartphone size={18} /> Field Mode
+                            </button>
                         </div>
-                        <button
-                            onClick={() => setAppMode('FIELD')}
-                            className="flex items-center justify-center gap-3 w-full px-4 py-4 text-sm font-bold bg-indigo-600 text-white rounded-2xl hover:bg-indigo-700 transition-all shadow-xl shadow-indigo-600/20 active:scale-95"
-                        >
-                            <Smartphone size={18} /> Field Mode
-                        </button>
-                    </div>
-                </aside>
+                    </aside>
+                </>
             )}
 
             <main className="flex-1 flex flex-col h-screen overflow-hidden">

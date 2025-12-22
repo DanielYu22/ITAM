@@ -3,6 +3,7 @@ import { Asset, NotionProperty } from '../lib/notion';
 import { FilterTemplate, FilterCondition } from '../lib/utils';
 import { ChevronLeft, CheckCircle, ArrowRight, Settings, Square, Box } from 'lucide-react';
 import { FieldModeConfig, HierarchyConfig } from './FieldModeConfig';
+import EditableCell from './EditableCell';
 
 interface FieldViewProps {
     assets: Asset[];
@@ -256,16 +257,22 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
                         </div>
 
                         <div className="p-6 overflow-y-auto space-y-6">
-                            {/* Render Relevant Fields from Filter */}
+                            {/* Render Relevant Fields from Filter as Editable */}
                             {relevantFields.length > 0 && (
                                 <div className="mb-4">
-                                    <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-2">Mission Targets</div>
+                                    <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-2">Mission Targets (Edit to Complete)</div>
                                     {relevantFields.map(key => (
                                         <div key={key} className="mb-3">
                                             <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">{key}</label>
-                                            <p className="text-slate-800 font-medium text-sm bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
-                                                {selectedAsset.values[key] || <span className="text-slate-300 italic">Empty</span>}
-                                            </p>
+                                            <div className="bg-white p-1 rounded-xl border border-indigo-100 shadow-sm focus-within:ring-2 ring-indigo-500 transition-all">
+                                                <EditableCell
+                                                    field={key}
+                                                    value={selectedAsset.values[key] || ''}
+                                                    type={schemaProperties[key]?.type || 'text'}
+                                                    property={schemaProperties[key]}
+                                                    onSave={(val) => updateAssetField(selectedAsset.id, key, val)}
+                                                />
+                                            </div>
                                         </div>
                                     ))}
                                 </div>
