@@ -1,15 +1,10 @@
-module.exports = async (req, res) => {
-    // Vercel puts the wildcard match in req.query.match
+export default async function handler(req, res) {
     const { match } = req.query;
-
-    // match is string[] or string
     const apiPath = Array.isArray(match) ? match.join('/') : match;
-
     const targetUrl = `https://api.notion.com/${apiPath}`;
 
-    // Use server-side environment variable for security and reliability
     const apiKey = process.env.VITE_NOTION_KEY;
-    const notionVersion = '2022-06-28'; // Ensure version matches or use env
+    const notionVersion = '2022-06-28';
 
     if (!apiKey) {
         return res.status(500).json({ error: 'Server Configuration Error: Missing VITE_NOTION_KEY' });
@@ -28,7 +23,6 @@ module.exports = async (req, res) => {
 
         const data = await response.json();
 
-        // Log error for debugging (Vercel logs)
         if (!response.ok) {
             console.error('Notion API Error:', response.status, data);
         }
@@ -38,4 +32,4 @@ module.exports = async (req, res) => {
         console.error('Proxy Request Failed:', error);
         res.status(500).json({ error: 'Proxy Request Failed', details: error.message });
     }
-};
+}
