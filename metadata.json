@@ -1,0 +1,5 @@
+{
+  "description": "Enterprise ITAM app with Notion DB sync and Field Mode task zeroing.",
+  "requestFramePermissions": ["camera"],
+  "name": "Nexus ITAM"
+}
