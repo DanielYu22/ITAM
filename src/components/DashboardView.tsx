@@ -165,7 +165,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ assets, onAnalyze,
                                     paddingAngle={5}
                                     dataKey="value"
                                 >
-                                    {stats.conditionData.map((entry, index) => (
+                                    {stats.conditionData.map((_, index) => (
                                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                     ))}
                                 </Pie>

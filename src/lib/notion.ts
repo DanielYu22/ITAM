@@ -88,11 +88,7 @@ export class NotionClient {
         }
     }
 
-    private formatUUID(id: string): string {
-        if (!id || id.length !== 32) return id;
-        if (id.includes('-')) return id;
-        return `${id.substring(0, 8)}-${id.substring(8, 12)}-${id.substring(12, 16)}-${id.substring(16, 20)}-${id.substring(20)}`;
-    }
+
 
     async getDatabaseSchema(): Promise<Record<string, NotionProperty>> {
         if (!this.apiKey || !this.databaseId) return {};
@@ -128,8 +124,8 @@ export class NotionClient {
         }
     }
 
-    async queryDatabase(filter?: any, pageSize: number = 100, startCursor?: string): Promise<{ assets: Asset[], schema: string[], nextCursor?: string | null, hasMore: boolean }> {
-        if (!this.apiKey || !this.databaseId) return { assets: [], schema: [], nextCursor: null, hasMore: false };
+    async queryDatabase(filter?: any, sorts?: any[], pageSize = 100, cursor?: string): Promise<{ assets: Asset[], nextCursor?: string | null, hasMore: boolean, schema: string[] }> {
+        if (!this.apiKey || !this.databaseId) return { assets: [], nextCursor: null, hasMore: false, schema: [] };
 
         try {
             const targetUrl = `/api/notion/v1/databases/${this.databaseId}/query`;
@@ -138,12 +134,13 @@ export class NotionClient {
             // 1. Fetch Schema First (to ensure we have all columns)
             // We ignore types here for the basic schema list, but we could cache them
             const schemaWithTypes = await this.getDatabaseSchema();
-            const schema = Object.keys(schemaWithTypes);
+
 
             // 2. Fetch One Page
             const body: any = { page_size: pageSize };
-            if (startCursor) body.start_cursor = startCursor;
+            if (cursor) body.start_cursor = cursor;
             if (filter) body.filter = filter;
+            if (sorts && sorts.length > 0) body.sorts = sorts;
 
             const response = await fetch(targetUrl, {
                 method: 'POST',
@@ -174,9 +171,9 @@ export class NotionClient {
 
                 return {
                     assets,
-                    schema,
-                    nextCursor: data.next_cursor,
-                    hasMore: data.has_more
+                    nextCursor: data.next_cursor || null,
+                    hasMore: data.has_more,
+                    schema: Object.keys(schemaWithTypes) // Return schema
                 };
             } else {
                 console.error("Notion Query Error:", await response.text());
@@ -188,14 +185,14 @@ export class NotionClient {
         }
     }
 
-    async fetchAllDatabase(filter?: any): Promise<{ assets: Asset[], schema: string[] }> {
+    async fetchAllDatabase(filter?: any, sorts?: any[]): Promise<{ assets: Asset[], schema: string[] }> {
         let allAssets: Asset[] = [];
         let cursor: string | undefined = undefined;
         let hasMore = true;
         let schema: string[] = [];
 
         while (hasMore) {
-            const result = await this.queryDatabase(filter, 100, cursor);
+            const result = await this.queryDatabase(filter, sorts, 100, cursor);
             if (result.assets.length > 0) {
                 allAssets = [...allAssets, ...result.assets];
                 if (schema.length === 0) schema = result.schema;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { RefreshCw, Filter, ExternalLink, Bug, Check, ChevronDown } from 'lucide-react';
+import { RefreshCw, Filter, ExternalLink, Bug, ChevronDown } from 'lucide-react';
 import { Asset, NotionProperty } from '../lib/notion';
 
 interface OfficeViewProps {
@@ -18,7 +18,7 @@ interface OfficeViewProps {
     onLoadMore: () => void;
 }
 
-const EditableCell = ({ assetId, field, value, type, property, onSave }: { assetId: string, field: string, value: string, type: string, property?: NotionProperty, onSave: (val: string) => void }) => {
+const EditableCell = ({ value, type, property, onSave }: { field: string, value: string, type: string, property?: NotionProperty, onSave: (val: string) => void }) => {
     const [isEditing, setIsEditing] = useState(false);
     const [tempValue, setTempValue] = useState(value);
 
@@ -88,7 +88,7 @@ export const OfficeView: React.FC<OfficeViewProps> = ({
     schemaProperties,
     onUpdateAsset,
     onOpenFilter,
-    onSync,
+
     onSearch,
     isSyncing,
     activeTemplateName,
@@ -175,7 +175,6 @@ export const OfficeView: React.FC<OfficeViewProps> = ({
                                         {displayColumns.map((col: string, idx: number) => (
                                             <td key={col} className={`px-8 py-6 font-medium text-slate-700 ${getStickyStyle(col, idx) ? 'sticky left-0 z-10 bg-inherit' : ''} ${getStickyStyle(col, idx) && 'group-hover:bg-indigo-50/30 transition-colors'}`}>
                                                 <EditableCell
-                                                    assetId={a.id}
                                                     field={col}
                                                     value={a.values[col] || ''}
                                                     type={schemaProperties[col]?.type || 'text'}

@@ -1,18 +1,20 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Asset, NotionProperty } from '../lib/notion';
-import { FilterTemplate } from '../lib/utils';
-import { ChevronLeft, MapPin, CheckCircle, Search, ArrowRight, Settings, CheckSquare, Square, Box } from 'lucide-react';
+import { FilterTemplate, FilterCondition } from '../lib/utils';
+import { ChevronLeft, CheckCircle, ArrowRight, Settings, Square, Box } from 'lucide-react';
 import { FieldModeConfig, HierarchyConfig } from './FieldModeConfig';
 
 interface FieldViewProps {
     assets: Asset[];
     templates: FilterTemplate[];
     schema: string[]; // List of column names
+    schemaProperties: Record<string, NotionProperty>; // For identifying types
+    activeFilter?: FilterCondition; // For filtering relevant fields
     updateAssetField: (id: string, field: string, value: string) => void;
     onExit: () => void;
 }
 
-export const FieldView: React.FC<FieldViewProps> = ({ assets, templates, schema, updateAssetField, onExit }) => {
+export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProperties, activeFilter, updateAssetField, onExit }) => {
     // Steps: 0 = Config (if not set), 1 = Level A, 2 = Level B, 3 = Level C, 4 = List
     const [step, setStep] = useState<number>(0);
     const [config, setConfig] = useState<HierarchyConfig | null>(null);
@@ -41,17 +43,35 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, templates, schema,
 
     const handleBack = () => {
         if (step === 1) {
-            // Check if we want to allow going back to config?
-            // Maybe a small gear icon to reset config
             onExit();
         } else {
             setStep(prev => prev - 1);
-            // Clear selections for forward steps?
             if (step === 2) setSelections(prev => ({ ...prev, A: '' }));
-            // Actually, usually back means undo, so we keep previous state but just change view.
-            // But if we go back from B to A, we re-select A, so A is cleared implicitly when choosing new.
         }
     };
+
+    // Helper: Find Title Column
+    const titleColumn = useMemo(() => {
+        return Object.keys(schemaProperties).find(k => schemaProperties[k].type === 'title') || 'Name';
+    }, [schemaProperties]);
+
+    // Helper: Extract relevant fields from filter
+    const relevantFields = useMemo(() => {
+        const fields = new Set<string>();
+        const extract = (c: FilterCondition) => {
+            if (c.field) fields.add(c.field);
+            if (c.conditions) c.conditions.forEach(extract);
+        };
+        if (activeFilter) extract(activeFilter);
+
+        // If no fields found (e.g. empty filter), show all? Or generic set?
+        // User said: "only target variables required by filter"
+        // If empty, let's show all for safety, but if filter exists, restrict.
+        const list = Array.from(fields);
+        // Force include status column if we can guess it
+        // list.push('Status'); 
+        return list;
+    }, [activeFilter]);
 
     // Filter assets based on current selections
     const currentOptions = useMemo(() => {
@@ -82,10 +102,7 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, templates, schema,
         );
     }, [assets, config, step, selections]);
 
-    // Check completion status (simple check: Status = 'Done' or 'Verified' or '완료')
-    // Ideally this should be configurable too.
     const isCompleted = (asset: Asset) => {
-        // Naive check for now
         const status = Object.values(asset.values).find(v => v === 'Done' || v === 'Verified' || v === '완료');
         return !!status;
     };
@@ -94,7 +111,6 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, templates, schema,
     const completedAssets = roomAssets.filter(a => isCompleted(a));
 
     const handleComplete = (asset: Asset) => {
-        // Find status column
         const statusCol = Object.keys(asset.values).find(k => k.toLowerCase().includes('status') || k.toLowerCase().includes('상태')) || 'Status';
         updateAssetField(asset.id, statusCol, 'Done');
         setSelectedAsset(null);
@@ -187,12 +203,12 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, templates, schema,
                         className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between active:scale-95 transition-transform"
                     >
                         <div>
-                            <p className="text-xs font-bold text-indigo-500 mb-1">{Object.values(asset.values)[0] || 'Unknown ID'}</p>
+                            <p className="text-xs font-bold text-indigo-500 mb-1">{asset.id.slice(0, 5)}..</p>
                             <h3 className="text-base font-bold text-slate-800 line-clamp-1">
-                                {Object.values(asset.values)[1] || 'No Name'}
+                                {asset.values[titleColumn] || 'No Name'}
                             </h3>
                             <p className="text-xs text-slate-400 mt-1">
-                                {Object.keys(asset.values).find(k => k.includes('Serial')) ? asset.values[Object.keys(asset.values).find(k => k.includes('Serial'))!] : ''}
+                                {schema.find(k => k.includes('Serial')) ? asset.values[schema.find(k => k.includes('Serial'))!] : ''}
                             </p>
                         </div>
                         <Square className="text-slate-300" />
@@ -205,7 +221,7 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, templates, schema,
                         <div className="space-y-2">
                             {completedAssets.map(asset => (
                                 <div key={asset.id} className="bg-slate-50 p-4 rounded-xl flex items-center justify-between border border-emerald-100">
-                                    <span className="text-sm text-slate-500 line-through decoration-emerald-500/50">{Object.values(asset.values)[1] || 'Asset'}</span>
+                                    <span className="text-sm text-slate-500 line-through decoration-emerald-500/50">{asset.values[titleColumn] || 'Asset'}</span>
                                     <CheckCircle size={16} className="text-emerald-500" />
                                 </div>
                             ))}
@@ -228,10 +244,10 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, templates, schema,
                         <div className="p-6 border-b border-slate-100 flex justify-between items-start bg-slate-50/50">
                             <div>
                                 <h2 className="text-2xl font-black text-slate-900 leading-tight mb-2">
-                                    {Object.values(selectedAsset.values)[1] || 'Asset Details'}
+                                    {selectedAsset.values[titleColumn] || 'Asset Details'}
                                 </h2>
                                 <p className="font-mono text-sm text-indigo-600 bg-indigo-50 px-2 py-1 rounded inline-block">
-                                    {Object.values(selectedAsset.values)[0]}
+                                    {selectedAsset.id.slice(0, 8)}
                                 </p>
                             </div>
                             <button onClick={() => setSelectedAsset(null)} className="p-2 bg-slate-200 rounded-full text-slate-500">
@@ -240,7 +256,27 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, templates, schema,
                         </div>
 
                         <div className="p-6 overflow-y-auto space-y-6">
-                            {Object.entries(selectedAsset.values).map(([key, val]) => (
+                            {/* Render Relevant Fields from Filter */}
+                            {relevantFields.length > 0 && (
+                                <div className="mb-4">
+                                    <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest mb-2">Mission Targets</div>
+                                    {relevantFields.map(key => (
+                                        <div key={key} className="mb-3">
+                                            <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">{key}</label>
+                                            <p className="text-slate-800 font-medium text-sm bg-indigo-50/50 p-3 rounded-xl border border-indigo-100">
+                                                {selectedAsset.values[key] || <span className="text-slate-300 italic">Empty</span>}
+                                            </p>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+
+                            {/* Show other fields? Or just Filter fields? User said "only target variables".
+                                Let's show Title and maybe Serial if not in filter.
+                                And hide everything else.
+                            */}
+                            {/* If no filter fields, maybe show all? */}
+                            {relevantFields.length === 0 && Object.entries(selectedAsset.values).map(([key, val]) => (
                                 <div key={key}>
                                     <label className="text-xs font-bold text-slate-400 uppercase tracking-wider block mb-1">{key}</label>
                                     <p className="text-slate-800 font-medium text-sm bg-slate-50 p-3 rounded-xl border border-slate-100">

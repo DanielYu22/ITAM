@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, Save, ChevronRight, Map } from 'lucide-react';
+import { Save, ChevronRight, Map } from 'lucide-react';
 
 export interface HierarchyConfig {
     levelA: string; // e.g. "Building"

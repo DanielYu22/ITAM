@@ -55,9 +55,11 @@ async function diagnose() {
         if (res.status === 200) {
             console.log("   ✅ SUCCESS: It IS a Database object.");
             console.log("   Title:", res.data.title?.[0]?.plain_text || "Untitled");
-            console.log("   --- Properties (First 3) ---");
-            const props = Object.keys(res.data.properties || {}).slice(0, 3);
-            console.log("   " + props.join(", "));
+            console.log("   --- Properties List ---");
+            Object.entries(res.data.properties || {}).forEach(([key, val]) => {
+                console.log(`   [${val.type}] "${key}"`);
+            });
+            console.log("   -----------------------");
 
             // Check descriptions or sources?
             // console.log("   Full Data:", JSON.stringify(res.data, null, 2));
