@@ -1,10 +1,10 @@
-export default async function handler(req, res) {
-    // Get the path from the query parameter (handled by Vercel routing)
+module.exports = async (req, res) => {
     const { path } = req.query;
 
-    // Construct the target URL
-    // path is an array: ['v1', 'databases', '...']
+    // path is string[] or string
     const apiPath = Array.isArray(path) ? path.join('/') : path;
+
+    // Ensure we don't have double slashes
     const targetUrl = `https://api.notion.com/${apiPath}`;
 
     try {
@@ -19,10 +19,9 @@ export default async function handler(req, res) {
         });
 
         const data = await response.json();
-
         res.status(response.status).json(data);
     } catch (error) {
         console.error('Proxy Error:', error);
-        res.status(500).json({ error: 'Proxy Request Failed' });
+        res.status(500).json({ error: 'Proxy Request Failed', details: error.message });
     }
-}
+};
