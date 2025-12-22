@@ -22,12 +22,21 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
     const [selections, setSelections] = useState<{ A: string, B: string, C: string }>({ A: '', B: '', C: '' });
     const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null); // For details modal
 
-    // Load config from local storage
+    // Load config from local storage OR use defaults
     useEffect(() => {
         const saved = localStorage.getItem('nexus_itam_field_config');
         if (saved) {
             setConfig(JSON.parse(saved));
             setStep(1); // Skip config if saved
+        } else {
+            // Default hierarchy: Building -> Floor -> Lab
+            const defaultConfig: HierarchyConfig = {
+                levelA: '설치 장소(건물)',
+                levelB: 'floor',
+                levelC: '설치 장소(연구실)'
+            };
+            setConfig(defaultConfig);
+            setStep(1); // Skip config with defaults
         }
     }, []);
 
@@ -111,11 +120,7 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
     const activeAssets = roomAssets.filter(a => !isCompleted(a));
     const completedAssets = roomAssets.filter(a => isCompleted(a));
 
-    const handleComplete = (asset: Asset) => {
-        const statusCol = Object.keys(asset.values).find(k => k.toLowerCase().includes('status') || k.toLowerCase().includes('상태')) || 'Status';
-        updateAssetField(asset.id, statusCol, 'Done');
-        setSelectedAsset(null);
-    };
+    // Note: handleComplete was replaced by inline EditableCell editing
 
     // Render Steps
     if (!config || step === 0) {
@@ -301,14 +306,10 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
                                 <ChevronLeft size={20} />
                                 Close
                             </button>
-                            <CheckCircle size={24} />
-                            Mark as Done
-                        </button>
+                        </div>
                     </div>
                 </div>
-                </div>
-    )
-}
-        </div >
+            )}
+        </div>
     );
 };
