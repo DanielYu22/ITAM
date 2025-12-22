@@ -219,6 +219,16 @@ export class NotionClient {
                 properties[propertyName] = { date: { start: value } };
             } else if (type === 'status') {
                 properties[propertyName] = { status: { name: value } };
+            } else if (type === 'multi_select') {
+                // Split by comma and create array of select objects
+                const names = value.split(',').map(v => v.trim()).filter(Boolean);
+                properties[propertyName] = { multi_select: names.map(n => ({ name: n })) };
+            } else if (type === 'title') {
+                properties[propertyName] = { title: [{ text: { content: value } }] };
+            } else if (type === 'rich_text') {
+                properties[propertyName] = { rich_text: [{ text: { content: value } }] };
+            } else if (type === 'number') {
+                properties[propertyName] = { number: parseFloat(value) || null };
             }
 
             await fetch(targetUrl, {

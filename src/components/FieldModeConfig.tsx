@@ -24,10 +24,13 @@ export const FieldModeConfig: React.FC<FieldModeConfigProps> = ({ schema, onSave
         if (currentConfig) {
             setConfig(currentConfig);
         } else {
-            // Try to auto-detect sensible defaults
-            const building = schema.find(s => s.toLowerCase().includes('building') || s.toLowerCase().includes('건물'));
-            const floor = schema.find(s => s.toLowerCase().includes('floor') || s.toLowerCase().includes('층'));
-            const room = schema.find(s => s.toLowerCase().includes('room') || s.toLowerCase().includes('lab') || s.toLowerCase().includes('호') || s.toLowerCase().includes('실험실'));
+            // Try to auto-detect sensible defaults with exact match priority
+            const building = schema.find(s => s === '설치 장소(건물)') ||
+                schema.find(s => s.toLowerCase().includes('building') || s.includes('건물'));
+            const floor = schema.find(s => s.toLowerCase() === 'floor') ||
+                schema.find(s => s.toLowerCase().includes('floor') || s.includes('층'));
+            const room = schema.find(s => s === '설치 장소(연구실)') ||
+                schema.find(s => s.toLowerCase().includes('room') || s.toLowerCase().includes('lab') || s.includes('호') || s.includes('실험실') || s.includes('연구실'));
 
             setConfig({
                 levelA: building || '',

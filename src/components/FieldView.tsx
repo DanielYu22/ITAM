@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Asset, NotionProperty } from '../lib/notion';
 import { FilterTemplate, FilterCondition } from '../lib/utils';
-import { ChevronLeft, CheckCircle, ArrowRight, Settings, Square, Box } from 'lucide-react';
+import { ChevronLeft, ArrowRight, Settings, Square, Box } from 'lucide-react';
 import { FieldModeConfig, HierarchyConfig } from './FieldModeConfig';
 import EditableCell from './EditableCell';
 
@@ -22,21 +22,12 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
     const [selections, setSelections] = useState<{ A: string, B: string, C: string }>({ A: '', B: '', C: '' });
     const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null); // For details modal
 
-    // Load config from local storage OR use defaults
+    // Load config from local storage
     useEffect(() => {
         const saved = localStorage.getItem('nexus_itam_field_config');
         if (saved) {
             setConfig(JSON.parse(saved));
             setStep(1); // Skip config if saved
-        } else {
-            // Default hierarchy: Building -> Floor -> Lab
-            const defaultConfig: HierarchyConfig = {
-                levelA: '설치 장소(건물)',
-                levelB: 'floor',
-                levelC: '설치 장소(연구실)'
-            };
-            setConfig(defaultConfig);
-            setStep(1); // Skip config with defaults
         }
     }, []);
 
@@ -120,8 +111,6 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
     const activeAssets = roomAssets.filter(a => !isCompleted(a));
     const completedAssets = roomAssets.filter(a => isCompleted(a));
 
-    // Note: handleComplete was replaced by inline EditableCell editing
-
     // Render Steps
     if (!config || step === 0) {
         return (
@@ -193,7 +182,7 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
             <div className="flex-1 p-4 overflow-auto space-y-3">
                 {activeAssets.length === 0 && (
                     <div className="py-20 flex flex-col items-center justify-center text-slate-400 bg-white rounded-3xl border border-dashed border-slate-200 m-4">
-                        <CheckCircle size={64} className="text-emerald-100 mb-4" />
+                        <Box size={64} className="text-emerald-100 mb-4" />
                         <h3 className="text-xl font-bold text-slate-700">All Clear!</h3>
                         <p>No pending assets in this room.</p>
                         <button onClick={handleBack} className="mt-6 px-6 py-3 bg-indigo-100 text-indigo-600 font-bold rounded-xl">
@@ -228,7 +217,7 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
                             {completedAssets.map(asset => (
                                 <div key={asset.id} className="bg-slate-50 p-4 rounded-xl flex items-center justify-between border border-emerald-100">
                                     <span className="text-sm text-slate-500 line-through decoration-emerald-500/50">{asset.values[titleColumn] || 'Asset'}</span>
-                                    <CheckCircle size={16} className="text-emerald-500" />
+                                    <Box size={16} className="text-emerald-500" />
                                 </div>
                             ))}
                         </div>
