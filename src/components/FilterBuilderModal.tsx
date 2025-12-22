@@ -187,27 +187,7 @@ const FilterGroup = ({ condition, schema, schemaProperties, onUpdate, onRemove, 
         onUpdate({ conditions: newConditions });
     };
 
-    const updateNestedChild = (childId: string, updates: Partial<FilterCondition>) => {
-        // Only needed if we didn't pass specific update handlers down. 
-        // Actually, we pass `onUpdate` which calls `updateChild` of parent.
-        // So the recursion happens via the component tree props.
-        // THIS IS WRONG. The recursive update in state at top level handles everything.
-        // But wait, it's cleaner to let each Group manage its children? 
-        // No, simpler to have one big state update function at top and pass it down?
-        // Let's use the monolithic update from top for consistency.
-        // Actually, local update is easier for UI recursion.
-        // Let's use the provided `onUpdate` which updates THIS condition in the parent's array.
-        // So to update a child, we modify `condition.conditions` and call `onUpdate`.
-        const recUpdate = (list: FilterCondition[], targetId: string, ups: Partial<FilterCondition>): FilterCondition[] => {
-            return list.map(c => {
-                if (c.id === targetId) return { ...c, ...ups };
-                if (c.conditions) return { ...c, conditions: recUpdate(c.conditions, targetId, ups) };
-                return c;
-            })
-        };
-        const newConds = recUpdate(condition.conditions || [], childId, updates);
-        onUpdate({ conditions: newConds });
-    };
+
 
     const addChildRule = () => {
         const newRule: FilterCondition = { id: Date.now().toString() + Math.random(), field: schema[0], operator: 'contains', value: '' };
