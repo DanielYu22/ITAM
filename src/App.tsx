@@ -372,24 +372,59 @@ const App = () => {
         }
     }, [appMode]);
 
-    // Load templates on mount
+    // Load templates on mount - try Notion first, fallback to localStorage
     useEffect(() => {
-        const saved = localStorage.getItem('nexus_itam_templates');
-        if (saved) {
-            try {
-                const parsed = JSON.parse(saved);
-                if (!parsed.find((t: FilterTemplate) => t.id === 'all_tasks_complex')) {
-                    parsed.push(ALL_TASKS_TEMPLATE);
+        const loadAllSettings = async () => {
+            const client = new NotionClient(notionConfig);
+            const notionSettings = await client.loadSettings();
+
+            if (notionSettings) {
+                // Load from Notion
+                if (notionSettings.templates && Array.isArray(notionSettings.templates)) {
+                    let loaded = notionSettings.templates;
+                    if (!loaded.find((t: FilterTemplate) => t.id === 'all_tasks_complex')) {
+                        loaded = [...loaded, ALL_TASKS_TEMPLATE];
+                    }
+                    setTemplates(loaded);
+                    localStorage.setItem('nexus_itam_templates', JSON.stringify(loaded));
+                    console.log('[Settings] Loaded templates from Notion');
                 }
-                setTemplates(parsed);
-            } catch (e) {
-                console.error("Failed to load templates", e);
-                setTemplates([ALL_TASKS_TEMPLATE]);
+                if (notionSettings.fieldConfig) {
+                    localStorage.setItem('nexus_itam_field_config', notionSettings.fieldConfig);
+                    console.log('[Settings] Loaded field config from Notion');
+                }
+            } else {
+                // Fallback to localStorage
+                const saved = localStorage.getItem('nexus_itam_templates');
+                if (saved) {
+                    try {
+                        const parsed = JSON.parse(saved);
+                        if (!parsed.find((t: FilterTemplate) => t.id === 'all_tasks_complex')) {
+                            parsed.push(ALL_TASKS_TEMPLATE);
+                        }
+                        setTemplates(parsed);
+                    } catch (e) {
+                        console.error("Failed to load templates", e);
+                        setTemplates([ALL_TASKS_TEMPLATE]);
+                    }
+                } else {
+                    setTemplates([ALL_TASKS_TEMPLATE]);
+                }
             }
-        } else {
-            setTemplates([ALL_TASKS_TEMPLATE]);
-        }
+        };
+        loadAllSettings();
     }, []);
+
+    // Helper to sync settings to Notion
+    const syncSettingsToNotion = async (updatedTemplates: FilterTemplate[]) => {
+        const fieldConfig = localStorage.getItem('nexus_itam_field_config');
+        const client = new NotionClient(notionConfig);
+        const settings = {
+            templates: updatedTemplates.filter(t => t.id !== 'all_tasks_complex'),
+            fieldConfig: fieldConfig || undefined
+        };
+        await client.saveSettings(settings);
+    };
 
     const saveTemplate = (name: string, filter: FilterCondition, columns: string[] = [], sorts: SortRule[] = []) => {
         const newTemplate: FilterTemplate = {
@@ -402,6 +437,7 @@ const App = () => {
         const updated = [...templates, newTemplate];
         setTemplates(updated);
         localStorage.setItem('nexus_itam_templates', JSON.stringify(updated));
+        syncSettingsToNotion(updated);
     };
 
     const deleteTemplate = (id: string, e?: React.MouseEvent) => {
@@ -410,6 +446,7 @@ const App = () => {
             const updated = templates.filter(t => t.id !== id);
             setTemplates(updated);
             localStorage.setItem('nexus_itam_templates', JSON.stringify(updated));
+            syncSettingsToNotion(updated);
             if (activeTemplateId === id) {
                 setActiveTemplateId(null);
                 setActiveFilter(DEFAULT_FILTER);
@@ -430,12 +467,14 @@ const App = () => {
         const updated = [...templates, newTemplate];
         setTemplates(updated);
         localStorage.setItem('nexus_itam_templates', JSON.stringify(updated));
+        syncSettingsToNotion(updated);
     };
 
     const updateTemplate = (id: string, updates: Partial<FilterTemplate>) => {
         const updated = templates.map(t => t.id === id ? { ...t, ...updates } : t);
         setTemplates(updated);
         localStorage.setItem('nexus_itam_templates', JSON.stringify(updated));
+        syncSettingsToNotion(updated);
     };
 
     const startEditing = (t: FilterTemplate, e: React.MouseEvent) => {

@@ -262,4 +262,155 @@ export class NotionClient {
             console.error("Notion Update Error:", error);
         }
     }
+
+    // Settings sync methods - uses a special page in the database
+    private readonly SETTINGS_MARKER = '🔧_NEXUS_SETTINGS_';
+
+    async loadSettings(): Promise<{ templates?: any[], fieldConfig?: string } | null> {
+        try {
+            const targetUrl = `/api/notion/v1/databases/${this.databaseId}/query`;
+
+            // Search for settings page by title
+            const response = await fetch(targetUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Notion-Version': '2022-06-28',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    filter: {
+                        property: 'title',
+                        title: { contains: this.SETTINGS_MARKER }
+                    },
+                    page_size: 1
+                })
+            });
+
+            if (!response.ok) {
+                console.warn('[Notion Settings] Failed to query settings page');
+                return null;
+            }
+
+            const data = await response.json();
+            if (!data.results || data.results.length === 0) {
+                console.log('[Notion Settings] No settings page found');
+                return null;
+            }
+
+            const page = data.results[0];
+            // Find the rich_text property that stores settings JSON
+            const props = page.properties;
+            let settingsJson = '';
+
+            // Look for a property that contains our settings
+            for (const [key, prop] of Object.entries(props) as [string, any][]) {
+                if (prop.type === 'rich_text' && key.toLowerCase().includes('note') || key.toLowerCase().includes('memo') || key.toLowerCase().includes('설명')) {
+                    settingsJson = prop.rich_text?.map((t: any) => t.plain_text).join('') || '';
+                    if (settingsJson.startsWith('{')) break;
+                }
+            }
+
+            if (!settingsJson || !settingsJson.startsWith('{')) {
+                console.log('[Notion Settings] No valid settings JSON found');
+                return null;
+            }
+
+            const parsed = JSON.parse(settingsJson);
+            console.log('[Notion Settings] Loaded settings successfully');
+            return parsed;
+        } catch (error) {
+            console.error('[Notion Settings] Load error:', error);
+            return null;
+        }
+    }
+
+    async saveSettings(settings: { templates?: any[], fieldConfig?: string }): Promise<boolean> {
+        try {
+            const settingsJson = JSON.stringify(settings);
+
+            // First, try to find existing settings page
+            const targetUrl = `/api/notion/v1/databases/${this.databaseId}/query`;
+            const searchResponse = await fetch(targetUrl, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${this.apiKey}`,
+                    'Notion-Version': '2022-06-28',
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    filter: {
+                        property: 'title',
+                        title: { contains: this.SETTINGS_MARKER }
+                    },
+                    page_size: 1
+                })
+            });
+
+            const searchData = await searchResponse.json();
+            const existingPage = searchData.results?.[0];
+
+            // Get schema to find the title property name and a rich_text property
+            const schemaProps = await this.getDatabaseSchema();
+            const titlePropName = Object.keys(schemaProps).find(k => schemaProps[k].type === 'title') || 'Name';
+            const textPropName = Object.keys(schemaProps).find(k =>
+                schemaProps[k].type === 'rich_text' &&
+                (k.toLowerCase().includes('note') || k.toLowerCase().includes('memo') || k.toLowerCase().includes('설명'))
+            ) || Object.keys(schemaProps).find(k => schemaProps[k].type === 'rich_text');
+
+            if (!textPropName) {
+                console.error('[Notion Settings] No rich_text property found for storing settings');
+                return false;
+            }
+
+            const properties: any = {
+                [titlePropName]: { title: [{ text: { content: this.SETTINGS_MARKER + new Date().toISOString().slice(0, 10) } }] },
+                [textPropName]: { rich_text: [{ text: { content: settingsJson.slice(0, 2000) } }] } // Notion limit
+            };
+
+            if (existingPage) {
+                // Update existing page
+                const updateUrl = `/api/notion/v1/pages/${existingPage.id}`;
+                const updateResponse = await fetch(updateUrl, {
+                    method: 'PATCH',
+                    headers: {
+                        'Authorization': `Bearer ${this.apiKey}`,
+                        'Notion-Version': '2022-06-28',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ properties })
+                });
+
+                if (updateResponse.ok) {
+                    console.log('[Notion Settings] Updated settings page');
+                    return true;
+                }
+            } else {
+                // Create new page
+                const createUrl = `/api/notion/v1/pages`;
+                const createResponse = await fetch(createUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${this.apiKey}`,
+                        'Notion-Version': '2022-06-28',
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        parent: { database_id: this.databaseId },
+                        properties
+                    })
+                });
+
+                if (createResponse.ok) {
+                    console.log('[Notion Settings] Created settings page');
+                    return true;
+                }
+            }
+
+            return false;
+        } catch (error) {
+            console.error('[Notion Settings] Save error:', error);
+            return false;
+        }
+    }
 }
