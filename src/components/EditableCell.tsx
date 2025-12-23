@@ -60,7 +60,7 @@ export default function EditableCell({ value, type, property, onSave }: Editable
             return (
                 <select
                     autoFocus
-                    className="w-full p-2 border rounded shadow-sm outline-none ring-2 ring-indigo-500 bg-white"
+                    className="w-full p-2 border rounded shadow-sm outline-none ring-2 ring-indigo-500 bg-theme-secondary text-theme-primary border-theme-primary"
                     value={tempValue}
                     onChange={(e) => {
                         setTempValue(e.target.value);
@@ -81,15 +81,15 @@ export default function EditableCell({ value, type, property, onSave }: Editable
         // Handle Multi-Select (Tag-style)
         if (type === 'multi_select') {
             return (
-                <div className="bg-white border border-indigo-500 rounded-xl p-2 shadow-lg space-y-2 max-h-48 overflow-y-auto">
+                <div className="bg-theme-secondary border border-indigo-500 rounded-xl p-2 shadow-lg space-y-2 max-h-48 overflow-y-auto">
                     {property?.options?.map(opt => (
                         <button
                             key={opt.id}
                             type="button"
                             onClick={() => toggleTag(opt.name)}
                             className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${selectedTags.includes(opt.name)
-                                    ? 'bg-indigo-100 text-indigo-700 border border-indigo-300'
-                                    : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-transparent'
+                                ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
+                                : 'bg-theme-tertiary text-theme-secondary hover:bg-theme-primary border border-transparent'
                                 }`}
                         >
                             <div className={`w-4 h-4 rounded flex items-center justify-center ${selectedTags.includes(opt.name) ? 'bg-indigo-500 text-white' : 'border border-slate-300'
@@ -113,7 +113,7 @@ export default function EditableCell({ value, type, property, onSave }: Editable
         return (
             <input
                 autoFocus
-                className="w-full p-2 border rounded shadow-sm outline-none ring-2 ring-indigo-500"
+                className="w-full p-2 border rounded shadow-sm outline-none ring-2 ring-indigo-500 bg-theme-secondary text-theme-primary border-theme-primary"
                 value={tempValue}
                 onChange={(e) => setTempValue(e.target.value)}
                 onBlur={handleSave}
@@ -126,18 +126,18 @@ export default function EditableCell({ value, type, property, onSave }: Editable
     return (
         <div
             onClick={() => setIsEditing(true)}
-            className="cursor-pointer hover:bg-slate-100 p-2 rounded -ml-2 min-h-[2rem] flex items-center transition-colors"
+            className="cursor-pointer hover:bg-indigo-500/10 p-2 rounded -ml-2 min-h-[2rem] flex items-center transition-colors"
         >
             {type === 'multi_select' && selectedTags.length > 0 ? (
                 <div className="flex flex-wrap gap-1">
                     {selectedTags.map(tag => (
-                        <span key={tag} className="px-2 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-xs font-medium">
+                        <span key={tag} className="px-2 py-0.5 bg-indigo-500/20 text-indigo-400 rounded-full text-xs font-medium">
                             {tag}
                         </span>
                     ))}
                 </div>
             ) : (
-                <span className={!value ? "text-slate-300 italic text-sm" : "text-slate-700 font-medium"}>
+                <span className={!value ? "text-theme-tertiary italic text-sm" : "text-theme-primary font-medium"}>
                     {value || 'Empty'}
                 </span>
             )}
