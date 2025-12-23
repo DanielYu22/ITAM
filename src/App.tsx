@@ -427,9 +427,9 @@ const App = () => {
         }
     };
 
+
     // Refresh settings state
     const [isRefreshingSettings, setIsRefreshingSettings] = useState(false);
-    const [refreshResult, setRefreshResult] = useState<'success' | 'local' | null>(null);
 
     // Hard refresh - clears all caches and reloads the page
     const hardRefresh = async () => {
@@ -463,19 +463,6 @@ const App = () => {
         }
     };
 
-    // Soft refresh - just reload templates from Notion
-    const refreshSettings = async () => {
-        setIsRefreshingSettings(true);
-        setRefreshResult(null);
-        console.log('[Refresh] Starting settings refresh from Notion...');
-        const fromNotion = await loadAllSettings();
-        setRefreshResult(fromNotion ? 'success' : 'local');
-        console.log('[Refresh] Completed, loaded from:', fromNotion ? 'Notion' : 'default');
-        setIsRefreshingSettings(false);
-
-        // Clear result message after 3 seconds
-        setTimeout(() => setRefreshResult(null), 3000);
-    };
 
     // Load templates on mount
     useEffect(() => {
@@ -860,13 +847,7 @@ const App = () => {
                                 </div>
                                 <p className="text-[10px] text-slate-400 truncate font-mono">{notionConfig.databaseId}</p>
                                 {isRefreshingSettings && (
-                                    <p className="text-[9px] text-indigo-300 mt-1">🔄 Notion에서 동기화 중...</p>
-                                )}
-                                {refreshResult === 'success' && (
-                                    <p className="text-[9px] text-emerald-400 mt-1">✅ Notion에서 동기화 완료!</p>
-                                )}
-                                {refreshResult === 'local' && (
-                                    <p className="text-[9px] text-amber-400 mt-1">⚠️ 로컬 캐시에서 로드됨</p>
+                                    <p className="text-[9px] text-indigo-300 mt-1">🔄 캐시 삭제 중...</p>
                                 )}
                             </div>
 
