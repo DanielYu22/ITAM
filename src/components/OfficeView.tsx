@@ -1,6 +1,22 @@
-import React from 'react';
-import { RefreshCw, Filter, ExternalLink, Bug, ChevronDown } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { RefreshCw, Filter, ExternalLink, Bug, ChevronDown, List } from 'lucide-react';
 import { Asset, NotionProperty } from '../lib/notion';
+import { MobileCardView } from './MobileCardView';
+import EditableCell from './EditableCell';
+
+// Hook to detect mobile
+const useIsMobile = () => {
+    const [isMobile, setIsMobile] = useState(false);
+
+    useEffect(() => {
+        const check = () => setIsMobile(window.innerWidth < 768);
+        check();
+        window.addEventListener('resize', check);
+        return () => window.removeEventListener('resize', check);
+    }, []);
+
+    return isMobile;
+};
 
 interface OfficeViewProps {
     assets: Asset[];
@@ -19,7 +35,6 @@ interface OfficeViewProps {
     onLoadAll: () => void;
 }
 
-import EditableCell from './EditableCell';
 
 export const OfficeView: React.FC<OfficeViewProps> = ({
     assets,
@@ -37,6 +52,16 @@ export const OfficeView: React.FC<OfficeViewProps> = ({
     onLoadMore,
     onLoadAll
 }) => {
+    const isMobile = useIsMobile();
+    const [viewMode, setViewMode] = useState<'table' | 'card'>('table');
+
+    // Auto-switch to card view on mobile
+    useEffect(() => {
+        if (isMobile && assets.length > 0) {
+            setViewMode('card');
+        }
+    }, [isMobile, assets.length]);
+
     // Reorder columns: Title first, then rest
     const displayColumns = React.useMemo(() => {
         let cols = visibleColumns && visibleColumns.length > 0 ? [...visibleColumns] : [...schema];
@@ -59,6 +84,51 @@ export const OfficeView: React.FC<OfficeViewProps> = ({
         }
         return "";
     };
+
+    // Card view mode
+    if (viewMode === 'card') {
+        return (
+            <div className="flex-1 flex flex-col overflow-hidden bg-theme-primary relative">
+                {/* Header with toggle */}
+                <header className="bg-theme-secondary border-b border-theme-primary px-4 py-4 flex items-center justify-between shrink-0">
+                    <div>
+                        <h2 className="text-xl font-bold text-theme-primary">{activeTemplateName || "Assets"}</h2>
+                        <p className="text-xs text-theme-tertiary">{assets.length} items</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setViewMode('table')}
+                            className="p-2 text-theme-tertiary hover:text-indigo-500"
+                            title="Table View"
+                        >
+                            <List size={20} />
+                        </button>
+                        <button
+                            onClick={onOpenFilter}
+                            className="p-2 text-theme-tertiary hover:text-indigo-500"
+                        >
+                            <Filter size={20} />
+                        </button>
+                        <button
+                            onClick={onSearch}
+                            disabled={isSyncing}
+                            className="p-2 text-indigo-500"
+                        >
+                            <RefreshCw size={20} className={isSyncing ? 'animate-spin' : ''} />
+                        </button>
+                    </div>
+                </header>
+
+                <MobileCardView
+                    assets={assets}
+                    schema={schema}
+                    schemaProperties={schemaProperties}
+                    onUpdateAsset={onUpdateAsset}
+                    primaryFields={displayColumns.slice(0, 5)}
+                />
+            </div>
+        );
+    }
 
     return (
         <div className="flex-1 flex flex-col overflow-hidden bg-theme-primary">
