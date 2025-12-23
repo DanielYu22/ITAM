@@ -29,6 +29,22 @@ export const AIFilterButton: React.FC<AIFilterButtonProps> = ({
     const recognitionRef = useRef<any>(null);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
+    // Helper: Ensure all filter conditions have unique IDs
+    const ensureUniqueIds = (filter: FilterCondition): FilterCondition => {
+        let counter = 0;
+        const generateId = () => `ai_${Date.now()}_${counter++}`;
+
+        const processCondition = (condition: FilterCondition): FilterCondition => {
+            const newCondition = { ...condition, id: generateId() };
+            if (newCondition.conditions) {
+                newCondition.conditions = newCondition.conditions.map(processCondition);
+            }
+            return newCondition;
+        };
+
+        return processCondition(filter);
+    };
+
     // Check if Web Speech API is available
     const speechAvailable = typeof window !== 'undefined' &&
         ('SpeechRecognition' in window || 'webkitSpeechRecognition' in window);
@@ -92,7 +108,7 @@ export const AIFilterButton: React.FC<AIFilterButtonProps> = ({
             const result = await client.generateFilter(text, schema, schemaTypes);
 
             if (result.filter) {
-                setGeneratedFilter(result.filter);
+                setGeneratedFilter(ensureUniqueIds(result.filter));
                 setExplanation(result.explanation);
                 setShowPreview(true);
             } else {
@@ -121,7 +137,7 @@ export const AIFilterButton: React.FC<AIFilterButtonProps> = ({
                 const result = await client.analyzeScreenshot(base64, schema);
 
                 if (result.filter) {
-                    setGeneratedFilter(result.filter);
+                    setGeneratedFilter(ensureUniqueIds(result.filter));
                     setExplanation(result.explanation);
                     setShowPreview(true);
                 } else {

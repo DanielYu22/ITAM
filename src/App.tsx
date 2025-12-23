@@ -17,7 +17,8 @@ import {
     BarChart3,
     Menu,
     Moon,
-    Sun
+    Sun,
+    RefreshCw
 } from 'lucide-react';
 import { Asset, NotionClient, NotionConfig, NotionProperty } from './lib/notion';
 import { FilterCondition, FilterTemplate, SortRule, DEFAULT_FILTER, toNotionFilter, toNotionSorts } from './lib/utils';
@@ -393,46 +394,59 @@ const App = () => {
         }
     }, [appMode]);
 
-    // Load templates on mount - try Notion first, fallback to localStorage
-    useEffect(() => {
-        const loadAllSettings = async () => {
-            const client = new NotionClient(notionConfig);
-            const notionSettings = await client.loadSettings();
+    // Load templates function - can be called manually for refresh
+    const loadAllSettings = async () => {
+        const client = new NotionClient(notionConfig);
+        const notionSettings = await client.loadSettings();
 
-            if (notionSettings) {
-                // Load from Notion
-                if (notionSettings.templates && Array.isArray(notionSettings.templates)) {
-                    let loaded = notionSettings.templates;
-                    if (!loaded.find((t: FilterTemplate) => t.id === 'all_tasks_complex')) {
-                        loaded = [...loaded, ALL_TASKS_TEMPLATE];
-                    }
-                    setTemplates(loaded);
-                    localStorage.setItem('nexus_itam_templates', JSON.stringify(loaded));
-                    console.log('[Settings] Loaded templates from Notion');
+        if (notionSettings) {
+            // Load from Notion
+            if (notionSettings.templates && Array.isArray(notionSettings.templates)) {
+                let loaded = notionSettings.templates;
+                if (!loaded.find((t: FilterTemplate) => t.id === 'all_tasks_complex')) {
+                    loaded = [...loaded, ALL_TASKS_TEMPLATE];
                 }
-                if (notionSettings.fieldConfig) {
-                    localStorage.setItem('nexus_itam_field_config', notionSettings.fieldConfig);
-                    console.log('[Settings] Loaded field config from Notion');
-                }
-            } else {
-                // Fallback to localStorage
-                const saved = localStorage.getItem('nexus_itam_templates');
-                if (saved) {
-                    try {
-                        const parsed = JSON.parse(saved);
-                        if (!parsed.find((t: FilterTemplate) => t.id === 'all_tasks_complex')) {
-                            parsed.push(ALL_TASKS_TEMPLATE);
-                        }
-                        setTemplates(parsed);
-                    } catch (e) {
-                        console.error("Failed to load templates", e);
-                        setTemplates([ALL_TASKS_TEMPLATE]);
+                setTemplates(loaded);
+                localStorage.setItem('nexus_itam_templates', JSON.stringify(loaded));
+                console.log('[Settings] Loaded templates from Notion');
+            }
+            if (notionSettings.fieldConfig) {
+                localStorage.setItem('nexus_itam_field_config', notionSettings.fieldConfig);
+                console.log('[Settings] Loaded field config from Notion');
+            }
+            return true;
+        } else {
+            // Fallback to localStorage
+            const saved = localStorage.getItem('nexus_itam_templates');
+            if (saved) {
+                try {
+                    const parsed = JSON.parse(saved);
+                    if (!parsed.find((t: FilterTemplate) => t.id === 'all_tasks_complex')) {
+                        parsed.push(ALL_TASKS_TEMPLATE);
                     }
-                } else {
+                    setTemplates(parsed);
+                } catch (e) {
+                    console.error("Failed to load templates", e);
                     setTemplates([ALL_TASKS_TEMPLATE]);
                 }
+            } else {
+                setTemplates([ALL_TASKS_TEMPLATE]);
             }
-        };
+            return false;
+        }
+    };
+
+    // Refresh settings state
+    const [isRefreshingSettings, setIsRefreshingSettings] = useState(false);
+
+    const refreshSettings = async () => {
+        setIsRefreshingSettings(true);
+        await loadAllSettings();
+        setIsRefreshingSettings(false);
+    };
+
+    // Load templates on mount
+    useEffect(() => {
         loadAllSettings();
     }, []);
 
@@ -798,11 +812,24 @@ const App = () => {
                             )}
 
                             <div className="px-3 py-3 mb-2 bg-indigo-950/30 rounded-2xl border border-indigo-500/20">
-                                <div className="flex items-center gap-2 mb-2">
-                                    <Database size={14} className="text-indigo-400" />
-                                    <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Connected</span>
+                                <div className="flex items-center justify-between mb-2">
+                                    <div className="flex items-center gap-2">
+                                        <Database size={14} className="text-indigo-400" />
+                                        <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Connected</span>
+                                    </div>
+                                    <button
+                                        onClick={refreshSettings}
+                                        disabled={isRefreshingSettings}
+                                        className="p-1.5 bg-indigo-500/20 rounded-lg text-indigo-400 hover:bg-indigo-500/30 transition-all disabled:opacity-50"
+                                        title="템플릿 새로고침"
+                                    >
+                                        <RefreshCw size={14} className={isRefreshingSettings ? 'animate-spin' : ''} />
+                                    </button>
                                 </div>
                                 <p className="text-[10px] text-slate-400 truncate font-mono">{notionConfig.databaseId}</p>
+                                {isRefreshingSettings && (
+                                    <p className="text-[9px] text-indigo-300 mt-1">동기화 중...</p>
+                                )}
                             </div>
 
                             <button
