@@ -37,19 +37,38 @@ const evaluateFilter = (asset: Asset, filter: FilterCondition): boolean => {
 
     const value = asset.values[filter.field] || '';
     const filterValue = filter.value || '';
-    const filterValues = filterValue.split('|').filter(Boolean);
+    const valueLower = value.toLowerCase();
+    const filterLower = filterValue.toLowerCase();
 
     switch (filter.operator) {
-        case 'equals': return value === filterValue;
-        case 'not_equals': return value !== filterValue;
-        case 'contains': return value.toLowerCase().includes(filterValue.toLowerCase());
-        case 'does_not_contain': return !value.toLowerCase().includes(filterValue.toLowerCase());
-        case 'starts_with': return value.toLowerCase().startsWith(filterValue.toLowerCase());
-        case 'ends_with': return value.toLowerCase().endsWith(filterValue.toLowerCase());
+        // Text/Select: is, is not
+        case 'equals': return valueLower === filterLower;
+        case 'does_not_equal': return valueLower !== filterLower;
+
+        // Text/Multi-select: contains, does not contain
+        case 'contains': return valueLower.includes(filterLower);
+        case 'does_not_contain': return !valueLower.includes(filterLower);
+
+        // Text: starts with, ends with
+        case 'starts_with': return valueLower.startsWith(filterLower);
+        case 'ends_with': return valueLower.endsWith(filterLower);
+
+        // Number comparisons
+        case 'number_equals': return parseFloat(value) === parseFloat(filterValue);
+        case 'number_does_not_equal': return parseFloat(value) !== parseFloat(filterValue);
+        case 'greater_than': return parseFloat(value) > parseFloat(filterValue);
+        case 'less_than': return parseFloat(value) < parseFloat(filterValue);
+        case 'greater_than_or_equal_to': return parseFloat(value) >= parseFloat(filterValue);
+        case 'less_than_or_equal_to': return parseFloat(value) <= parseFloat(filterValue);
+
+        // Common: empty checks
         case 'is_empty': return !value || value.trim() === '';
         case 'is_not_empty': return !!value && value.trim() !== '';
-        case 'is_in': return filterValues.some(fv => value.includes(fv));
-        case 'is_not_in': return !filterValues.some(fv => value.includes(fv));
+
+        // Legacy support
+        case 'is_in': return filterValue.split('|').some(fv => valueLower.includes(fv.toLowerCase()));
+        case 'is_not_in': return !filterValue.split('|').some(fv => valueLower.includes(fv.toLowerCase()));
+
         default: return true;
     }
 };
@@ -164,36 +183,59 @@ const FilterRule = ({ condition, schema, schemaProperties, assets = [], onUpdate
     const fieldType = schemaProperties?.[condition.field || '']?.type || 'rich_text';
     const isSelect = fieldType === 'select' || fieldType === 'status';
     const isMultiSelect = fieldType === 'multi_select';
+    const isNumber = fieldType === 'number';
     const options = schemaProperties?.[condition.field || '']?.options || [];
 
     // Calculate matching count for this single condition
     const matchCount = useMemo(() => {
         const count = countMatches(assets, condition);
-        console.log('[FilterRule] Count for', condition.field, condition.operator, ':', count, 'from', assets.length, 'assets');
         return count;
     }, [assets, condition]);
 
+    // Notion-style operator labels
     const getOperatorLabel = (op: string) => {
         switch (op) {
-            case 'equals': return isSelect ? 'Is' : 'Equals';
-            case 'not_equals': return isSelect ? 'Is not' : 'Not equals';
+            // Select operators
+            case 'equals': return 'Is';
+            case 'does_not_equal': return 'Is not';
+            // Multi-select operators  
             case 'contains': return 'Contains';
             case 'does_not_contain': return 'Does not contain';
+            // Text operators
             case 'starts_with': return 'Starts with';
             case 'ends_with': return 'Ends with';
+            // Number operators
+            case 'greater_than': return '>';
+            case 'less_than': return '<';
+            case 'greater_than_or_equal_to': return '≥';
+            case 'less_than_or_equal_to': return '≤';
+            case 'number_equals': return '=';
+            case 'number_does_not_equal': return '≠';
+            // Common operators
             case 'is_empty': return 'Is empty';
             case 'is_not_empty': return 'Is not empty';
-            case 'is_in': return 'Is one of'; // Notion UI says "Is" for multi-value select but internally it's IN
-            case 'is_not_in': return 'Is not one of'; // Notion UI says "Is not"
             default: return op;
         }
     }
 
+    // Notion-style valid operators per field type
     const validOperators = (() => {
-        const common = ['is_empty', 'is_not_empty'];
-        if (isSelect || isMultiSelect) return ['is_in', 'is_not_in', ...common, ...(isMultiSelect ? ['contains', 'does_not_contain'] : [])];
-        // Text defaults
-        return ['equals', 'not_equals', 'contains', 'does_not_contain', 'starts_with', 'ends_with', ...common];
+        const emptyOps = ['is_empty', 'is_not_empty'];
+
+        if (isSelect) {
+            // Select: is, is not, is empty, is not empty
+            return ['equals', 'does_not_equal', ...emptyOps];
+        }
+        if (isMultiSelect) {
+            // Multi-select: contains, does not contain, is empty, is not empty
+            return ['contains', 'does_not_contain', ...emptyOps];
+        }
+        if (isNumber) {
+            // Number: =, ≠, >, <, ≥, ≤, is empty, is not empty
+            return ['number_equals', 'number_does_not_equal', 'greater_than', 'less_than', 'greater_than_or_equal_to', 'less_than_or_equal_to', ...emptyOps];
+        }
+        // Text (default): is, is not, contains, does not contain, starts with, ends with, is empty, is not empty
+        return ['equals', 'does_not_equal', 'contains', 'does_not_contain', 'starts_with', 'ends_with', ...emptyOps];
     })();
 
     // Helper for multiselect values
@@ -234,10 +276,28 @@ const FilterRule = ({ condition, schema, schemaProperties, assets = [], onUpdate
                 </Dropdown>
             </div>
 
-            {/* Value Selector */}
+            {/* Value Selector - varies by field type */}
             {condition.operator !== 'is_empty' && condition.operator !== 'is_not_empty' && (
                 <div className="flex-1 w-full min-w-[150px]">
-                    {(isSelect || isMultiSelect) ? (
+                    {isSelect ? (
+                        // Select: Single dropdown
+                        <Dropdown
+                            label={condition.value || "Select value..."}
+                            searchable
+                            searchPlaceholder="값 검색..."
+                        >
+                            {options.map(opt => (
+                                <div
+                                    key={opt.id}
+                                    onClick={() => onUpdate({ value: opt.name })}
+                                    className={`px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded cursor-pointer flex items-center gap-2 ${condition.value === opt.name ? 'bg-indigo-50' : ''}`}
+                                >
+                                    <span className={`px-2 py-0.5 rounded text-[10px] bg-${opt.color}-100`}>{opt.name}</span>
+                                </div>
+                            ))}
+                        </Dropdown>
+                    ) : isMultiSelect ? (
+                        // Multi-select: Checkbox list (keep open)
                         <Dropdown
                             label={
                                 selectedValues.length > 0
@@ -246,10 +306,10 @@ const FilterRule = ({ condition, schema, schemaProperties, assets = [], onUpdate
                                             <span key={v} className="px-1.5 bg-indigo-100 text-indigo-700 rounded text-[10px]">{v}</span>
                                         ))}
                                     </div>
-                                    : "Select options..."
+                                    : "Select tags..."
                             }
                             searchable
-                            searchPlaceholder="옵션 검색..."
+                            searchPlaceholder="태그 검색..."
                         >
                             {options.map(opt => {
                                 const isChecked = selectedValues.includes(opt.name);
@@ -271,12 +331,22 @@ const FilterRule = ({ condition, schema, schemaProperties, assets = [], onUpdate
                                 );
                             })}
                         </Dropdown>
+                    ) : isNumber ? (
+                        // Number: Number input
+                        <input
+                            type="number"
+                            value={condition.value}
+                            onChange={(e) => onUpdate({ value: e.target.value })}
+                            placeholder="숫자 입력..."
+                            className="w-full bg-slate-50 border border-slate-200 rounded-md px-3 py-1.5 text-xs outline-none focus:border-indigo-400 transition-colors"
+                        />
                     ) : (
+                        // Text: Text input
                         <input
                             type="text"
                             value={condition.value}
                             onChange={(e) => onUpdate({ value: e.target.value })}
-                            placeholder="Type a value..."
+                            placeholder="값 입력..."
                             className="w-full bg-slate-50 border border-slate-200 rounded-md px-3 py-1.5 text-xs outline-none focus:border-indigo-400 transition-colors"
                         />
                     )}

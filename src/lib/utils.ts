@@ -1,4 +1,28 @@
-export type FilterOperator = 'equals' | 'contains' | 'does_not_contain' | 'not_equals' | 'is_empty' | 'is_not_empty' | 'is_in' | 'is_not_in' | 'starts_with' | 'ends_with';
+// Notion-style filter operators
+export type FilterOperator =
+    // Text/Select: is, is not
+    | 'equals'
+    | 'does_not_equal'
+    // Text/Multi-select: contains, does not contain  
+    | 'contains'
+    | 'does_not_contain'
+    // Text: starts with, ends with
+    | 'starts_with'
+    | 'ends_with'
+    // Number comparisons
+    | 'number_equals'
+    | 'number_does_not_equal'
+    | 'greater_than'
+    | 'less_than'
+    | 'greater_than_or_equal_to'
+    | 'less_than_or_equal_to'
+    // Empty checks
+    | 'is_empty'
+    | 'is_not_empty'
+    // Legacy (for backwards compatibility)
+    | 'not_equals'
+    | 'is_in'
+    | 'is_not_in';
 
 export type SortDirection = 'ascending' | 'descending';
 
@@ -128,11 +152,28 @@ export const toNotionFilter = (filter: FilterCondition, schemaTypes: Record<stri
         }
     }
 
+    // Number type
+    if (type === 'number') {
+        const numVal = parseFloat(val || '0');
+        switch (filter.operator) {
+            case 'number_equals': return { property: filter.field, number: { equals: numVal } };
+            case 'number_does_not_equal': return { property: filter.field, number: { does_not_equal: numVal } };
+            case 'greater_than': return { property: filter.field, number: { greater_than: numVal } };
+            case 'less_than': return { property: filter.field, number: { less_than: numVal } };
+            case 'greater_than_or_equal_to': return { property: filter.field, number: { greater_than_or_equal_to: numVal } };
+            case 'less_than_or_equal_to': return { property: filter.field, number: { less_than_or_equal_to: numVal } };
+            case 'is_empty': return { property: filter.field, number: { is_empty: true } };
+            case 'is_not_empty': return { property: filter.field, number: { is_not_empty: true } };
+            default: return { property: filter.field, number: { equals: numVal } };
+        }
+    }
+
     // Default (Rich Text, Title, URL, Email, Phone)
     const textCondition: any = {};
     switch (filter.operator) {
         case 'equals': textCondition.equals = val; break;
-        case 'not_equals': textCondition.does_not_equal = val; break;
+        case 'does_not_equal': textCondition.does_not_equal = val; break;
+        case 'not_equals': textCondition.does_not_equal = val; break; // Legacy support
         case 'contains': textCondition.contains = val; break;
         case 'does_not_contain': textCondition.does_not_contain = val; break;
         case 'starts_with': textCondition.starts_with = val; break;
@@ -141,10 +182,6 @@ export const toNotionFilter = (filter: FilterCondition, schemaTypes: Record<stri
         case 'is_not_empty': textCondition.is_not_empty = true; break;
         default: textCondition.contains = val;
     }
-
-    // Specialized types might need adjustments (e.g. number, date).
-    // For now, assume most searchable fields are text-like or handled as text.
-    // If type is 'number', we might need number parsing.
 
     // Check if type actually supports these? Rich Text supports all.
     return { property: filter.field, [type === 'title' ? 'title' : 'rich_text']: textCondition };
