@@ -21,7 +21,7 @@ export const AIFilterButton: React.FC<AIFilterButtonProps> = ({
     const [transcript, setTranscript] = useState('');
     const [showPreview, setShowPreview] = useState(false);
     const [generatedFilter, setGeneratedFilter] = useState<FilterCondition | null>(null);
-    const [explanation, setExplanation] = useState('');
+    const [_explanation, setExplanation] = useState('');
     const [error, setError] = useState('');
     const [mode, setMode] = useState<'voice' | 'screenshot' | null>(null);
 
