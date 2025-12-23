@@ -876,6 +876,7 @@ const App = () => {
                     initialFilter={activeFilter}
                     initialSorts={activeSorts} // Pass sorts
                     initialVisibleColumns={visibleColumns} // Pass current view
+                    assets={assets} // Pass assets for count calculation
                     onSave={(filter: any, columns: string[], sorts: any[]) => {
                         setActiveFilter(filter);
                         setVisibleColumns(columns); // Apply changes

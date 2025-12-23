@@ -1,9 +1,9 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { X, Trash2, Plus, Save, CheckSquare, Square, ChevronDown } from 'lucide-react'; // Added icons
 import { FilterCondition, SortRule, SortDirection, FilterTemplate } from '../lib/utils'; // Added types
 
-import { NotionProperty } from '../lib/notion';
+import { NotionProperty, Asset } from '../lib/notion';
 
 interface FilterBuilderModalProps {
     schema: string[];
@@ -12,11 +12,51 @@ interface FilterBuilderModalProps {
     initialSorts?: SortRule[]; // New prop
     initialVisibleColumns?: string[];
     activeTemplateId?: string | null; // For overwrite check
+    assets?: Asset[]; // For calculating filter match counts
     onSave: (filter: FilterCondition, visibleColumns: string[], sorts: SortRule[]) => void;
     onSaveAsTemplate: (name: string, filter: FilterCondition, visibleColumns: string[], sorts: SortRule[]) => void;
     onUpdateTemplate?: (updates: Partial<FilterTemplate>) => void; // For overwrite
     onClose: () => void;
 }
+
+// Helper: Evaluate if a single asset matches a filter condition
+const evaluateFilter = (asset: Asset, filter: FilterCondition): boolean => {
+    if (!filter) return true;
+
+    // Group condition
+    if (filter.conditions && filter.conditions.length > 0) {
+        const results = filter.conditions.map(c => evaluateFilter(asset, c));
+        return filter.logic === 'AND'
+            ? results.every(r => r)
+            : results.some(r => r);
+    }
+
+    // Single condition
+    if (!filter.field) return true;
+
+    const value = asset.values[filter.field] || '';
+    const filterValue = filter.value || '';
+    const filterValues = filterValue.split('|').filter(Boolean);
+
+    switch (filter.operator) {
+        case 'equals': return value === filterValue;
+        case 'not_equals': return value !== filterValue;
+        case 'contains': return value.toLowerCase().includes(filterValue.toLowerCase());
+        case 'does_not_contain': return !value.toLowerCase().includes(filterValue.toLowerCase());
+        case 'starts_with': return value.toLowerCase().startsWith(filterValue.toLowerCase());
+        case 'ends_with': return value.toLowerCase().endsWith(filterValue.toLowerCase());
+        case 'is_empty': return !value || value.trim() === '';
+        case 'is_not_empty': return !!value && value.trim() !== '';
+        case 'is_in': return filterValues.some(fv => value.includes(fv));
+        case 'is_not_in': return !filterValues.some(fv => value.includes(fv));
+        default: return true;
+    }
+};
+
+// Count matching assets for a filter condition
+const countMatches = (assets: Asset[], filter: FilterCondition): number => {
+    return assets.filter(asset => evaluateFilter(asset, filter)).length;
+};
 
 // Custom Dropdown Component for Notion-like feel with optional search
 const Dropdown = ({ value, label, children, className = "", searchable = false, searchPlaceholder = "Search..." }: {
@@ -111,12 +151,22 @@ const Dropdown = ({ value, label, children, className = "", searchable = false, 
     );
 };
 
-const FilterRule = ({ condition, schema, schemaProperties, onUpdate, onRemove }: { condition: FilterCondition, schema: string[], schemaProperties?: Record<string, NotionProperty>, onUpdate: (c: Partial<FilterCondition>) => void, onRemove: () => void }) => {
+const FilterRule = ({ condition, schema, schemaProperties, assets = [], onUpdate, onRemove }: {
+    condition: FilterCondition,
+    schema: string[],
+    schemaProperties?: Record<string, NotionProperty>,
+    assets?: Asset[],
+    onUpdate: (c: Partial<FilterCondition>) => void,
+    onRemove: () => void
+}) => {
     // Determine field type
     const fieldType = schemaProperties?.[condition.field || '']?.type || 'rich_text';
     const isSelect = fieldType === 'select' || fieldType === 'status';
     const isMultiSelect = fieldType === 'multi_select';
     const options = schemaProperties?.[condition.field || '']?.options || [];
+
+    // Calculate matching count for this single condition
+    const matchCount = useMemo(() => countMatches(assets, condition), [assets, condition]);
 
     const getOperatorLabel = (op: string) => {
         switch (op) {
@@ -145,7 +195,13 @@ const FilterRule = ({ condition, schema, schemaProperties, onUpdate, onRemove }:
     const selectedValues = condition.value?.split('|').filter(Boolean) || [];
 
     return (
-        <div className="flex flex-col md:flex-row md:items-center gap-2 p-2 bg-white border border-slate-200 rounded-md hover:border-slate-300 transition-all shadow-sm">
+        <div className="flex flex-col md:flex-row md:items-center gap-2 p-2 bg-white border border-slate-200 rounded-md hover:border-slate-300 transition-all shadow-sm relative">
+            {/* Match Count Badge */}
+            {assets.length > 0 && (
+                <div className="absolute -right-2 -top-2 px-1.5 py-0.5 bg-indigo-500 text-white text-[9px] font-bold rounded-full min-w-[20px] text-center shadow-sm">
+                    {matchCount}
+                </div>
+            )}
             {/* Field Selector */}
             <div className="w-full md:w-1/3 min-w-[150px]">
                 <Dropdown label={condition.field || "Select property"} value={condition.field} searchable searchPlaceholder="컬럼 검색...">
@@ -232,10 +288,21 @@ const FilterRule = ({ condition, schema, schemaProperties, onUpdate, onRemove }:
     );
 };
 
-const FilterGroup = ({ condition, schema, schemaProperties, onUpdate, onRemove, depth = 0 }: { condition: FilterCondition, schema: string[], schemaProperties?: Record<string, NotionProperty>, onUpdate: (c: Partial<FilterCondition>) => void, onRemove: () => void, depth?: number }) => {
+const FilterGroup = ({ condition, schema, schemaProperties, assets = [], onUpdate, onRemove, depth = 0 }: {
+    condition: FilterCondition,
+    schema: string[],
+    schemaProperties?: Record<string, NotionProperty>,
+    assets?: Asset[],
+    onUpdate: (c: Partial<FilterCondition>) => void,
+    onRemove: () => void,
+    depth?: number
+}) => {
     // Drag state
     const [draggedId, setDraggedId] = useState<string | null>(null);
     const [dragOverId, setDragOverId] = useState<string | null>(null);
+
+    // Calculate matching count for this group
+    const groupMatchCount = useMemo(() => countMatches(assets, condition), [assets, condition]);
 
     const updateChild = (id: string, updates: Partial<FilterCondition>) => {
         const newConditions = condition.conditions?.map(c => c.id === id ? { ...c, ...updates } : c);
@@ -313,6 +380,12 @@ const FilterGroup = ({ condition, schema, schemaProperties, onUpdate, onRemove, 
                         className={`px-3 py-1 rounded-md text-[10px] font-bold transition-all ${condition.logic === 'OR' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-400 hover:text-slate-600'}`}
                     >OR</button>
                 </div>
+                {/* Group Match Count */}
+                {assets.length > 0 && (
+                    <div className="px-2 py-0.5 bg-emerald-500 text-white text-[10px] font-bold rounded-full">
+                        {groupMatchCount}건
+                    </div>
+                )}
                 {depth > 0 && (
                     <button onClick={onRemove} className="text-xs text-red-400 hover:text-red-500 font-bold px-2">Delete Group</button>
                 )}
@@ -354,6 +427,7 @@ const FilterGroup = ({ condition, schema, schemaProperties, onUpdate, onRemove, 
                                 condition={child}
                                 schema={schema}
                                 schemaProperties={schemaProperties}
+                                assets={assets}
                                 onUpdate={(u) => updateChild(child.id, u)}
                                 onRemove={() => removeChild(child.id)}
                                 depth={depth + 1}
@@ -363,6 +437,7 @@ const FilterGroup = ({ condition, schema, schemaProperties, onUpdate, onRemove, 
                                 condition={child}
                                 schema={schema}
                                 schemaProperties={schemaProperties}
+                                assets={assets}
                                 onUpdate={(u) => updateChild(child.id, u)}
                                 onRemove={() => removeChild(child.id)}
                             />
@@ -435,7 +510,7 @@ const SortBuilder = ({ sorts, schema, onUpdate }: { sorts: SortRule[], schema: s
     );
 };
 
-export const FilterBuilderModal: React.FC<FilterBuilderModalProps> = ({ schema, schemaProperties, initialFilter, initialSorts = [], initialVisibleColumns, activeTemplateId, onSave, onSaveAsTemplate, onUpdateTemplate, onClose }) => {
+export const FilterBuilderModal: React.FC<FilterBuilderModalProps> = ({ schema, schemaProperties, initialFilter, initialSorts = [], initialVisibleColumns, activeTemplateId, assets = [], onSave, onSaveAsTemplate, onUpdateTemplate, onClose }) => {
     const [filter, setFilter] = useState<FilterCondition>(JSON.parse(JSON.stringify(initialFilter)));
     const [sorts, setSorts] = useState<SortRule[]>(initialSorts);
     const [visibleCols, setVisibleCols] = useState<string[]>(initialVisibleColumns && initialVisibleColumns.length > 0 ? initialVisibleColumns : schema);
@@ -554,6 +629,7 @@ export const FilterBuilderModal: React.FC<FilterBuilderModalProps> = ({ schema, 
                                     condition={filter}
                                     schema={schema}
                                     schemaProperties={schemaProperties}
+                                    assets={assets}
                                     onUpdate={handleRootUpdate}
                                     onRemove={() => { }} // Root cannot be removed
                                     depth={0}
