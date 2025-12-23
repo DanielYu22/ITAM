@@ -1,4 +1,5 @@
 import React, { useState, useRef } from 'react';
+import ReactDOM from 'react-dom';
 import { Mic, MicOff, Loader2, Sparkles, X, Check, Camera } from 'lucide-react';
 import { GeminiClient } from '../lib/gemini';
 import { FilterCondition } from '../lib/utils';
@@ -250,48 +251,57 @@ export const AIFilterButton: React.FC<AIFilterButtonProps> = ({
                 </div>
             )}
 
-            {/* Preview Modal */}
-            {showPreview && generatedFilter && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-                    <div className="bg-theme-secondary rounded-3xl shadow-2xl max-w-md w-full overflow-hidden">
+            {/* Preview Modal - Using Portal to render outside sidebar */}
+            {showPreview && generatedFilter && ReactDOM.createPortal(
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4">
+                    <div className="bg-theme-secondary rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border border-theme-primary">
                         <div className="p-6 border-b border-theme-primary">
                             <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                    <Sparkles className="text-indigo-500" size={20} />
-                                    <h3 className="text-lg font-bold text-theme-primary">AI 생성 필터</h3>
+                                <div className="flex items-center gap-3">
+                                    <div className="p-2 bg-indigo-500/20 rounded-xl">
+                                        <Sparkles className="text-indigo-400" size={24} />
+                                    </div>
+                                    <h3 className="text-xl font-bold text-theme-primary">AI 생성 필터</h3>
                                 </div>
-                                <button onClick={closePreview} className="text-theme-tertiary hover:text-red-500">
-                                    <X size={20} />
+                                <button onClick={closePreview} className="p-2 text-theme-tertiary hover:text-red-500 hover:bg-red-500/10 rounded-xl transition-colors">
+                                    <X size={24} />
                                 </button>
                             </div>
                             {transcript && (
-                                <p className="text-sm text-theme-tertiary mt-2">
-                                    "{transcript}"
+                                <p className="text-sm text-theme-tertiary mt-3 bg-theme-tertiary p-3 rounded-xl">
+                                    "🎤 {transcript}"
+                                </p>
+                            )}
+                            {mode === 'screenshot' && (
+                                <p className="text-sm text-theme-tertiary mt-3 bg-theme-tertiary p-3 rounded-xl">
+                                    "📸 스크린샷에서 추출된 필터"
                                 </p>
                             )}
                         </div>
 
-                        <div className="p-6 max-h-64 overflow-auto">
+                        <div className="p-6 max-h-80 overflow-auto bg-theme-primary">
+                            <p className="text-xs font-bold text-theme-tertiary uppercase tracking-wider mb-4">필터 조건</p>
                             {renderFilterPreview(generatedFilter)}
                         </div>
 
-                        <div className="p-4 bg-theme-tertiary flex justify-end gap-3">
+                        <div className="p-4 bg-theme-tertiary flex justify-end gap-3 border-t border-theme-primary">
                             <button
                                 onClick={closePreview}
-                                className="px-4 py-2 rounded-xl text-theme-secondary hover:bg-theme-secondary transition-colors"
+                                className="px-6 py-3 rounded-xl text-theme-secondary hover:bg-theme-secondary font-medium transition-colors"
                             >
                                 취소
                             </button>
                             <button
                                 onClick={applyFilter}
-                                className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition-colors flex items-center gap-2"
+                                className="px-6 py-3 rounded-xl bg-indigo-600 text-white font-bold hover:bg-indigo-700 transition-colors flex items-center gap-2 shadow-lg shadow-indigo-600/20"
                             >
-                                <Check size={16} />
+                                <Check size={20} />
                                 필터 적용
                             </button>
                         </div>
                     </div>
-                </div>
+                </div>,
+                document.body
             )}
         </>
     );
