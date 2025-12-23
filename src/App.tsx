@@ -394,44 +394,35 @@ const App = () => {
         }
     }, [appMode]);
 
-    // Load templates function - can be called manually for refresh
+    // Load templates function - ALWAYS from Notion (localStorage is just cache)
     const loadAllSettings = async () => {
         const client = new NotionClient(notionConfig);
+        console.log('[Settings] Loading from Notion...');
         const notionSettings = await client.loadSettings();
 
         if (notionSettings) {
-            // Load from Notion
+            // Load from Notion - this is the source of truth
+            let loaded: FilterTemplate[] = [];
             if (notionSettings.templates && Array.isArray(notionSettings.templates)) {
-                let loaded = notionSettings.templates;
-                if (!loaded.find((t: FilterTemplate) => t.id === 'all_tasks_complex')) {
-                    loaded = [...loaded, ALL_TASKS_TEMPLATE];
-                }
-                setTemplates(loaded);
-                localStorage.setItem('nexus_itam_templates', JSON.stringify(loaded));
-                console.log('[Settings] Loaded templates from Notion');
+                loaded = notionSettings.templates;
             }
+            // Always include the default template
+            if (!loaded.find((t: FilterTemplate) => t.id === 'all_tasks_complex')) {
+                loaded = [...loaded, ALL_TASKS_TEMPLATE];
+            }
+            setTemplates(loaded);
+            // Cache to localStorage
+            localStorage.setItem('nexus_itam_templates', JSON.stringify(loaded));
+            console.log('[Settings] ✅ Loaded', loaded.length, 'templates from Notion');
+
             if (notionSettings.fieldConfig) {
                 localStorage.setItem('nexus_itam_field_config', notionSettings.fieldConfig);
-                console.log('[Settings] Loaded field config from Notion');
             }
             return true;
         } else {
-            // Fallback to localStorage
-            const saved = localStorage.getItem('nexus_itam_templates');
-            if (saved) {
-                try {
-                    const parsed = JSON.parse(saved);
-                    if (!parsed.find((t: FilterTemplate) => t.id === 'all_tasks_complex')) {
-                        parsed.push(ALL_TASKS_TEMPLATE);
-                    }
-                    setTemplates(parsed);
-                } catch (e) {
-                    console.error("Failed to load templates", e);
-                    setTemplates([ALL_TASKS_TEMPLATE]);
-                }
-            } else {
-                setTemplates([ALL_TASKS_TEMPLATE]);
-            }
+            // Notion failed - show empty state with default template only
+            console.log('[Settings] ⚠️ Notion not available, using default template only');
+            setTemplates([ALL_TASKS_TEMPLATE]);
             return false;
         }
     };
