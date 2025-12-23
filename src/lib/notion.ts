@@ -268,9 +268,16 @@ export class NotionClient {
 
     async loadSettings(): Promise<{ templates?: any[], fieldConfig?: string } | null> {
         try {
+            console.log('[Notion Settings] Loading settings...');
+
+            // Get schema FIRST to find the correct title property name
+            const schemaProps = await this.getDatabaseSchema();
+            const titlePropName = Object.keys(schemaProps).find(k => schemaProps[k].type === 'title') || 'Name';
+            console.log('[Notion Settings] Title property name:', titlePropName);
+
             const targetUrl = `/api/notion/v1/databases/${this.databaseId}/query`;
 
-            // Search for settings page by title
+            // Search for settings page by title using the CORRECT property name
             const response = await fetch(targetUrl, {
                 method: 'POST',
                 headers: {
@@ -280,7 +287,7 @@ export class NotionClient {
                 },
                 body: JSON.stringify({
                     filter: {
-                        property: 'title',
+                        property: titlePropName,  // Use the actual title property name!
                         title: { contains: this.SETTINGS_MARKER }
                     },
                     page_size: 1
@@ -288,36 +295,53 @@ export class NotionClient {
             });
 
             if (!response.ok) {
-                console.warn('[Notion Settings] Failed to query settings page');
+                const errText = await response.text();
+                console.warn('[Notion Settings] Failed to query settings page:', response.status, errText);
                 return null;
             }
 
             const data = await response.json();
             if (!data.results || data.results.length === 0) {
-                console.log('[Notion Settings] No settings page found');
+                console.log('[Notion Settings] No settings page found in database');
                 return null;
             }
 
             const page = data.results[0];
+            console.log('[Notion Settings] Found settings page:', page.id);
+
             // Find the rich_text property that stores settings JSON
             const props = page.properties;
             let settingsJson = '';
 
             // Look for a property that contains our settings
             for (const [key, prop] of Object.entries(props) as [string, any][]) {
-                if (prop.type === 'rich_text' && key.toLowerCase().includes('note') || key.toLowerCase().includes('memo') || key.toLowerCase().includes('설명')) {
+                if (prop.type === 'rich_text' && (key.toLowerCase().includes('note') || key.toLowerCase().includes('memo') || key.toLowerCase().includes('설명'))) {
                     settingsJson = prop.rich_text?.map((t: any) => t.plain_text).join('') || '';
                     if (settingsJson.startsWith('{')) break;
                 }
             }
 
+            // If no specific field found, try any rich_text field
             if (!settingsJson || !settingsJson.startsWith('{')) {
-                console.log('[Notion Settings] No valid settings JSON found');
+                for (const [key, prop] of Object.entries(props) as [string, any][]) {
+                    if (prop.type === 'rich_text') {
+                        const text = prop.rich_text?.map((t: any) => t.plain_text).join('') || '';
+                        if (text.startsWith('{')) {
+                            settingsJson = text;
+                            console.log('[Notion Settings] Found settings in field:', key);
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (!settingsJson || !settingsJson.startsWith('{')) {
+                console.log('[Notion Settings] No valid settings JSON found in page');
                 return null;
             }
 
             const parsed = JSON.parse(settingsJson);
-            console.log('[Notion Settings] Loaded settings successfully');
+            console.log('[Notion Settings] ✅ Loaded settings successfully, templates:', parsed.templates?.length || 0);
             return parsed;
         } catch (error) {
             console.error('[Notion Settings] Load error:', error);
@@ -328,8 +352,24 @@ export class NotionClient {
     async saveSettings(settings: { templates?: any[], fieldConfig?: string }): Promise<boolean> {
         try {
             const settingsJson = JSON.stringify(settings);
+            console.log('[Notion Settings] Saving settings, JSON length:', settingsJson.length);
 
-            // First, try to find existing settings page
+            // Get schema FIRST to find the correct title property name
+            const schemaProps = await this.getDatabaseSchema();
+            const titlePropName = Object.keys(schemaProps).find(k => schemaProps[k].type === 'title') || 'Name';
+            const textPropName = Object.keys(schemaProps).find(k =>
+                schemaProps[k].type === 'rich_text' &&
+                (k.toLowerCase().includes('note') || k.toLowerCase().includes('memo') || k.toLowerCase().includes('설명'))
+            ) || Object.keys(schemaProps).find(k => schemaProps[k].type === 'rich_text');
+
+            console.log('[Notion Settings] Using title property:', titlePropName, ', text property:', textPropName);
+
+            if (!textPropName) {
+                console.error('[Notion Settings] No rich_text property found for storing settings');
+                return false;
+            }
+
+            // Search for existing settings page using the CORRECT title property name
             const targetUrl = `/api/notion/v1/databases/${this.databaseId}/query`;
             const searchResponse = await fetch(targetUrl, {
                 method: 'POST',
@@ -340,28 +380,21 @@ export class NotionClient {
                 },
                 body: JSON.stringify({
                     filter: {
-                        property: 'title',
+                        property: titlePropName,  // Use the actual title property name!
                         title: { contains: this.SETTINGS_MARKER }
                     },
                     page_size: 1
                 })
             });
 
+            if (!searchResponse.ok) {
+                const errText = await searchResponse.text();
+                console.error('[Notion Settings] Search failed:', searchResponse.status, errText);
+            }
+
             const searchData = await searchResponse.json();
             const existingPage = searchData.results?.[0];
-
-            // Get schema to find the title property name and a rich_text property
-            const schemaProps = await this.getDatabaseSchema();
-            const titlePropName = Object.keys(schemaProps).find(k => schemaProps[k].type === 'title') || 'Name';
-            const textPropName = Object.keys(schemaProps).find(k =>
-                schemaProps[k].type === 'rich_text' &&
-                (k.toLowerCase().includes('note') || k.toLowerCase().includes('memo') || k.toLowerCase().includes('설명'))
-            ) || Object.keys(schemaProps).find(k => schemaProps[k].type === 'rich_text');
-
-            if (!textPropName) {
-                console.error('[Notion Settings] No rich_text property found for storing settings');
-                return false;
-            }
+            console.log('[Notion Settings] Existing settings page found:', !!existingPage);
 
             const properties: any = {
                 [titlePropName]: { title: [{ text: { content: this.SETTINGS_MARKER + new Date().toISOString().slice(0, 10) } }] },
@@ -371,6 +404,7 @@ export class NotionClient {
             if (existingPage) {
                 // Update existing page
                 const updateUrl = `/api/notion/v1/pages/${existingPage.id}`;
+                console.log('[Notion Settings] Updating existing page:', existingPage.id);
                 const updateResponse = await fetch(updateUrl, {
                     method: 'PATCH',
                     headers: {
@@ -382,12 +416,16 @@ export class NotionClient {
                 });
 
                 if (updateResponse.ok) {
-                    console.log('[Notion Settings] Updated settings page');
+                    console.log('[Notion Settings] ✅ Updated settings page successfully');
                     return true;
+                } else {
+                    const errText = await updateResponse.text();
+                    console.error('[Notion Settings] ❌ Update failed:', updateResponse.status, errText);
                 }
             } else {
                 // Create new page
                 const createUrl = `/api/notion/v1/pages`;
+                console.log('[Notion Settings] Creating new settings page...');
                 const createResponse = await fetch(createUrl, {
                     method: 'POST',
                     headers: {
@@ -402,8 +440,12 @@ export class NotionClient {
                 });
 
                 if (createResponse.ok) {
-                    console.log('[Notion Settings] Created settings page');
+                    const created = await createResponse.json();
+                    console.log('[Notion Settings] ✅ Created settings page:', created.id);
                     return true;
+                } else {
+                    const errText = await createResponse.text();
+                    console.error('[Notion Settings] ❌ Create failed:', createResponse.status, errText);
                 }
             }
 
