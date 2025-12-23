@@ -877,6 +877,18 @@ const App = () => {
                     initialSorts={activeSorts} // Pass sorts
                     initialVisibleColumns={visibleColumns} // Pass current view
                     assets={assets} // Pass assets for count calculation
+                    onLoadAllAssets={async () => {
+                        // Fetch all assets without filtering for accurate count
+                        try {
+                            const client = new NotionClient(notionConfig);
+                            const allResults = await client.fetchAllDatabase(undefined, []);
+                            console.log('[App] Loaded all assets for filter count:', allResults.assets.length);
+                            return allResults.assets;
+                        } catch (e) {
+                            console.error('[App] Failed to load all assets:', e);
+                            return assets;
+                        }
+                    }}
                     onSave={(filter: any, columns: string[], sorts: any[]) => {
                         setActiveFilter(filter);
                         setVisibleColumns(columns); // Apply changes

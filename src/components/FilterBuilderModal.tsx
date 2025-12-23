@@ -13,6 +13,7 @@ interface FilterBuilderModalProps {
     initialVisibleColumns?: string[];
     activeTemplateId?: string | null; // For overwrite check
     assets?: Asset[]; // For calculating filter match counts
+    onLoadAllAssets?: () => Promise<Asset[]>; // Callback to load all assets for accurate count
     onSave: (filter: FilterCondition, visibleColumns: string[], sorts: SortRule[]) => void;
     onSaveAsTemplate: (name: string, filter: FilterCondition, visibleColumns: string[], sorts: SortRule[]) => void;
     onUpdateTemplate?: (updates: Partial<FilterTemplate>) => void; // For overwrite
@@ -513,12 +514,33 @@ const SortBuilder = ({ sorts, schema, onUpdate }: { sorts: SortRule[], schema: s
     );
 };
 
-export const FilterBuilderModal: React.FC<FilterBuilderModalProps> = ({ schema, schemaProperties, initialFilter, initialSorts = [], initialVisibleColumns, activeTemplateId, assets = [], onSave, onSaveAsTemplate, onUpdateTemplate, onClose }) => {
+export const FilterBuilderModal: React.FC<FilterBuilderModalProps> = ({ schema, schemaProperties, initialFilter, initialSorts = [], initialVisibleColumns, activeTemplateId, assets = [], onLoadAllAssets, onSave, onSaveAsTemplate, onUpdateTemplate, onClose }) => {
     const [filter, setFilter] = useState<FilterCondition>(JSON.parse(JSON.stringify(initialFilter)));
     const [sorts, setSorts] = useState<SortRule[]>(initialSorts);
     const [visibleCols, setVisibleCols] = useState<string[]>(initialVisibleColumns && initialVisibleColumns.length > 0 ? initialVisibleColumns : schema);
     const [templateName, setTemplateName] = useState("");
     const [activeTab, setActiveTab] = useState<'filter' | 'sort' | 'view'>('filter'); // Added Sort tab
+
+    // State for all assets (for accurate count calculation)
+    const [allAssets, setAllAssets] = useState<Asset[]>(assets);
+    const [isLoadingAllAssets, setIsLoadingAllAssets] = useState(false);
+
+    // Load all assets on mount if callback provided
+    useEffect(() => {
+        if (onLoadAllAssets && assets.length < 500) { // Only load if we don't have many
+            setIsLoadingAllAssets(true);
+            onLoadAllAssets().then((loadedAssets: Asset[]) => {
+                setAllAssets(loadedAssets);
+                setIsLoadingAllAssets(false);
+                console.log('[FilterBuilder] Loaded all assets:', loadedAssets.length);
+            }).catch(() => {
+                setAllAssets(assets);
+                setIsLoadingAllAssets(false);
+            });
+        } else {
+            setAllAssets(assets);
+        }
+    }, [onLoadAllAssets, assets]);
 
     // Find Title Column
     const titleColumn = Object.keys(schemaProperties || {}).find(k => schemaProperties?.[k].type === 'title') || '';
@@ -627,12 +649,24 @@ export const FilterBuilderModal: React.FC<FilterBuilderModalProps> = ({ schema, 
                         </div>
                     ) : activeTab === 'filter' ? (
                         <div className="space-y-6">
+                            {/* Loading indicator */}
+                            {isLoadingAllAssets && (
+                                <div className="text-xs text-slate-500 flex items-center gap-2 mb-2">
+                                    <div className="animate-spin w-3 h-3 border-2 border-indigo-500 border-t-transparent rounded-full" />
+                                    전체 자산 로딩 중...
+                                </div>
+                            )}
+                            {!isLoadingAllAssets && allAssets.length > 0 && (
+                                <div className="text-xs text-slate-500 mb-2">
+                                    총 {allAssets.length}개 자산 기준으로 계산
+                                </div>
+                            )}
                             <div className="bg-slate-50/50 p-6 rounded-3xl border border-slate-100">
                                 <FilterGroup
                                     condition={filter}
                                     schema={schema}
                                     schemaProperties={schemaProperties}
-                                    assets={assets}
+                                    assets={allAssets}
                                     onUpdate={handleRootUpdate}
                                     onRemove={() => { }} // Root cannot be removed
                                     depth={0}
