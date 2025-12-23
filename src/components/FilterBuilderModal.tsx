@@ -166,7 +166,11 @@ const FilterRule = ({ condition, schema, schemaProperties, assets = [], onUpdate
     const options = schemaProperties?.[condition.field || '']?.options || [];
 
     // Calculate matching count for this single condition
-    const matchCount = useMemo(() => countMatches(assets, condition), [assets, condition]);
+    const matchCount = useMemo(() => {
+        const count = countMatches(assets, condition);
+        console.log('[FilterRule] Count for', condition.field, condition.operator, ':', count, 'from', assets.length, 'assets');
+        return count;
+    }, [assets, condition]);
 
     const getOperatorLabel = (op: string) => {
         switch (op) {
@@ -280,11 +284,9 @@ const FilterRule = ({ condition, schema, schemaProperties, assets = [], onUpdate
 
             {/* Match Count Badge + Delete Button */}
             <div className="flex items-center gap-1 shrink-0">
-                {assets.length > 0 && (
-                    <div className="px-2 py-0.5 bg-indigo-500 text-white text-[9px] font-bold rounded-full">
-                        {matchCount}
-                    </div>
-                )}
+                <div className="px-2 py-0.5 bg-indigo-500 text-white text-[9px] font-bold rounded-full">
+                    {matchCount}
+                </div>
                 <button onClick={onRemove} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-all"><Trash2 size={14} /></button>
             </div>
         </div>
@@ -384,11 +386,9 @@ const FilterGroup = ({ condition, schema, schemaProperties, assets = [], onUpdat
                     >OR</button>
                 </div>
                 {/* Group Match Count */}
-                {assets.length > 0 && (
-                    <div className="px-2 py-0.5 bg-emerald-500 text-white text-[10px] font-bold rounded-full">
-                        {groupMatchCount}건
-                    </div>
-                )}
+                <div className="px-2 py-0.5 bg-emerald-500 text-white text-[10px] font-bold rounded-full">
+                    {groupMatchCount}건
+                </div>
                 {depth > 0 && (
                     <button onClick={onRemove} className="text-xs text-red-400 hover:text-red-500 font-bold px-2">Delete Group</button>
                 )}
