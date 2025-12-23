@@ -54,26 +54,23 @@ export const OfficeView: React.FC<OfficeViewProps> = ({
     // Helper to get sticky style
     const getStickyStyle = (col: string, index: number) => {
         const isTitle = schemaProperties[col]?.type === 'title';
-        // Or if we just strictly want the FIRST column to be sticky regardless of what it is?
-        // User asked "Title property column... basic criteria... always fixed on left".
-        // With our reordering above, displayColumns[0] IS the title (if visible).
         if (index === 0 && isTitle) {
-            return "sticky left-0 z-20 bg-white shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)] border-r border-slate-100";
+            return "sticky left-0 z-20 bg-theme-secondary shadow-[4px_0_12px_-4px_rgba(0,0,0,0.1)] border-r border-theme-primary";
         }
         return "";
     };
 
     return (
-        <div className="flex-1 flex flex-col overflow-hidden">
-            <header className="bg-white border-b border-slate-200 px-8 py-8 flex flex-col lg:flex-row lg:items-center justify-between shrink-0 gap-6">
+        <div className="flex-1 flex flex-col overflow-hidden bg-theme-primary">
+            <header className="bg-theme-secondary border-b border-theme-primary px-8 py-8 flex flex-col lg:flex-row lg:items-center justify-between shrink-0 gap-6">
                 <div>
-                    <h2 className="text-3xl font-black text-slate-900 tracking-tight">{activeTemplateName || "Notion ITAM"}</h2>
+                    <h2 className="text-3xl font-black text-theme-primary tracking-tight">{activeTemplateName || "Notion ITAM"}</h2>
                     <div className="flex items-center gap-3 mt-2">
-                        <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-50 text-emerald-600 rounded-lg text-[10px] font-bold border border-emerald-100">
+                        <div className="flex items-center gap-1.5 px-2 py-1 bg-emerald-500/10 text-emerald-500 rounded-lg text-[10px] font-bold border border-emerald-500/20">
                             <div className={`w-1.5 h-1.5 rounded-full bg-emerald-500 ${isSyncing ? 'animate-ping' : ''}`}></div>
                             Dynamic Sync
                         </div>
-                        <p className="text-xs text-slate-400 font-medium">
+                        <p className="text-xs text-theme-tertiary font-medium">
                             {isSyncing ? 'Fetching...' : `${assets.length} items`}
                         </p>
                     </div>
@@ -88,33 +85,33 @@ export const OfficeView: React.FC<OfficeViewProps> = ({
                     </button>
                     <button
                         onClick={onOpenFilter}
-                        className="flex items-center gap-2 px-5 py-3 bg-white border border-slate-200 text-slate-700 rounded-2xl text-sm font-bold hover:bg-slate-50 transition-all active:scale-95 shadow-sm"
+                        className="flex items-center gap-2 px-5 py-3 bg-theme-secondary border border-theme-primary text-theme-primary rounded-2xl text-sm font-bold hover:bg-theme-tertiary transition-all active:scale-95 shadow-sm"
                     >
                         <Filter size={18} /> Configure View
                     </button>
                     {(activeTemplateName || assets.length > 0) && (
-                        <button onClick={onClearFilter} className="text-xs text-slate-400 hover:text-red-500 font-bold px-2 py-1 transition-colors">Clear</button>
+                        <button onClick={onClearFilter} className="text-xs text-theme-tertiary hover:text-red-500 font-bold px-2 py-1 transition-colors">Clear</button>
                     )}
                 </div>
             </header>
 
             <div className="flex-1 overflow-auto p-4 md:p-8">
-                <div className="bg-white border border-slate-200 rounded-[2.5rem] shadow-sm overflow-hidden h-full flex flex-col">
+                <div className="bg-theme-secondary border border-theme-primary rounded-[2.5rem] shadow-sm overflow-hidden h-full flex flex-col">
                     <div className="overflow-auto flex-1 relative">
                         <table className="w-full text-left border-collapse min-w-max">
-                            <thead className="bg-slate-50/50 text-slate-400 text-[10px] font-black uppercase tracking-widest border-b border-slate-100 sticky top-0 z-30 backdrop-blur-md">
+                            <thead className="bg-theme-tertiary text-theme-tertiary text-[10px] font-black uppercase tracking-widest border-b border-theme-primary sticky top-0 z-30 backdrop-blur-md">
                                 <tr>
                                     {displayColumns.map((col: string, idx: number) => (
-                                        <th key={col} className={`px-8 py-6 bg-slate-50/90 ${getStickyStyle(col, idx)}`}>{col}</th>
+                                        <th key={col} className={`px-8 py-6 bg-theme-tertiary ${getStickyStyle(col, idx)}`}>{col}</th>
                                     ))}
                                     <th className="px-8 py-6 text-right">Notion</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-slate-50 text-sm">
+                            <tbody className="divide-y divide-theme-primary text-sm">
                                 {assets.map((a: Asset) => (
                                     <tr key={a.id} className="hover:bg-indigo-50/30 transition-all group">
                                         {displayColumns.map((col: string, idx: number) => (
-                                            <td key={col} className={`px-8 py-6 font-medium text-slate-700 ${getStickyStyle(col, idx) ? 'sticky left-0 z-10 bg-inherit' : ''} ${getStickyStyle(col, idx) && 'group-hover:bg-indigo-50/30 transition-colors'}`}>
+                                            <td key={col} className={`px-8 py-6 font-medium text-theme-primary ${getStickyStyle(col, idx) ? 'sticky left-0 z-10 bg-inherit' : ''} ${getStickyStyle(col, idx) && 'group-hover:bg-indigo-50/30 dark:group-hover:bg-indigo-900/20 transition-colors'}`}>
                                                 <EditableCell
                                                     field={col}
                                                     value={a.values[col] || ''}
@@ -127,7 +124,7 @@ export const OfficeView: React.FC<OfficeViewProps> = ({
                                         <td className="px-8 py-6 text-right">
                                             <button
                                                 onClick={() => window.open(a.url, '_blank')}
-                                                className="p-2 bg-slate-50 rounded-lg text-slate-300 hover:text-indigo-600 hover:bg-indigo-50 transition-all"
+                                                className="p-2 bg-theme-tertiary rounded-lg text-theme-tertiary hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-900/30 transition-all"
                                             >
                                                 <ExternalLink size={16} />
                                             </button>
@@ -137,9 +134,9 @@ export const OfficeView: React.FC<OfficeViewProps> = ({
                             </tbody>
                         </table>
                         {assets.length === 0 && !isSyncing && (
-                            <div className="py-32 flex flex-col items-center justify-center text-slate-300">
+                            <div className="py-32 flex flex-col items-center justify-center text-theme-tertiary">
                                 <Bug size={64} strokeWidth={1} className="mb-4 opacity-20" />
-                                <p className="text-lg font-bold text-slate-400">No data found or filter not applied.</p>
+                                <p className="text-lg font-bold text-theme-tertiary">No data found or filter not applied.</p>
                             </div>
                         )}
                     </div>
@@ -149,7 +146,7 @@ export const OfficeView: React.FC<OfficeViewProps> = ({
                         <button
                             onClick={onLoadMore}
                             disabled={isSyncing}
-                            className="bg-white border border-slate-200 text-slate-600 font-bold py-3 px-8 rounded-2xl hover:bg-slate-50 hover:border-indigo-200 hover:text-indigo-600 transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                            className="bg-theme-secondary border border-theme-primary text-theme-secondary font-bold py-3 px-8 rounded-2xl hover:bg-theme-tertiary hover:border-indigo-200 hover:text-indigo-600 transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                         >
                             {isSyncing ? <RefreshCw size={16} className="animate-spin" /> : <ChevronDown size={16} />}
                             Load More (+100)

@@ -15,7 +15,9 @@ import {
     Search,
     Download,
     BarChart3,
-    Menu
+    Menu,
+    Moon,
+    Sun
 } from 'lucide-react';
 import { Asset, NotionClient, NotionConfig, NotionProperty } from './lib/notion'; // Updated import
 import { FilterCondition, FilterTemplate, SortRule, DEFAULT_FILTER, toNotionFilter, toNotionSorts } from './lib/utils';
@@ -110,6 +112,21 @@ const App = () => {
 
     // Summary Fields Config
     const [summaryFields] = useState<string[]>(['Status', 'Type']); // Default fields
+
+    // Theme State
+    const [isDarkMode, setIsDarkMode] = useState(() => {
+        const saved = localStorage.getItem('nexus_theme');
+        if (saved) return saved === 'dark';
+        return window.matchMedia('(prefers-color-scheme: dark)').matches;
+    });
+
+    // Apply theme to document
+    useEffect(() => {
+        document.documentElement.setAttribute('data-theme', isDarkMode ? 'dark' : 'light');
+        localStorage.setItem('nexus_theme', isDarkMode ? 'dark' : 'light');
+    }, [isDarkMode]);
+
+    const toggleTheme = () => setIsDarkMode(!isDarkMode);
 
     const handleSync = useCallback(async (reset = true) => {
         setIsSyncing(true);
@@ -742,6 +759,20 @@ const App = () => {
                         </nav>
 
                         <div className="mt-auto space-y-2 pt-4 border-t border-slate-800">
+                            {/* Dark Mode Toggle */}
+                            <button
+                                onClick={toggleTheme}
+                                className="w-full flex items-center justify-between px-3 py-3 rounded-xl text-sm text-slate-400 hover:bg-slate-800 hover:text-white transition-all"
+                            >
+                                <div className="flex items-center gap-3">
+                                    {isDarkMode ? <Moon size={18} /> : <Sun size={18} />}
+                                    <span>{isDarkMode ? 'Dark Mode' : 'Light Mode'}</span>
+                                </div>
+                                <div className={`w-10 h-5 rounded-full p-0.5 transition-colors ${isDarkMode ? 'bg-indigo-600' : 'bg-slate-600'}`}>
+                                    <div className={`w-4 h-4 rounded-full bg-white transition-transform ${isDarkMode ? 'translate-x-5' : 'translate-x-0'}`} />
+                                </div>
+                            </button>
+
                             <div className="px-3 py-3 mb-2 bg-indigo-950/30 rounded-2xl border border-indigo-500/20">
                                 <div className="flex items-center gap-2 mb-2">
                                     <Database size={14} className="text-indigo-400" />

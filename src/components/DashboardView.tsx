@@ -59,11 +59,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ assets, onAnalyze,
     }, [assets, selectedCategoryCol, selectedLocationCol]);
 
     return (
-        <div className="flex-1 overflow-auto bg-slate-50 p-6 md:p-10">
+        <div className="flex-1 overflow-auto bg-theme-primary p-6 md:p-10">
             <header className="mb-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
-                    <h1 className="text-3xl font-bold text-slate-900">Dashboard</h1>
-                    <p className="text-slate-500 mt-2">Overview & Analytics</p>
+                    <h1 className="text-3xl font-bold text-theme-primary">Dashboard</h1>
+                    <p className="text-theme-secondary mt-2">Overview & Analytics</p>
                 </div>
                 <div className="flex items-center gap-3">
                     <button
@@ -113,36 +113,35 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ assets, onAnalyze,
 
             {/* Summary Cards */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center space-x-4">
-                    <div className="p-3 bg-blue-100 text-blue-600 rounded-xl">
+                <div className="bg-theme-secondary p-6 rounded-2xl shadow-sm border border-theme-primary flex items-center space-x-4">
+                    <div className="p-3 bg-blue-500/10 text-blue-500 rounded-xl">
                         <Activity size={24} />
                     </div>
                     <div>
-                        <p className="text-sm text-slate-500 font-medium">Total Assets</p>
-                        <h3 className="text-3xl font-bold text-slate-800">{stats.total}</h3>
+                        <p className="text-sm text-theme-secondary font-medium">Total Assets</p>
+                        <h3 className="text-3xl font-bold text-theme-primary">{stats.total}</h3>
                     </div>
                 </div>
 
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center space-x-4">
-                    <div className="p-3 bg-green-100 text-green-600 rounded-xl">
+                <div className="bg-theme-secondary p-6 rounded-2xl shadow-sm border border-theme-primary flex items-center space-x-4">
+                    <div className="p-3 bg-green-500/10 text-green-500 rounded-xl">
                         <CheckCircle size={24} />
                     </div>
                     <div>
-                        <p className="text-sm text-slate-500 font-medium">Operational Estimate</p>
-                        <h3 className="text-3xl font-bold text-slate-800">
-                            {/* Rough estimate if we don't know exact 'Operational' keyword */}
+                        <p className="text-sm text-theme-secondary font-medium">Operational Estimate</p>
+                        <h3 className="text-3xl font-bold text-theme-primary">
                             {stats.total - stats.maintenanceRequired}
                         </h3>
                     </div>
                 </div>
 
-                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center space-x-4">
-                    <div className="p-3 bg-red-100 text-red-600 rounded-xl">
+                <div className="bg-theme-secondary p-6 rounded-2xl shadow-sm border border-theme-primary flex items-center space-x-4">
+                    <div className="p-3 bg-red-500/10 text-red-500 rounded-xl">
                         <AlertTriangle size={24} />
                     </div>
                     <div>
-                        <p className="text-sm text-slate-500 font-medium">Maintenance Req.</p>
-                        <h3 className="text-3xl font-bold text-slate-800">{stats.maintenanceRequired}</h3>
+                        <p className="text-sm text-theme-secondary font-medium">Maintenance Req.</p>
+                        <h3 className="text-3xl font-bold text-theme-primary">{stats.maintenanceRequired}</h3>
                     </div>
                 </div>
             </div>
@@ -150,8 +149,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ assets, onAnalyze,
             {/* Charts Row */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
                 {/* Condition Chart */}
-                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100" style={{ minHeight: '400px' }}>
-                    <h3 className="text-lg font-bold text-slate-800 mb-6">Distribution by {selectedCategoryCol || 'Condition'}</h3>
+                <div className="bg-theme-secondary p-6 rounded-3xl shadow-sm border border-theme-primary" style={{ minHeight: '400px' }}>
+                    <h3 className="text-lg font-bold text-theme-primary mb-6">Distribution by {selectedCategoryCol || 'Condition'}</h3>
                     <div className="h-64 w-full" style={{ height: '300px' }}>
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
@@ -177,8 +176,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ assets, onAnalyze,
                 </div>
 
                 {/* Location Chart */}
-                <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100" style={{ minHeight: '400px' }}>
-                    <h3 className="text-lg font-bold text-slate-800 mb-6">Top Locations ({selectedLocationCol || 'Auto'})</h3>
+                <div className="bg-theme-secondary p-6 rounded-3xl shadow-sm border border-theme-primary" style={{ minHeight: '400px' }}>
+                    <h3 className="text-lg font-bold text-theme-primary mb-6">Top Locations ({selectedLocationCol || 'Auto'})</h3>
                     <div className="h-64 w-full" style={{ height: '300px' }}>
                         <ResponsiveContainer width="100%" height="100%">
                             <BarChart data={stats.locationData}>
@@ -192,13 +191,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ assets, onAnalyze,
                 </div>
             </div>
 
-            {/* Recent Items List - Placeholder or Actual Top 5 */}
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100">
-                <h3 className="text-lg font-bold text-slate-800 mb-4">Sample Assets</h3>
+            {/* Recent Items List */}
+            <div className="bg-theme-secondary p-6 rounded-3xl shadow-sm border border-theme-primary">
+                <h3 className="text-lg font-bold text-theme-primary mb-4">Sample Assets</h3>
                 <div className="overflow-x-auto">
-                    <table className="w-full text-left text-sm text-slate-600">
+                    <table className="w-full text-left text-sm text-theme-secondary">
                         <thead>
-                            <tr className="border-b border-slate-100">
+                            <tr className="border-b border-theme-primary">
                                 <th className="py-3 px-4 font-semibold">Asset ID</th>
                                 <th className="py-3 px-4 font-semibold">{selectedLocationCol || 'Location'}</th>
                                 <th className="py-3 px-4 font-semibold">{selectedCategoryCol || 'Condition'}</th>
