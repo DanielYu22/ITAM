@@ -195,13 +195,8 @@ const FilterRule = ({ condition, schema, schemaProperties, assets = [], onUpdate
     const selectedValues = condition.value?.split('|').filter(Boolean) || [];
 
     return (
-        <div className="flex flex-col md:flex-row md:items-center gap-2 p-2 bg-white border border-slate-200 rounded-md hover:border-slate-300 transition-all shadow-sm relative">
-            {/* Match Count Badge */}
-            {assets.length > 0 && (
-                <div className="absolute -right-2 -top-2 px-1.5 py-0.5 bg-indigo-500 text-white text-[9px] font-bold rounded-full min-w-[20px] text-center shadow-sm">
-                    {matchCount}
-                </div>
-            )}
+        <div className="flex flex-col md:flex-row md:items-center gap-2 p-2 bg-white border border-slate-200 rounded-md hover:border-slate-300 transition-all shadow-sm">
+            {/* Match Count Badge - inline at end */}
             {/* Field Selector */}
             <div className="w-full md:w-1/3 min-w-[150px]">
                 <Dropdown label={condition.field || "Select property"} value={condition.field} searchable searchPlaceholder="컬럼 검색...">
@@ -283,7 +278,15 @@ const FilterRule = ({ condition, schema, schemaProperties, assets = [], onUpdate
                 </div>
             )}
 
-            <button onClick={onRemove} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-all"><Trash2 size={14} /></button>
+            {/* Match Count Badge + Delete Button */}
+            <div className="flex items-center gap-1 shrink-0">
+                {assets.length > 0 && (
+                    <div className="px-2 py-0.5 bg-indigo-500 text-white text-[9px] font-bold rounded-full">
+                        {matchCount}
+                    </div>
+                )}
+                <button onClick={onRemove} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-all"><Trash2 size={14} /></button>
+            </div>
         </div>
     );
 };
