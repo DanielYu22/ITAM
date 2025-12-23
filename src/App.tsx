@@ -431,13 +431,46 @@ const App = () => {
     const [isRefreshingSettings, setIsRefreshingSettings] = useState(false);
     const [refreshResult, setRefreshResult] = useState<'success' | 'local' | null>(null);
 
+    // Hard refresh - clears all caches and reloads the page
+    const hardRefresh = async () => {
+        setIsRefreshingSettings(true);
+        console.log('[Hard Refresh] Clearing caches and reloading...');
+
+        try {
+            // Clear service worker caches
+            if ('caches' in window) {
+                const cacheNames = await caches.keys();
+                await Promise.all(cacheNames.map(name => caches.delete(name)));
+                console.log('[Hard Refresh] Cleared', cacheNames.length, 'cache(s)');
+            }
+
+            // Clear localStorage templates to force Notion reload
+            localStorage.removeItem('nexus_itam_templates');
+
+            // Unregister service workers for fresh build
+            if ('serviceWorker' in navigator) {
+                const registrations = await navigator.serviceWorker.getRegistrations();
+                await Promise.all(registrations.map(reg => reg.unregister()));
+                console.log('[Hard Refresh] Unregistered service workers');
+            }
+
+            // Force hard reload (bypass cache)
+            window.location.reload();
+        } catch (err) {
+            console.error('[Hard Refresh] Error:', err);
+            // Fallback to simple reload
+            window.location.reload();
+        }
+    };
+
+    // Soft refresh - just reload templates from Notion
     const refreshSettings = async () => {
         setIsRefreshingSettings(true);
         setRefreshResult(null);
         console.log('[Refresh] Starting settings refresh from Notion...');
         const fromNotion = await loadAllSettings();
         setRefreshResult(fromNotion ? 'success' : 'local');
-        console.log('[Refresh] Completed, loaded from:', fromNotion ? 'Notion' : 'localStorage');
+        console.log('[Refresh] Completed, loaded from:', fromNotion ? 'Notion' : 'default');
         setIsRefreshingSettings(false);
 
         // Clear result message after 3 seconds
@@ -817,10 +850,10 @@ const App = () => {
                                         <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">Connected</span>
                                     </div>
                                     <button
-                                        onClick={refreshSettings}
+                                        onClick={hardRefresh}
                                         disabled={isRefreshingSettings}
-                                        className="p-1.5 bg-indigo-500/20 rounded-lg text-indigo-400 hover:bg-indigo-500/30 transition-all disabled:opacity-50"
-                                        title="템플릿 새로고침"
+                                        className="p-1.5 bg-indigo-500/20 rounded-lg text-indigo-400 hover:bg-indigo-500/30 hover:text-white transition-all disabled:opacity-50"
+                                        title="강력 새로고침 (캐시 삭제 + 페이지 리로드)"
                                     >
                                         <RefreshCw size={14} className={isRefreshingSettings ? 'animate-spin' : ''} />
                                     </button>
