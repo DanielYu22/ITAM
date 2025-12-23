@@ -134,20 +134,39 @@ export const toNotionFilter = (filter: FilterCondition, schemaTypes: Record<stri
     }
 
     if (type === 'multi_select') {
-        if (filter.operator === 'contains') return { property: filter.field, [type]: { contains: val } };
-        if (filter.operator === 'does_not_contain') return { property: filter.field, [type]: { does_not_contain: val } };
+        // Contains: OR logic (any of selected values matches)
+        if (filter.operator === 'contains' && val) {
+            const values = val.split('|').filter(Boolean);
+            if (values.length === 0) return undefined;
+            if (values.length === 1) {
+                return { property: filter.field, [type]: { contains: values[0] } };
+            }
+            // OR: any value matches
+            return { or: values.map(v => ({ property: filter.field, [type]: { contains: v } })) };
+        }
+
+        // Does not contain: AND logic + empty included
+        if (filter.operator === 'does_not_contain' && val) {
+            const values = val.split('|').filter(Boolean);
+            if (values.length === 0) return undefined;
+            // AND all does_not_contain + OR with is_empty
+            const notContainConditions = values.map(v => ({ property: filter.field, [type]: { does_not_contain: v } }));
+            const emptyCondition = { property: filter.field, [type]: { is_empty: true } };
+            return { or: [{ and: notContainConditions }, emptyCondition] };
+        }
+
         if (filter.operator === 'is_empty') return { property: filter.field, [type]: { is_empty: true } };
         if (filter.operator === 'is_not_empty') return { property: filter.field, [type]: { is_not_empty: true } };
+
+        // Legacy
         if (filter.operator === 'is_in' && val) {
             const values = val.split('|').filter(Boolean);
             if (values.length === 0) return undefined;
-            // OR with contains for "Multi-Select Is One Of"
             return { or: values.map(v => ({ property: filter.field, [type]: { contains: v } })) };
         }
         if (filter.operator === 'is_not_in' && val) {
             const values = val.split('|').filter(Boolean);
             if (values.length === 0) return undefined;
-            // AND with does_not_contain for "Multi-Select Is Not One Of"
             return { and: values.map(v => ({ property: filter.field, [type]: { does_not_contain: v } })) };
         }
     }

@@ -45,9 +45,23 @@ const evaluateFilter = (asset: Asset, filter: FilterCondition): boolean => {
         case 'equals': return valueLower === filterLower;
         case 'does_not_equal': return valueLower !== filterLower;
 
-        // Text/Multi-select: contains, does not contain
-        case 'contains': return valueLower.includes(filterLower);
-        case 'does_not_contain': return !valueLower.includes(filterLower);
+        // Multi-select: contains = OR logic (any of selected values matches)
+        case 'contains': {
+            const filterValues = filterValue.split('|').filter(Boolean);
+            if (filterValues.length === 0) return true;
+            // OR: any value matches
+            return filterValues.some(fv => valueLower.includes(fv.toLowerCase()));
+        }
+
+        // Multi-select: does not contain = AND logic + empty included
+        case 'does_not_contain': {
+            const filterValues = filterValue.split('|').filter(Boolean);
+            if (filterValues.length === 0) return true;
+            // Empty values match (don't contain anything)
+            if (!value || value.trim() === '') return true;
+            // AND: none of the values should be present
+            return filterValues.every(fv => !valueLower.includes(fv.toLowerCase()));
+        }
 
         // Text: starts with, ends with
         case 'starts_with': return valueLower.startsWith(filterLower);
