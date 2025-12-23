@@ -45,10 +45,12 @@ const evaluateFilter = (asset: Asset, filter: FilterCondition): boolean => {
         case 'equals': return valueLower === filterLower;
         case 'does_not_equal': return valueLower !== filterLower;
 
-        // Multi-select: contains = OR logic (any of selected values matches)
+        // Multi-select: contains = OR logic (any of selected values matches, empty NOT included)
         case 'contains': {
             const filterValues = filterValue.split('|').filter(Boolean);
             if (filterValues.length === 0) return true;
+            // Empty values do NOT match
+            if (!value || value.trim() === '') return false;
             // OR: any value matches
             return filterValues.some(fv => valueLower.includes(fv.toLowerCase()));
         }
