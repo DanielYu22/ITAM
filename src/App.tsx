@@ -19,12 +19,13 @@ import {
     Moon,
     Sun
 } from 'lucide-react';
-import { Asset, NotionClient, NotionConfig, NotionProperty } from './lib/notion'; // Updated import
+import { Asset, NotionClient, NotionConfig, NotionProperty } from './lib/notion';
 import { FilterCondition, FilterTemplate, SortRule, DEFAULT_FILTER, toNotionFilter, toNotionSorts } from './lib/utils';
 import { OfficeView } from './components/OfficeView';
 import { FieldView } from './components/FieldView';
 import { FilterBuilderModal } from './components/FilterBuilderModal';
 import { DashboardView } from './components/DashboardView';
+import { AIFilterButton } from './components/AIFilterButton';
 
 type AppMode = 'OFFICE' | 'FIELD' | 'DASHBOARD';
 
@@ -83,6 +84,9 @@ const App = () => {
         apiKey: import.meta.env.VITE_NOTION_KEY || 'ntn_J64101163006UO3bpj09kzvX9XeQSQhHuV15OYnEzCK0YP',
         databaseId: import.meta.env.VITE_NOTION_DATABASE_ID || '2d017e129ccc81bb8b07c8b41547bcd9'
     });
+
+    // Gemini API Key for AI features
+    const geminiApiKey = import.meta.env.VITE_GEMINI_API_KEY || '';
 
     const [assets, setAssets] = useState<Asset[]>([]);
     const [schema, setSchema] = useState<string[]>([]);
@@ -772,6 +776,26 @@ const App = () => {
                                     <div className={`w-4 h-4 rounded-full bg-white transition-transform ${isDarkMode ? 'translate-x-5' : 'translate-x-0'}`} />
                                 </div>
                             </button>
+
+                            {/* AI Filter Section */}
+                            {geminiApiKey && (
+                                <div className="px-3 py-2">
+                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">AI 필터</p>
+                                    <AIFilterButton
+                                        schema={schema}
+                                        schemaTypes={schemaTypes}
+                                        geminiApiKey={geminiApiKey}
+                                        onFilterGenerated={(filter, name) => {
+                                            const filterName = name || '🤖 AI 필터';
+                                            saveTemplate(filterName, filter, [], []);
+                                            // Apply the new template
+                                            setActiveFilter(filter);
+                                            setAppMode('OFFICE');
+                                            handleSearch(filter, []);
+                                        }}
+                                    />
+                                </div>
+                            )}
 
                             <div className="px-3 py-3 mb-2 bg-indigo-950/30 rounded-2xl border border-indigo-500/20">
                                 <div className="flex items-center gap-2 mb-2">
