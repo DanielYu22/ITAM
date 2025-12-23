@@ -149,27 +149,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ assets, onAnalyze,
             {/* Charts Row */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-10">
                 {/* Condition Chart */}
-                <div className="bg-theme-secondary p-6 rounded-3xl shadow-sm border border-theme-primary" style={{ minHeight: '400px' }}>
+                <div className="bg-theme-secondary p-6 rounded-3xl shadow-sm border border-theme-primary">
                     <h3 className="text-lg font-bold text-theme-primary mb-6">Distribution by {selectedCategoryCol || 'Condition'}</h3>
-                    <div className="h-64 w-full" style={{ height: '300px' }}>
+                    <div style={{ width: '100%', height: Math.max(350, 250 + stats.conditionData.length * 25) }}>
                         <ResponsiveContainer width="100%" height="100%">
                             <PieChart>
                                 <Pie
                                     data={stats.conditionData}
                                     cx="50%"
-                                    cy="50%"
+                                    cy="40%"
                                     innerRadius={60}
-                                    outerRadius={80}
+                                    outerRadius={90}
                                     fill="#8884d8"
-                                    paddingAngle={5}
+                                    paddingAngle={3}
                                     dataKey="value"
+                                    label={({ percent }) => `${((percent ?? 0) * 100).toFixed(0)}%`}
                                 >
                                     {stats.conditionData.map((_, index) => (
                                         <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
                                     ))}
                                 </Pie>
                                 <Tooltip />
-                                <Legend verticalAlign="bottom" height={36} />
+                                <Legend
+                                    layout="horizontal"
+                                    verticalAlign="bottom"
+                                    wrapperStyle={{ paddingTop: '20px' }}
+                                />
                             </PieChart>
                         </ResponsiveContainer>
                     </div>
