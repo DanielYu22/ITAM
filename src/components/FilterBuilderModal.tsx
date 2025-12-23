@@ -18,20 +18,48 @@ interface FilterBuilderModalProps {
     onClose: () => void;
 }
 
-// Custom Dropdown Component for Notion-like feel
-const Dropdown = ({ value, label, children, className = "" }: { value?: string, label: React.ReactNode, children: React.ReactNode, className?: string }) => {
+// Custom Dropdown Component for Notion-like feel with optional search
+const Dropdown = ({ value, label, children, className = "", searchable = false, searchPlaceholder = "Search..." }: {
+    value?: string,
+    label: React.ReactNode,
+    children: React.ReactNode,
+    className?: string,
+    searchable?: boolean,
+    searchPlaceholder?: string
+}) => {
     const [isOpen, setIsOpen] = useState(false);
+    const [searchQuery, setSearchQuery] = useState('');
     const ref = useRef<HTMLDivElement>(null);
+    const searchRef = useRef<HTMLInputElement>(null);
 
     useEffect(() => {
         const handleClickOutside = (event: MouseEvent) => {
             if (ref.current && !ref.current.contains(event.target as Node)) {
                 setIsOpen(false);
+                setSearchQuery('');
             }
         };
         document.addEventListener("mousedown", handleClickOutside);
         return () => document.removeEventListener("mousedown", handleClickOutside);
     }, [ref]);
+
+    // Focus search input when opened
+    useEffect(() => {
+        if (isOpen && searchable && searchRef.current) {
+            searchRef.current.focus();
+        }
+    }, [isOpen, searchable]);
+
+    // Filter children based on search query
+    const filteredChildren = searchable && searchQuery
+        ? React.Children.toArray(children).filter(child => {
+            if (React.isValidElement(child)) {
+                const text = child.props.children?.toString?.() || '';
+                return text.toLowerCase().includes(searchQuery.toLowerCase());
+            }
+            return true;
+        })
+        : children;
 
     return (
         <div className={`relative ${className}`} ref={ref}>
@@ -43,18 +71,40 @@ const Dropdown = ({ value, label, children, className = "" }: { value?: string, 
                 <ChevronDown size={12} className="text-slate-400" />
             </button>
             {isOpen && (
-                <div className="absolute top-full left-0 mt-1 w-full min-w-[180px] bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-60 overflow-y-auto p-1">
-                    {React.Children.map(children, child => {
-                        if (React.isValidElement(child)) {
-                            return React.cloneElement(child, {
-                                onClick: (...args: any[]) => {
-                                    child.props.onClick?.(...args);
-                                    if (!child.props['data-keep-open']) setIsOpen(false);
-                                }
-                            } as any);
-                        }
-                        return child;
-                    })}
+                <div className="absolute top-full left-0 mt-1 w-full min-w-[180px] bg-white border border-slate-200 rounded-lg shadow-xl z-50 max-h-60 overflow-hidden flex flex-col">
+                    {/* Search Input */}
+                    {searchable && (
+                        <div className="p-2 border-b border-slate-100 sticky top-0 bg-white">
+                            <input
+                                ref={searchRef}
+                                type="text"
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                placeholder={searchPlaceholder}
+                                className="w-full px-2 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-md outline-none focus:border-indigo-400"
+                                onClick={(e) => e.stopPropagation()}
+                            />
+                        </div>
+                    )}
+                    <div className="overflow-y-auto p-1 flex-1">
+                        {React.Children.map(filteredChildren, child => {
+                            if (React.isValidElement(child)) {
+                                return React.cloneElement(child, {
+                                    onClick: (...args: any[]) => {
+                                        child.props.onClick?.(...args);
+                                        if (!child.props['data-keep-open']) {
+                                            setIsOpen(false);
+                                            setSearchQuery('');
+                                        }
+                                    }
+                                } as any);
+                            }
+                            return child;
+                        })}
+                        {searchable && searchQuery && React.Children.count(filteredChildren) === 0 && (
+                            <div className="px-2 py-1.5 text-xs text-slate-400 italic">No results</div>
+                        )}
+                    </div>
                 </div>
             )}
         </div>
@@ -98,7 +148,7 @@ const FilterRule = ({ condition, schema, schemaProperties, onUpdate, onRemove }:
         <div className="flex flex-col md:flex-row md:items-center gap-2 p-2 bg-white border border-slate-200 rounded-md hover:border-slate-300 transition-all shadow-sm">
             {/* Field Selector */}
             <div className="w-full md:w-1/3 min-w-[150px]">
-                <Dropdown label={condition.field || "Select property"} value={condition.field}>
+                <Dropdown label={condition.field || "Select property"} value={condition.field} searchable searchPlaceholder="컬럼 검색...">
                     {schema.map(col => (
                         <div
                             key={col}
@@ -142,6 +192,8 @@ const FilterRule = ({ condition, schema, schemaProperties, onUpdate, onRemove }:
                                     </div>
                                     : "Select options..."
                             }
+                            searchable
+                            searchPlaceholder="옵션 검색..."
                         >
                             {options.map(opt => {
                                 const isChecked = selectedValues.includes(opt.name);
