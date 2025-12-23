@@ -79,18 +79,18 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ assets, onAnalyze,
 
             {/* Configuration Panel */}
             {assets.length > 0 && (
-                <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 mb-8 flex flex-wrap gap-6 items-center">
-                    <div className="flex items-center gap-2 text-slate-500 font-bold text-xs uppercase tracking-wider">
+                <div className="bg-theme-secondary p-4 rounded-2xl shadow-sm border border-theme-primary mb-8 flex flex-wrap gap-6 items-center">
+                    <div className="flex items-center gap-2 text-theme-tertiary font-bold text-xs uppercase tracking-wider">
                         <Filter size={14} />
                         Analytics Config
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <label className="text-xs font-semibold text-slate-600">Category / Status:</label>
+                        <label className="text-xs font-semibold text-theme-secondary">Category / Status:</label>
                         <select
                             value={selectedCategoryCol}
                             onChange={(e) => setSelectedCategoryCol(e.target.value)}
-                            className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2 outline-none"
+                            className="bg-theme-tertiary border border-theme-primary text-theme-primary text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2 outline-none"
                         >
                             <option value="">Auto-detect</option>
                             {schema.map(col => <option key={col} value={col}>{col}</option>)}
@@ -98,11 +98,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ assets, onAnalyze,
                     </div>
 
                     <div className="flex items-center gap-2">
-                        <label className="text-xs font-semibold text-slate-600">Group By Location:</label>
+                        <label className="text-xs font-semibold text-theme-secondary">Group By Location:</label>
                         <select
                             value={selectedLocationCol}
                             onChange={(e) => setSelectedLocationCol(e.target.value)}
-                            className="bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2 outline-none"
+                            className="bg-theme-tertiary border border-theme-primary text-theme-primary text-sm rounded-lg focus:ring-indigo-500 focus:border-indigo-500 block p-2 outline-none"
                         >
                             <option value="">Auto-detect</option>
                             {schema.map(col => <option key={col} value={col}>{col}</option>)}

@@ -179,7 +179,7 @@ export const OfficeView: React.FC<OfficeViewProps> = ({
                             </thead>
                             <tbody className="divide-y divide-theme-primary text-sm">
                                 {assets.map((a: Asset) => (
-                                    <tr key={a.id} className="hover:bg-indigo-50/30 transition-all group">
+                                    <tr key={a.id} className="hover:bg-indigo-500/10 transition-all group">
                                         {displayColumns.map((col: string, idx: number) => (
                                             <td key={col} className={`px-8 py-6 font-medium text-theme-primary ${getStickyStyle(col, idx) ? 'sticky left-0 z-10 bg-inherit' : ''} ${getStickyStyle(col, idx) && 'group-hover:bg-indigo-50/30 dark:group-hover:bg-indigo-900/20 transition-colors'}`}>
                                                 <EditableCell
