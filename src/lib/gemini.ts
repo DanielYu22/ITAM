@@ -118,19 +118,40 @@ Response: {
             const schemaContext = schema.join(', ');
 
             const systemPrompt = `You are analyzing a screenshot of a Notion advanced filter.
-Extract the filter conditions from the image and convert them to this JSON format:
+Extract the filter conditions from the image and convert them to this JSON format.
 
+IMPORTANT: Use ONLY these exact operators:
+- "equals" for exact match
+- "not_equals" for not equal (convert "is not" to this)
+- "contains" for contains text
+- "does_not_contain" for does not contain
+- "is_empty" for empty check
+- "is_not_empty" for not empty check
+
+For multi-select or select fields with multiple values, create separate conditions joined by OR:
+When you see "is not: A, B, C" convert to:
+{
+  "logic": "AND",
+  "conditions": [
+    {"field": "field_name", "operator": "does_not_contain", "value": "A"},
+    {"field": "field_name", "operator": "does_not_contain", "value": "B"},
+    {"field": "field_name", "operator": "does_not_contain", "value": "C"}
+  ]
+}
+
+Output structure:
 {
   "id": "root",
-  "logic": "AND or OR",
+  "logic": "AND",
   "conditions": [
-    {"id": "c1", "field": "field_name", "operator": "equals/contains/etc", "value": "value"}
+    {"id": "c1", "field": "field_name", "operator": "contains", "value": "single_value"}
   ]
 }
 
 Available fields in this database: ${schemaContext}
 
-Respond with JSON only. Match field names exactly to the available fields listed above.`;
+Respond with JSON only. Match field names exactly to the available fields listed above.
+NEVER use operators like "is not", "is", "is in", "is not in" - convert them to valid operators.`;
 
             const response = await fetch('/api/gemini/v1beta/models/gemini-2.0-flash:generateContent', {
                 method: 'POST',

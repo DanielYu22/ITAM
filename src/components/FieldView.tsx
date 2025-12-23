@@ -121,10 +121,10 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
     // Render Steps
     if (!config || step === 0) {
         return (
-            <div className="min-h-screen bg-slate-50 flex flex-col">
-                <header className="px-6 py-4 bg-white border-b border-slate-200 flex items-center justify-between">
-                    <button onClick={onExit} className="flex items-center gap-2 text-slate-500 font-bold"><ChevronLeft /> Exit</button>
-                    <span className="font-bold text-slate-800">Field Mode Setup</span>
+            <div className="min-h-screen bg-theme-primary flex flex-col">
+                <header className="px-6 py-4 bg-theme-secondary border-b border-theme-primary flex items-center justify-between">
+                    <button onClick={onExit} className="flex items-center gap-2 text-theme-tertiary font-bold"><ChevronLeft /> Exit</button>
+                    <span className="font-bold text-theme-primary">Field Mode Setup</span>
                     <div className="w-10"></div>
                 </header>
                 <div className="flex-1 p-6">
@@ -140,14 +140,14 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
         const subtitle = step === 1 ? 'Start your patrol' : (step === 2 ? `Inside ${selections.A}` : `Inside ${selections.A} > ${selections.B}`);
 
         return (
-            <div className="min-h-screen bg-slate-50 flex flex-col">
-                <header className="px-6 py-4 bg-white border-b border-slate-200 flex items-center justify-between sticky top-0 z-10">
-                    <button onClick={handleBack} className="p-2 -ml-2 text-slate-600 hover:bg-slate-100 rounded-full"><ChevronLeft /></button>
+            <div className="min-h-screen bg-theme-primary flex flex-col">
+                <header className="px-6 py-4 bg-theme-secondary border-b border-theme-primary flex items-center justify-between sticky top-0 z-10">
+                    <button onClick={handleBack} className="p-2 -ml-2 text-theme-secondary hover:bg-theme-tertiary rounded-full"><ChevronLeft /></button>
                     <div className="text-center">
-                        <h1 className="text-lg font-bold text-slate-900">{title}</h1>
-                        <p className="text-xs text-slate-400">{subtitle}</p>
+                        <h1 className="text-lg font-bold text-theme-primary">{title}</h1>
+                        <p className="text-xs text-theme-tertiary">{subtitle}</p>
                     </div>
-                    <button onClick={() => setStep(0)} className="p-2 -mr-2 text-slate-400 hover:text-slate-600"><Settings size={20} /></button>
+                    <button onClick={() => setStep(0)} className="p-2 -mr-2 text-theme-tertiary hover:text-theme-secondary"><Settings size={20} /></button>
                 </header>
 
                 <div className="flex-1 p-4 grid grid-cols-1 gap-3 overflow-auto">
@@ -155,21 +155,21 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
                         <button
                             key={opt.name}
                             onClick={() => handleSelection(step === 1 ? 'A' : (step === 2 ? 'B' : 'C'), opt.name)}
-                            className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 text-left hover:bg-indigo-50 hover:border-indigo-200 transition-all group active:scale-95"
+                            className="bg-theme-secondary p-6 rounded-2xl shadow-sm border border-theme-primary text-left hover:bg-indigo-500/10 hover:border-indigo-500/30 transition-all group active:scale-95"
                         >
                             <div className="flex items-center justify-between">
                                 <div className="flex items-center gap-3">
-                                    <span className="text-lg font-bold text-slate-700 group-hover:text-indigo-700">{opt.name}</span>
-                                    <span className="px-2 py-1 text-xs font-bold bg-indigo-100 text-indigo-600 rounded-full">
+                                    <span className="text-lg font-bold text-theme-primary group-hover:text-indigo-400">{opt.name}</span>
+                                    <span className="px-2 py-1 text-xs font-bold bg-indigo-500/20 text-indigo-400 rounded-full">
                                         {opt.count}대
                                     </span>
                                 </div>
-                                <ArrowRight className="text-slate-300 group-hover:text-indigo-400" />
+                                <ArrowRight className="text-theme-tertiary group-hover:text-indigo-400" />
                             </div>
                         </button>
                     ))}
                     {currentOptions.length === 0 && (
-                        <div className="text-center py-20 text-slate-400">
+                        <div className="text-center py-20 text-theme-tertiary">
                             <Box size={48} className="mx-auto mb-4 opacity-20" />
                             <p>No options found.</p>
                         </div>
@@ -181,7 +181,7 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
 
     // Step 4: Asset List in Room
     return (
-        <div className="min-h-screen bg-slate-50 flex flex-col">
+        <div className="min-h-screen bg-theme-primary flex flex-col">
             <header className="px-6 py-4 bg-indigo-600 text-white flex items-center justify-between sticky top-0 z-20 shadow-lg">
                 <button onClick={handleBack} className="p-2 -ml-2 hover:bg-white/10 rounded-full"><ChevronLeft /></button>
                 <div className="text-center">
@@ -193,11 +193,11 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
 
             <div className="flex-1 p-4 overflow-auto space-y-3">
                 {activeAssets.length === 0 && (
-                    <div className="py-20 flex flex-col items-center justify-center text-slate-400 bg-white rounded-3xl border border-dashed border-slate-200 m-4">
-                        <Box size={64} className="text-emerald-100 mb-4" />
-                        <h3 className="text-xl font-bold text-slate-700">All Clear!</h3>
+                    <div className="py-20 flex flex-col items-center justify-center text-theme-tertiary bg-theme-secondary rounded-3xl border border-dashed border-theme-primary m-4">
+                        <Box size={64} className="text-emerald-500/30 mb-4" />
+                        <h3 className="text-xl font-bold text-theme-primary">All Clear!</h3>
                         <p>No pending assets in this room.</p>
-                        <button onClick={handleBack} className="mt-6 px-6 py-3 bg-indigo-100 text-indigo-600 font-bold rounded-xl">
+                        <button onClick={handleBack} className="mt-6 px-6 py-3 bg-indigo-500/20 text-indigo-400 font-bold rounded-xl">
                             Next Room
                         </button>
                     </div>
@@ -207,28 +207,28 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
                     <div
                         key={asset.id}
                         onClick={() => setSelectedAsset(asset)}
-                        className="bg-white p-5 rounded-2xl shadow-sm border border-slate-200 flex items-center justify-between active:scale-95 transition-transform"
+                        className="bg-theme-secondary p-5 rounded-2xl shadow-sm border border-theme-primary flex items-center justify-between active:scale-95 transition-transform"
                     >
                         <div>
-                            <p className="text-xs font-bold text-indigo-500 mb-1">{asset.id.slice(0, 5)}..</p>
-                            <h3 className="text-base font-bold text-slate-800 line-clamp-1">
+                            <p className="text-xs font-bold text-indigo-400 mb-1">{asset.id.slice(0, 5)}..</p>
+                            <h3 className="text-base font-bold text-theme-primary line-clamp-1">
                                 {asset.values[titleColumn] || 'No Name'}
                             </h3>
-                            <p className="text-xs text-slate-400 mt-1">
+                            <p className="text-xs text-theme-tertiary mt-1">
                                 {schema.find(k => k.includes('Serial')) ? asset.values[schema.find(k => k.includes('Serial'))!] : ''}
                             </p>
                         </div>
-                        <Square className="text-slate-300" />
+                        <Square className="text-theme-tertiary" />
                     </div>
                 ))}
 
                 {completedAssets.length > 0 && (
-                    <div className="mt-8 pt-8 border-t border-slate-200 opacity-50">
-                        <h4 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-4 px-2">Completed</h4>
+                    <div className="mt-8 pt-8 border-t border-theme-primary opacity-50">
+                        <h4 className="text-xs font-bold text-theme-tertiary uppercase tracking-widest mb-4 px-2">Completed</h4>
                         <div className="space-y-2">
                             {completedAssets.map(asset => (
-                                <div key={asset.id} className="bg-slate-50 p-4 rounded-xl flex items-center justify-between border border-emerald-100">
-                                    <span className="text-sm text-slate-500 line-through decoration-emerald-500/50">{asset.values[titleColumn] || 'Asset'}</span>
+                                <div key={asset.id} className="bg-theme-tertiary p-4 rounded-xl flex items-center justify-between border border-emerald-500/20">
+                                    <span className="text-sm text-theme-secondary line-through decoration-emerald-500/50">{asset.values[titleColumn] || 'Asset'}</span>
                                     <Box size={16} className="text-emerald-500" />
                                 </div>
                             ))}
@@ -239,7 +239,7 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
 
             {/* Config Reset at bottom */}
             <div className="p-4 flex justify-center pb-8 safe-area-bottom">
-                <button onClick={() => setStep(0)} className="text-xs text-indigo-400 font-bold bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100">
+                <button onClick={() => setStep(0)} className="text-xs text-indigo-400 font-bold bg-indigo-500/20 px-3 py-1 rounded-full border border-indigo-500/30">
                     Change Hierarchy
                 </button>
             </div>

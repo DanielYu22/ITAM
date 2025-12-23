@@ -49,27 +49,27 @@ export const FieldModeConfig: React.FC<FieldModeConfigProps> = ({ schema, onSave
     };
 
     return (
-        <div className="bg-white p-6 rounded-3xl shadow-lg border border-slate-100 max-w-md mx-auto mt-10">
-            <div className="flex items-center gap-3 mb-6 text-indigo-900">
-                <div className="p-3 bg-indigo-100 rounded-xl">
-                    <Map size={24} className="text-indigo-600" />
+        <div className="bg-theme-secondary p-6 rounded-3xl shadow-lg border border-theme-primary max-w-md mx-auto mt-10">
+            <div className="flex items-center gap-3 mb-6 text-theme-primary">
+                <div className="p-3 bg-indigo-500/20 rounded-xl">
+                    <Map size={24} className="text-indigo-400" />
                 </div>
                 <div>
                     <h2 className="text-xl font-bold">Field Navigation Setup</h2>
-                    <p className="text-sm text-slate-500">Configure your patrol path hierarchy</p>
+                    <p className="text-sm text-theme-tertiary">Configure your patrol path hierarchy</p>
                 </div>
             </div>
 
             <div className="space-y-6">
                 <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs">A</span>
+                    <label className="text-sm font-bold text-theme-secondary flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs">A</span>
                         Top Level (e.g. Building)
                     </label>
                     <select
                         value={config.levelA}
                         onChange={(e) => setConfig({ ...config, levelA: e.target.value })}
-                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                        className="w-full p-3 bg-theme-tertiary border border-theme-primary rounded-xl text-theme-primary font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                     >
                         <option value="">Select Column...</option>
                         {schema.map(col => <option key={col} value={col}>{col}</option>)}
@@ -77,18 +77,18 @@ export const FieldModeConfig: React.FC<FieldModeConfigProps> = ({ schema, onSave
                 </div>
 
                 <div className="flex justify-center">
-                    <ChevronRight className="text-slate-300 rotate-90" />
+                    <ChevronRight className="text-theme-tertiary rotate-90" />
                 </div>
 
                 <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs">B</span>
+                    <label className="text-sm font-bold text-theme-secondary flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs">B</span>
                         Mid Level (e.g. Floor)
                     </label>
                     <select
                         value={config.levelB}
                         onChange={(e) => setConfig({ ...config, levelB: e.target.value })}
-                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                        className="w-full p-3 bg-theme-tertiary border border-theme-primary rounded-xl text-theme-primary font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                     >
                         <option value="">Select Column...</option>
                         {schema.map(col => <option key={col} value={col}>{col}</option>)}
@@ -96,18 +96,18 @@ export const FieldModeConfig: React.FC<FieldModeConfigProps> = ({ schema, onSave
                 </div>
 
                 <div className="flex justify-center">
-                    <ChevronRight className="text-slate-300 rotate-90" />
+                    <ChevronRight className="text-theme-tertiary rotate-90" />
                 </div>
 
                 <div className="space-y-2">
-                    <label className="text-sm font-bold text-slate-700 flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-xs">C</span>
+                    <label className="text-sm font-bold text-theme-secondary flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-indigo-500/20 text-indigo-400 flex items-center justify-center text-xs">C</span>
                         Bottom Level (e.g. Room/Lab)
                     </label>
                     <select
                         value={config.levelC}
                         onChange={(e) => setConfig({ ...config, levelC: e.target.value })}
-                        className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-slate-700 font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
+                        className="w-full p-3 bg-theme-tertiary border border-theme-primary rounded-xl text-theme-primary font-medium focus:ring-2 focus:ring-indigo-500 outline-none transition-all"
                     >
                         <option value="">Select Column...</option>
                         {schema.map(col => <option key={col} value={col}>{col}</option>)}
