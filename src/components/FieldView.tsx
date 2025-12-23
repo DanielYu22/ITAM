@@ -22,6 +22,85 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
     const [selections, setSelections] = useState<{ A: string, B: string, C: string }>({ A: '', B: '', C: '' });
     const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null); // For details modal
 
+    // Local assets state - allows removal without parent refresh
+    const [localAssets, setLocalAssets] = useState<Asset[]>(assets);
+    const [removedAssetIds, setRemovedAssetIds] = useState<Set<string>>(new Set());
+
+    // Sync with parent assets
+    useEffect(() => {
+        setLocalAssets(assets);
+        setRemovedAssetIds(new Set());
+    }, [assets]);
+
+    // Filter out removed assets
+    const effectiveAssets = useMemo(() => {
+        return localAssets.filter(a => !removedAssetIds.has(a.id));
+    }, [localAssets, removedAssetIds]);
+
+    // Helper: Check if a value matches filter condition
+    const checkFilterCondition = (asset: Asset, filter: FilterCondition): boolean => {
+        if (!filter) return true;
+
+        // If it has conditions (group), check all/any based on logic
+        if (filter.conditions) {
+            const results = filter.conditions.map(c => checkFilterCondition(asset, c));
+            return filter.logic === 'AND'
+                ? results.every(r => r)
+                : results.some(r => r);
+        }
+
+        // Single condition
+        const value = asset.values[filter.field || ''] || '';
+        const filterValue = filter.value || '';
+
+        switch (filter.operator) {
+            case 'equals': return value === filterValue;
+            case 'not_equals': return value !== filterValue;
+            case 'contains': return value.toLowerCase().includes(filterValue.toLowerCase());
+            case 'does_not_contain': return !value.toLowerCase().includes(filterValue.toLowerCase());
+            case 'is_empty': return !value || value.trim() === '';
+            case 'is_not_empty': return !!value && value.trim() !== '';
+            default: return true;
+        }
+    };
+
+    // Handle field update - update locally and check if should remove from list
+    const handleFieldUpdate = (assetId: string, field: string, value: string) => {
+        // Call parent's update function
+        updateAssetField(assetId, field, value);
+
+        // Update local state
+        setLocalAssets(prev => prev.map(a =>
+            a.id === assetId ? { ...a, values: { ...a.values, [field]: value } } : a
+        ));
+
+        // Also update selectedAsset if open
+        if (selectedAsset && selectedAsset.id === assetId) {
+            setSelectedAsset(prev => prev ? { ...prev, values: { ...prev.values, [field]: value } } : null);
+        }
+
+        // Check if this asset still matches the filter after update
+        if (activeFilter) {
+            const updatedAsset = {
+                ...localAssets.find(a => a.id === assetId)!,
+                values: { ...localAssets.find(a => a.id === assetId)?.values, [field]: value }
+            };
+
+            const stillMatchesFilter = checkFilterCondition(updatedAsset, activeFilter);
+
+            if (!stillMatchesFilter) {
+                // Remove from local list with animation delay
+                setTimeout(() => {
+                    setRemovedAssetIds(prev => new Set([...prev, assetId]));
+                    // Close modal if this asset was open
+                    if (selectedAsset?.id === assetId) {
+                        setSelectedAsset(null);
+                    }
+                }, 500); // Small delay so user sees the change before removal
+            }
+        }
+    };
+
     // Load config from local storage
     useEffect(() => {
         const saved = localStorage.getItem('nexus_itam_field_config');
@@ -77,7 +156,7 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
     // Get current options with counts for each level
     const currentOptions = useMemo(() => {
         if (!config) return [];
-        let filtered = assets;
+        let filtered = effectiveAssets;
 
         if (step >= 2) {
             filtered = filtered.filter(a => (a.values[config.levelA] || '') === selections.A);
@@ -103,7 +182,7 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
     // Final list of assets in the room (Step 4)
     const roomAssets = useMemo(() => {
         if (!config || step !== 4) return [];
-        return assets.filter(a =>
+        return effectiveAssets.filter(a =>
             (a.values[config.levelA] || '') === selections.A &&
             (a.values[config.levelB] || '') === selections.B &&
             (a.values[config.levelC] || '') === selections.C
@@ -276,7 +355,7 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
                                                     value={selectedAsset.values[key] || ''}
                                                     type={schemaProperties[key]?.type || 'text'}
                                                     property={schemaProperties[key]}
-                                                    onSave={(val) => updateAssetField(selectedAsset.id, key, val)}
+                                                    onSave={(val) => handleFieldUpdate(selectedAsset.id, key, val)}
                                                 />
                                             </div>
                                         </div>
