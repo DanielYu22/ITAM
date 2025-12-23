@@ -74,7 +74,7 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
         return list;
     }, [activeFilter]);
 
-    // Filter assets based on current selections
+    // Get current options with counts for each level
     const currentOptions = useMemo(() => {
         if (!config) return [];
         let filtered = assets;
@@ -88,9 +88,16 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
 
         const targetColumn = step === 1 ? config.levelA : (step === 2 ? config.levelB : config.levelC);
 
-        // Get unique values
-        const values = Array.from(new Set(filtered.map(a => a.values[targetColumn] || 'Unknown')));
-        return values.sort();
+        // Get unique values with counts
+        const counts: Record<string, number> = {};
+        filtered.forEach(a => {
+            const val = a.values[targetColumn] || 'Unknown';
+            counts[val] = (counts[val] || 0) + 1;
+        });
+
+        return Object.entries(counts)
+            .map(([name, count]) => ({ name, count }))
+            .sort((a, b) => a.name.localeCompare(b.name));
     }, [assets, config, step, selections]);
 
     // Final list of assets in the room (Step 4)
@@ -146,12 +153,17 @@ export const FieldView: React.FC<FieldViewProps> = ({ assets, schema, schemaProp
                 <div className="flex-1 p-4 grid grid-cols-1 gap-3 overflow-auto">
                     {currentOptions.map(opt => (
                         <button
-                            key={opt}
-                            onClick={() => handleSelection(step === 1 ? 'A' : (step === 2 ? 'B' : 'C'), opt)}
+                            key={opt.name}
+                            onClick={() => handleSelection(step === 1 ? 'A' : (step === 2 ? 'B' : 'C'), opt.name)}
                             className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 text-left hover:bg-indigo-50 hover:border-indigo-200 transition-all group active:scale-95"
                         >
                             <div className="flex items-center justify-between">
-                                <span className="text-lg font-bold text-slate-700 group-hover:text-indigo-700">{opt}</span>
+                                <div className="flex items-center gap-3">
+                                    <span className="text-lg font-bold text-slate-700 group-hover:text-indigo-700">{opt.name}</span>
+                                    <span className="px-2 py-1 text-xs font-bold bg-indigo-100 text-indigo-600 rounded-full">
+                                        {opt.count}대
+                                    </span>
+                                </div>
                                 <ArrowRight className="text-slate-300 group-hover:text-indigo-400" />
                             </div>
                         </button>

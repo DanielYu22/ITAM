@@ -14,8 +14,8 @@ import {
     X,
     Search,
     Download,
-    Upload,
-    BarChart3
+    BarChart3,
+    Menu
 } from 'lucide-react';
 import { Asset, NotionClient, NotionConfig, NotionProperty } from './lib/notion'; // Updated import
 import { FilterCondition, FilterTemplate, SortRule, DEFAULT_FILTER, toNotionFilter, toNotionSorts } from './lib/utils';
@@ -197,6 +197,33 @@ const App = () => {
     const handleLoadMore = () => {
         if (!hasMore || isSyncing) return;
         handleSync(false); // Pass false to append
+    };
+
+    const handleLoadAll = async () => {
+        if (isSyncing) return;
+        setIsSyncing(true);
+        const client = new NotionClient(notionConfig);
+
+        let currentTypes = schemaTypes;
+        if (Object.keys(currentTypes).length === 0) {
+            const props = await client.getDatabaseSchema();
+            setSchemaProperties(props);
+            const types: Record<string, string> = {};
+            Object.entries(props).forEach(([k, v]) => types[k] = v.type);
+            currentTypes = types;
+            setSchemaTypes(types);
+            setSchema(Object.keys(props));
+            if (visibleColumns.length === 0) setVisibleColumns(Object.keys(props));
+        }
+
+        const notionFilter = toNotionFilter(activeFilter, currentTypes);
+        const notionSorts = toNotionSorts(activeSorts);
+
+        const result = await client.fetchAllDatabase(notionFilter, notionSorts);
+        setAssets(result.assets);
+        setNextCursor(null);
+        setHasMore(false);
+        setIsSyncing(false);
     };
 
     const handleAnalyze = async () => {
@@ -450,50 +477,6 @@ const App = () => {
         }
     };
 
-    // Settings Export/Import for cross-device sync
-    const exportSettings = () => {
-        const settings = {
-            templates: templates.filter(t => t.id !== 'all_tasks_complex'), // Exclude built-in
-            fieldConfig: localStorage.getItem('nexus_itam_field_config'),
-            exportedAt: new Date().toISOString()
-        };
-        const blob = new Blob([JSON.stringify(settings, null, 2)], { type: 'application/json' });
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = `nexus-itam-settings-${new Date().toISOString().slice(0, 10)}.json`;
-        a.click();
-        URL.revokeObjectURL(url);
-    };
-
-    const importSettings = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const file = e.target.files?.[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (event) => {
-            try {
-                const settings = JSON.parse(event.target?.result as string);
-                if (settings.templates && Array.isArray(settings.templates)) {
-                    // Merge imported templates with existing (avoid duplicates by name)
-                    const existingNames = new Set(templates.map(t => t.name));
-                    const newTemplates = settings.templates.filter((t: FilterTemplate) => !existingNames.has(t.name));
-                    const merged = [...templates, ...newTemplates];
-                    setTemplates(merged);
-                    localStorage.setItem('nexus_itam_templates', JSON.stringify(merged));
-                }
-                if (settings.fieldConfig) {
-                    localStorage.setItem('nexus_itam_field_config', settings.fieldConfig);
-                }
-                alert(`Settings imported successfully!\n${settings.templates?.length || 0} templates, field config: ${settings.fieldConfig ? 'Yes' : 'No'}`);
-            } catch (err) {
-                console.error('Failed to import settings:', err);
-                alert('Failed to import settings. Invalid file format.');
-            }
-        };
-        reader.readAsText(file);
-        e.target.value = ''; // Reset input
-    };
-
     // Calculate Summary Stats (Client Side on Loaded Data)
     const summaryStats = useMemo(() => {
         const stats: Record<string, Record<string, number>> = {};
@@ -579,6 +562,7 @@ const App = () => {
                             }}
                             hasMore={hasMore} // New
                             onLoadMore={handleLoadMore} // New
+                            onLoadAll={handleLoadAll}
                         />
                     </div>
                 );
@@ -592,17 +576,14 @@ const App = () => {
             {/* Mobile Header */}
             {appMode !== 'FIELD' && (
                 <div className="md:hidden bg-slate-900 px-4 py-3 flex items-center justify-between border-b border-slate-800">
+                    <button onClick={() => setShowMobileMenu(!showMobileMenu)} className="text-slate-300">
+                        {showMobileMenu ? <X size={24} /> : <Menu size={24} />}
+                    </button>
                     <div className="flex items-center gap-2">
                         <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center text-white font-bold">IT</div>
                         <h1 className="text-lg font-bold text-white tracking-tight">Nexus ITAM</h1>
                     </div>
-                    <button onClick={() => setShowMobileMenu(!showMobileMenu)} className="text-slate-300">
-                        {showMobileMenu ? <X size={24} /> : <div className="space-y-1.5">
-                            <div className="w-6 h-0.5 bg-current"></div>
-                            <div className="w-6 h-0.5 bg-current"></div>
-                            <div className="w-6 h-0.5 bg-current"></div>
-                        </div>}
-                    </button>
+                    <div className="w-6"></div>{/* Spacer for centering logo */}
                 </div>
             )}
 
@@ -722,22 +703,6 @@ const App = () => {
                         </nav>
 
                         <div className="mt-auto space-y-2 pt-4 border-t border-slate-800">
-                            {/* Settings Export/Import */}
-                            <div className="px-3 flex gap-2 mb-2">
-                                <button
-                                    onClick={exportSettings}
-                                    className="flex-1 flex items-center justify-center gap-1 px-2 py-2 text-xs font-medium bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors"
-                                    title="Export settings to JSON file"
-                                >
-                                    <Download size={14} />
-                                    Export
-                                </button>
-                                <label className="flex-1 flex items-center justify-center gap-1 px-2 py-2 text-xs font-medium bg-slate-800 text-slate-300 rounded-lg hover:bg-slate-700 transition-colors cursor-pointer" title="Import settings from JSON file">
-                                    <Upload size={14} />
-                                    Import
-                                    <input type="file" accept=".json" onChange={importSettings} className="hidden" />
-                                </label>
-                            </div>
                             <div className="px-3 py-3 mb-2 bg-indigo-950/30 rounded-2xl border border-indigo-500/20">
                                 <div className="flex items-center gap-2 mb-2">
                                     <Database size={14} className="text-indigo-400" />

@@ -16,6 +16,7 @@ interface OfficeViewProps {
     onClearFilter: () => void;
     hasMore: boolean;
     onLoadMore: () => void;
+    onLoadAll: () => void;
 }
 
 import EditableCell from './EditableCell';
@@ -33,7 +34,8 @@ export const OfficeView: React.FC<OfficeViewProps> = ({
     activeTemplateName,
     onClearFilter,
     hasMore,
-    onLoadMore
+    onLoadMore,
+    onLoadAll
 }) => {
     // Reorder columns: Title first, then rest
     const displayColumns = React.useMemo(() => {
@@ -143,14 +145,22 @@ export const OfficeView: React.FC<OfficeViewProps> = ({
                     </div>
                 </div>
                 {hasMore && (
-                    <div className="flex justify-center mt-6 pb-8">
+                    <div className="flex justify-center gap-4 mt-6 pb-8">
                         <button
                             onClick={onLoadMore}
                             disabled={isSyncing}
                             className="bg-white border border-slate-200 text-slate-600 font-bold py-3 px-8 rounded-2xl hover:bg-slate-50 hover:border-indigo-200 hover:text-indigo-600 transition-all shadow-sm active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
                         >
                             {isSyncing ? <RefreshCw size={16} className="animate-spin" /> : <ChevronDown size={16} />}
-                            Load More Assets
+                            Load More (+100)
+                        </button>
+                        <button
+                            onClick={onLoadAll}
+                            disabled={isSyncing}
+                            className="bg-indigo-600 text-white font-bold py-3 px-8 rounded-2xl hover:bg-indigo-700 transition-all shadow-lg shadow-indigo-600/20 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                        >
+                            {isSyncing ? <RefreshCw size={16} className="animate-spin" /> : <RefreshCw size={16} />}
+                            Load All Assets
                         </button>
                     </div>
                 )}
