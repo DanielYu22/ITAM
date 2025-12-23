@@ -181,13 +181,14 @@ const FilterRule = ({ condition, schema, schemaProperties, onUpdate, onRemove }:
 };
 
 const FilterGroup = ({ condition, schema, schemaProperties, onUpdate, onRemove, depth = 0 }: { condition: FilterCondition, schema: string[], schemaProperties?: Record<string, NotionProperty>, onUpdate: (c: Partial<FilterCondition>) => void, onRemove: () => void, depth?: number }) => {
+    // Drag state
+    const [draggedId, setDraggedId] = useState<string | null>(null);
+    const [dragOverId, setDragOverId] = useState<string | null>(null);
 
     const updateChild = (id: string, updates: Partial<FilterCondition>) => {
         const newConditions = condition.conditions?.map(c => c.id === id ? { ...c, ...updates } : c);
         onUpdate({ conditions: newConditions });
     };
-
-
 
     const addChildRule = () => {
         const newRule: FilterCondition = { id: Date.now().toString() + Math.random(), field: schema[0], operator: 'contains', value: '' };
@@ -201,6 +202,48 @@ const FilterGroup = ({ condition, schema, schemaProperties, onUpdate, onRemove, 
 
     const removeChild = (id: string) => {
         onUpdate({ conditions: condition.conditions?.filter(c => c.id !== id) });
+    };
+
+    // Drag handlers
+    const handleDragStart = (e: React.DragEvent, id: string) => {
+        setDraggedId(id);
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', id);
+    };
+
+    const handleDragOver = (e: React.DragEvent, id: string) => {
+        e.preventDefault();
+        if (draggedId && draggedId !== id) {
+            setDragOverId(id);
+        }
+    };
+
+    const handleDragLeave = () => {
+        setDragOverId(null);
+    };
+
+    const handleDrop = (e: React.DragEvent, targetId: string) => {
+        e.preventDefault();
+        if (!draggedId || draggedId === targetId || !condition.conditions) return;
+
+        const conditions = [...condition.conditions];
+        const draggedIndex = conditions.findIndex(c => c.id === draggedId);
+        const targetIndex = conditions.findIndex(c => c.id === targetId);
+
+        if (draggedIndex === -1 || targetIndex === -1) return;
+
+        // Remove dragged item and insert at target position
+        const [draggedItem] = conditions.splice(draggedIndex, 1);
+        conditions.splice(targetIndex, 0, draggedItem);
+
+        onUpdate({ conditions });
+        setDraggedId(null);
+        setDragOverId(null);
+    };
+
+    const handleDragEnd = () => {
+        setDraggedId(null);
+        setDragOverId(null);
     };
 
     return (
@@ -224,8 +267,36 @@ const FilterGroup = ({ condition, schema, schemaProperties, onUpdate, onRemove, 
             </div>
 
             <div className="space-y-3">
-                {condition.conditions?.map(child => (
-                    <div key={child.id}>
+                {condition.conditions?.map((child) => (
+                    <div
+                        key={child.id}
+                        draggable
+                        onDragStart={(e) => handleDragStart(e, child.id)}
+                        onDragOver={(e) => handleDragOver(e, child.id)}
+                        onDragLeave={handleDragLeave}
+                        onDrop={(e) => handleDrop(e, child.id)}
+                        onDragEnd={handleDragEnd}
+                        className={`relative group transition-all ${draggedId === child.id ? 'opacity-50' : ''
+                            } ${dragOverId === child.id ? 'ring-2 ring-indigo-400 ring-offset-2 rounded-lg' : ''
+                            }`}
+                    >
+                        {/* Drag Handle */}
+                        <div className="absolute -left-6 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-slate-400 hover:text-slate-600">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                                <circle cx="5" cy="5" r="2" />
+                                <circle cx="12" cy="5" r="2" />
+                                <circle cx="5" cy="12" r="2" />
+                                <circle cx="12" cy="12" r="2" />
+                                <circle cx="5" cy="19" r="2" />
+                                <circle cx="12" cy="19" r="2" />
+                            </svg>
+                        </div>
+
+                        {/* Drop indicator line */}
+                        {dragOverId === child.id && draggedId !== child.id && (
+                            <div className="absolute -top-2 left-0 right-0 h-0.5 bg-indigo-500 rounded-full" />
+                        )}
+
                         {child.logic ? (
                             <FilterGroup
                                 condition={child}
