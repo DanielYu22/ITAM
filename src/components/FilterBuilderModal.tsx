@@ -41,28 +41,43 @@ const evaluateFilter = (asset: Asset, filter: FilterCondition): boolean => {
     const filterLower = filterValue.toLowerCase();
 
     switch (filter.operator) {
-        // Text/Select: is, is not
+        // Text/Select: is, is not (exact match)
         case 'equals': return valueLower === filterLower;
         case 'does_not_equal': return valueLower !== filterLower;
 
-        // Multi-select: contains = OR logic (any of selected values matches, empty NOT included)
+        // Multi-select: contains = exact item matching (not substring!)
+        // Multi-select values are stored as comma-separated: "A, B, C"
         case 'contains': {
             const filterValues = filterValue.split('|').filter(Boolean);
             if (filterValues.length === 0) return true;
             // Empty values do NOT match
             if (!value || value.trim() === '') return false;
-            // OR: any value matches
-            return filterValues.some(fv => valueLower.includes(fv.toLowerCase()));
+
+            // Split multi-select value by comma and trim each item
+            const assetItems = value.split(',').map(v => v.trim().toLowerCase());
+
+            // OR: any filter value matches any asset item EXACTLY
+            return filterValues.some(fv => {
+                const fvLower = fv.toLowerCase().trim();
+                return assetItems.some(item => item === fvLower);
+            });
         }
 
-        // Multi-select: does not contain = AND logic + empty included
+        // Multi-select: does not contain = exact item NOT present + empty included
         case 'does_not_contain': {
             const filterValues = filterValue.split('|').filter(Boolean);
             if (filterValues.length === 0) return true;
             // Empty values match (don't contain anything)
             if (!value || value.trim() === '') return true;
-            // AND: none of the values should be present
-            return filterValues.every(fv => !valueLower.includes(fv.toLowerCase()));
+
+            // Split multi-select value by comma and trim each item
+            const assetItems = value.split(',').map(v => v.trim().toLowerCase());
+
+            // AND: none of the filter values should exactly match any asset item
+            return filterValues.every(fv => {
+                const fvLower = fv.toLowerCase().trim();
+                return !assetItems.some(item => item === fvLower);
+            });
         }
 
         // Text: starts with, ends with
@@ -657,14 +672,47 @@ export const FilterBuilderModal: React.FC<FilterBuilderModalProps> = ({ schema, 
     const [allAssets, setAllAssets] = useState<Asset[]>(assets);
     const [isLoadingAllAssets, setIsLoadingAllAssets] = useState(false);
 
-    // Load all assets on mount if callback provided
+    // Cache key for sessionStorage
+    const CACHE_KEY = 'itam_all_assets_cache';
+    const CACHE_TIME_KEY = 'itam_all_assets_cache_time';
+    const CACHE_DURATION_MS = 10 * 60 * 1000; // 10 minutes
+
+    // Load all assets on mount - with sessionStorage caching
     useEffect(() => {
-        if (onLoadAllAssets && assets.length < 500) { // Only load if we don't have many
+        // Try to load from cache first
+        const cached = sessionStorage.getItem(CACHE_KEY);
+        const cacheTime = sessionStorage.getItem(CACHE_TIME_KEY);
+
+        if (cached && cacheTime) {
+            const age = Date.now() - parseInt(cacheTime);
+            if (age < CACHE_DURATION_MS) {
+                try {
+                    const cachedAssets = JSON.parse(cached) as Asset[];
+                    console.log('[FilterBuilder] Using cached assets:', cachedAssets.length, '(age:', Math.round(age / 1000), 's)');
+                    setAllAssets(cachedAssets);
+                    return; // Use cache, don't load
+                } catch (e) {
+                    console.warn('[FilterBuilder] Cache parse error, reloading');
+                }
+            } else {
+                console.log('[FilterBuilder] Cache expired, reloading');
+            }
+        }
+
+        // Load from API if no valid cache
+        if (onLoadAllAssets) {
             setIsLoadingAllAssets(true);
             onLoadAllAssets().then((loadedAssets: Asset[]) => {
                 setAllAssets(loadedAssets);
                 setIsLoadingAllAssets(false);
-                console.log('[FilterBuilder] Loaded all assets:', loadedAssets.length);
+                // Save to cache
+                try {
+                    sessionStorage.setItem(CACHE_KEY, JSON.stringify(loadedAssets));
+                    sessionStorage.setItem(CACHE_TIME_KEY, Date.now().toString());
+                    console.log('[FilterBuilder] Cached', loadedAssets.length, 'assets');
+                } catch (e) {
+                    console.warn('[FilterBuilder] Cache save failed');
+                }
             }).catch(() => {
                 setAllAssets(assets);
                 setIsLoadingAllAssets(false);
@@ -672,7 +720,7 @@ export const FilterBuilderModal: React.FC<FilterBuilderModalProps> = ({ schema, 
         } else {
             setAllAssets(assets);
         }
-    }, [onLoadAllAssets, assets]);
+    }, []); // Only run once on mount
 
     // Find Title Column
     const titleColumn = Object.keys(schemaProperties || {}).find(k => schemaProperties?.[k].type === 'title') || '';
