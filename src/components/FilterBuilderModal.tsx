@@ -187,13 +187,14 @@ const Dropdown = ({ value, label, children, className = "", searchable = false, 
     );
 };
 
-const FilterRule = ({ condition, schema, schemaProperties, assets = [], onUpdate, onRemove }: {
+const FilterRule = ({ condition, schema, schemaProperties, assets = [], onUpdate, onRemove, onWrapInGroup }: {
     condition: FilterCondition,
     schema: string[],
     schemaProperties?: Record<string, NotionProperty>,
     assets?: Asset[],
     onUpdate: (c: Partial<FilterCondition>) => void,
-    onRemove: () => void
+    onRemove: () => void,
+    onWrapInGroup?: () => void
 }) => {
     // Determine field type
     const fieldType = schemaProperties?.[condition.field || '']?.type || 'rich_text';
@@ -369,11 +370,24 @@ const FilterRule = ({ condition, schema, schemaProperties, assets = [], onUpdate
                 </div>
             )}
 
-            {/* Match Count Badge + Delete Button */}
+            {/* Match Count Badge + Actions */}
             <div className="flex items-center gap-1 shrink-0">
                 <div className="px-2 py-0.5 bg-indigo-500 text-white text-[9px] font-bold rounded-full">
                     {matchCount}
                 </div>
+                {/* Wrap in group button */}
+                {onWrapInGroup && (
+                    <button
+                        onClick={onWrapInGroup}
+                        title="그룹으로 감싸기"
+                        className="p-1.5 text-slate-400 hover:text-indigo-500 hover:bg-indigo-50 rounded-md transition-all"
+                    >
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" />
+                            <path d="M9 9h6v6H9z" />
+                        </svg>
+                    </button>
+                )}
                 <button onClick={onRemove} className="p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-all"><Trash2 size={14} /></button>
             </div>
         </div>
@@ -413,6 +427,23 @@ const FilterGroup = ({ condition, schema, schemaProperties, assets = [], onUpdat
 
     const removeChild = (id: string) => {
         onUpdate({ conditions: condition.conditions?.filter(c => c.id !== id) });
+    };
+
+    // Wrap a rule in a new group
+    const wrapInGroup = (id: string) => {
+        const child = condition.conditions?.find(c => c.id === id);
+        if (!child) return;
+
+        // Create new group containing this rule
+        const newGroup: FilterCondition = {
+            id: Date.now().toString() + Math.random(),
+            logic: 'AND',
+            conditions: [{ ...child }]
+        };
+
+        // Replace the original rule with the new group
+        const newConditions = condition.conditions?.map(c => c.id === id ? newGroup : c);
+        onUpdate({ conditions: newConditions });
     };
 
     // Drag handlers
@@ -530,6 +561,7 @@ const FilterGroup = ({ condition, schema, schemaProperties, assets = [], onUpdat
                                 assets={assets}
                                 onUpdate={(u) => updateChild(child.id, u)}
                                 onRemove={() => removeChild(child.id)}
+                                onWrapInGroup={() => wrapInGroup(child.id)}
                             />
                         )}
                     </div>
