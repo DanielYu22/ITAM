@@ -264,17 +264,31 @@ const FilterRule = ({ condition, schema, schemaProperties, assets = [], onUpdate
             {/* Field Selector */}
             <div className="w-full md:w-1/3 min-w-[150px]">
                 <Dropdown label={condition.field || "Select property"} value={condition.field} searchable searchPlaceholder="컬럼 검색...">
-                    {schema.map(col => (
-                        <div
-                            key={col}
-                            onClick={() => onUpdate({ field: col, value: '', operator: 'contains' })} // Default op
-                            className="px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded cursor-pointer flex items-center gap-2"
-                        >
-                            {/* Icon based on type */}
-                            <span className="text-[10px] uppercase font-bold text-slate-400 w-4">{schemaProperties?.[col]?.type?.[0] || 'T'}</span>
-                            {col}
-                        </div>
-                    ))}
+                    {schema.map(col => {
+                        // Determine default operator based on field type
+                        const colType = schemaProperties?.[col]?.type || 'rich_text';
+                        const colIsSelect = colType === 'select' || colType === 'status';
+                        const colIsMultiSelect = colType === 'multi_select';
+                        const colIsNumber = colType === 'number';
+
+                        let defaultOp: string = 'contains';
+                        if (colIsSelect) defaultOp = 'equals';
+                        else if (colIsMultiSelect) defaultOp = 'contains';
+                        else if (colIsNumber) defaultOp = 'number_equals';
+                        else defaultOp = 'contains';
+
+                        return (
+                            <div
+                                key={col}
+                                onClick={() => onUpdate({ field: col, value: '', operator: defaultOp as any })}
+                                className="px-2 py-1.5 text-xs text-slate-700 hover:bg-slate-100 rounded cursor-pointer flex items-center gap-2"
+                            >
+                                {/* Icon based on type */}
+                                <span className="text-[10px] uppercase font-bold text-slate-400 w-4">{schemaProperties?.[col]?.type?.[0] || 'T'}</span>
+                                {col}
+                            </div>
+                        );
+                    })}
                 </Dropdown>
             </div>
 
