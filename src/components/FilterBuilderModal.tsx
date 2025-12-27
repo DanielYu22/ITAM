@@ -672,10 +672,10 @@ export const FilterBuilderModal: React.FC<FilterBuilderModalProps> = ({ schema, 
     const [allAssets, setAllAssets] = useState<Asset[]>(assets);
     const [isLoadingAllAssets, setIsLoadingAllAssets] = useState(false);
 
-    // Cache key for sessionStorage
+    // Cache key for sessionStorage - persists until tab/window is closed
     const CACHE_KEY = 'itam_all_assets_cache';
     const CACHE_TIME_KEY = 'itam_all_assets_cache_time';
-    const CACHE_DURATION_MS = 10 * 60 * 1000; // 10 minutes
+    const CACHE_DURATION_MS = 60 * 60 * 1000; // 60 minutes (effectively session-long)
 
     // Load all assets on mount - with sessionStorage caching
     useEffect(() => {
