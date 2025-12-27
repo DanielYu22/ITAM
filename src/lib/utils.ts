@@ -110,12 +110,33 @@ export const toNotionFilter = (filter: FilterCondition, schemaTypes: Record<stri
     const type = schemaTypes[filter.field] || 'rich_text';
     const val = filter.value;
 
-    // Select / Status / Multi-select
+    // Select / Status
     if (type === 'select' || type === 'status') {
         if (filter.operator === 'equals') return { property: filter.field, [type]: { equals: val } };
-        if (filter.operator === 'not_equals') return { property: filter.field, [type]: { does_not_equal: val } };
+        if (filter.operator === 'does_not_equal') return { property: filter.field, [type]: { does_not_equal: val } };
+        if (filter.operator === 'not_equals') return { property: filter.field, [type]: { does_not_equal: val } }; // Legacy
         if (filter.operator === 'is_empty') return { property: filter.field, [type]: { is_empty: true } };
         if (filter.operator === 'is_not_empty') return { property: filter.field, [type]: { is_not_empty: true } };
+
+        // Contains for Select -> OR with equals (multi-value support)
+        if (filter.operator === 'contains' && val) {
+            const values = val.split('|').filter(Boolean);
+            if (values.length === 0) return undefined;
+            if (values.length === 1) {
+                return { property: filter.field, [type]: { equals: values[0] } };
+            }
+            // OR: any value matches
+            return { or: values.map(v => ({ property: filter.field, [type]: { equals: v } })) };
+        }
+
+        // Does not contain for Select -> AND with does_not_equal + empty
+        if (filter.operator === 'does_not_contain' && val) {
+            const values = val.split('|').filter(Boolean);
+            if (values.length === 0) return undefined;
+            const notEqualConditions = values.map(v => ({ property: filter.field, [type]: { does_not_equal: v } }));
+            const emptyCondition = { property: filter.field, [type]: { is_empty: true } };
+            return { or: [{ and: notEqualConditions }, emptyCondition] };
+        }
 
         // "Is One Of" for single select -> OR with equals
         if (filter.operator === 'is_in' && val) {
@@ -129,7 +150,7 @@ export const toNotionFilter = (filter: FilterCondition, schemaTypes: Record<stri
             // AND with does_not_equal
             return { and: values.map(v => ({ property: filter.field, [type]: { does_not_equal: v } })) };
         }
-        // fallback for contains: typically select doesn't support contains, but we can try equals
+        // fallback
         return { property: filter.field, [type]: { equals: val } };
     }
 
