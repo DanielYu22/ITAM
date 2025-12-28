@@ -93,10 +93,18 @@ export const DEFAULT_FILTER: FilterCondition = {
 
 
 export const toNotionFilter = (filter: FilterCondition, schemaTypes: Record<string, string>): any => {
+    const result = toNotionFilterInternal(filter, schemaTypes);
+    console.log('[toNotionFilter] Input:', JSON.stringify(filter, null, 2));
+    console.log('[toNotionFilter] Output:', JSON.stringify(result, null, 2));
+    console.log('[toNotionFilter] Schema types:', schemaTypes);
+    return result;
+};
+
+const toNotionFilterInternal = (filter: FilterCondition, schemaTypes: Record<string, string>): any => {
     if (filter.logic) {
         if (!filter.conditions || filter.conditions.length === 0) return undefined;
         const validConditions = filter.conditions
-            .map(c => toNotionFilter(c, schemaTypes))
+            .map(c => toNotionFilterInternal(c, schemaTypes))
             .filter(Boolean);
 
         if (validConditions.length === 0) return undefined;
