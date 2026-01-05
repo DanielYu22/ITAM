@@ -22,6 +22,7 @@ interface MobileCardViewProps {
     schemaProperties: Record<string, NotionProperty>;
     onUpdateAsset: (id: string, field: string, value: string) => void;
     primaryFields?: string[];
+    editableFields?: string[]; // 편집 가능한 필드 목록
 }
 
 export const MobileCardView: React.FC<MobileCardViewProps> = ({
@@ -29,7 +30,8 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     schema,
     schemaProperties,
     onUpdateAsset,
-    primaryFields
+    primaryFields,
+    editableFields
 }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [expandedAsset, setExpandedAsset] = useState<Asset | null>(null);
@@ -40,12 +42,20 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     // Swipe handling
     const [touchStartX, setTouchStartX] = useState<number | null>(null);
 
+    // 편집 가능 필드가 지정되면 그것을 사용, 아니면 기본 5개
     const displayFields = useMemo(() => {
+        if (editableFields && editableFields.length > 0) return editableFields;
         if (primaryFields && primaryFields.length > 0) return primaryFields;
         const titleField = Object.keys(schemaProperties).find(k => schemaProperties[k].type === 'title');
         const others = schema.filter(f => f !== titleField).slice(0, 4);
         return titleField ? [titleField, ...others] : others;
-    }, [primaryFields, schema, schemaProperties]);
+    }, [editableFields, primaryFields, schema, schemaProperties]);
+
+    // 편집 가능 여부 확인
+    const isFieldEditable = (field: string) => {
+        if (!editableFields || editableFields.length === 0) return true;
+        return editableFields.includes(field);
+    };
 
     const fieldPages = useMemo(() => {
         const pages: string[][] = [];
@@ -88,6 +98,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     };
 
     const startEditing = (field: string, value: string) => {
+        if (!isFieldEditable(field)) return;
         setEditingField(field);
         setEditValue(value);
     };
@@ -116,10 +127,14 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     const renderField = (field: string, asset: Asset) => {
         const value = asset.values[field] || '';
         const isEditing = editingField === field;
+        const canEdit = isFieldEditable(field);
 
         return (
             <View key={field} style={styles.fieldContainer}>
-                <Text style={styles.fieldLabel}>{field}</Text>
+                <View style={styles.fieldHeader}>
+                    <Text style={styles.fieldLabel}>{field}</Text>
+                    {canEdit && <Text style={styles.editHint}>편집 가능</Text>}
+                </View>
                 {isEditing ? (
                     <View style={styles.editContainer}>
                         <TextInput
@@ -145,8 +160,13 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                         </View>
                     </View>
                 ) : (
-                    <TouchableOpacity onPress={() => startEditing(field, value)}>
-                        <Text style={styles.fieldValue}>{value || '-'}</Text>
+                    <TouchableOpacity
+                        onPress={() => startEditing(field, value)}
+                        disabled={!canEdit}
+                    >
+                        <Text style={[styles.fieldValue, !canEdit && styles.fieldValueReadOnly]}>
+                            {value || '-'}
+                        </Text>
                     </TouchableOpacity>
                 )}
             </View>
@@ -379,17 +399,30 @@ const styles = StyleSheet.create({
         padding: 16,
         marginBottom: 12,
     },
+    fieldHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
     fieldLabel: {
         fontSize: 12,
         fontWeight: 'bold',
         color: '#6b7280',
         textTransform: 'uppercase',
         letterSpacing: 0.5,
-        marginBottom: 8,
+    },
+    editHint: {
+        fontSize: 10,
+        color: '#10b981',
+        fontWeight: '500',
     },
     fieldValue: {
         fontSize: 16,
         color: '#1f2937',
+    },
+    fieldValueReadOnly: {
+        color: '#9ca3af',
     },
     editContainer: {
         gap: 8,

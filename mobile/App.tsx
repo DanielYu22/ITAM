@@ -17,7 +17,8 @@ import { NotionClient, Asset, NotionProperty } from './src/lib/notion';
 import { NOTION_API_KEY, NOTION_DATABASE_ID, API_BASE_URL } from './src/config';
 import { MobileCardView } from './src/components/MobileCardView';
 import { evaluateFilter, FilterCondition, DEFAULT_FILTER } from './src/lib/utils';
-import { FieldWorkFilter } from './src/components/FieldWorkFilter';
+import { FieldWorkFilter, FilterConfig } from './src/components/FieldWorkFilter';
+import { LocationNavigator } from './src/components/LocationNavigator';
 
 export default function App() {
   // Settings state for configuration - check these first
@@ -37,7 +38,10 @@ export default function App() {
   const [filter, setFilter] = useState<FilterCondition>(DEFAULT_FILTER);
   const [showSettings, setShowSettings] = useState(false);
   const [showFieldWorkFilter, setShowFieldWorkFilter] = useState(false);
-  const [fieldWorkConfig, setFieldWorkConfig] = useState<any>(null);
+  const [fieldWorkConfig, setFieldWorkConfig] = useState<FilterConfig | null>(null);
+  // 위치 네비게이션 상태
+  const [locationSelectedAssets, setLocationSelectedAssets] = useState<Asset[]>([]);
+  const [locationFilters, setLocationFilters] = useState<Record<string, string>>({});
 
   // Notion Client
   const [notionClient, setNotionClient] = useState<NotionClient | null>(null);
@@ -111,13 +115,18 @@ export default function App() {
 
   // Field work filter 적용
   const workFilteredAssets = useMemo(() => {
+    // 위치 네비게이션에서 선택된 자산이 있으면 그것 사용
+    if (locationSelectedAssets.length > 0) {
+      return locationSelectedAssets;
+    }
+
     if (!fieldWorkConfig) return filteredAssets;
 
     let result = filteredAssets;
 
     // 작업 대상 조건 적용
     if (fieldWorkConfig.targetConditions) {
-      fieldWorkConfig.targetConditions.forEach((cond: any) => {
+      fieldWorkConfig.targetConditions.forEach((cond) => {
         result = result.filter(asset => {
           const val = (asset.values[cond.column] || '').toLowerCase();
           switch (cond.type) {
@@ -126,11 +135,21 @@ export default function App() {
             case 'is_not_empty':
               return val && val !== '';
             case 'contains':
-              return val.includes((cond.value || '').toLowerCase());
+              // 다중 선택 지원
+              if (cond.values && cond.values.length > 0) {
+                return cond.values.some(v => val.includes(v.toLowerCase()));
+              }
+              return true;
             case 'not_contains':
-              return !val.includes((cond.value || '').toLowerCase());
+              if (cond.values && cond.values.length > 0) {
+                return !cond.values.some(v => val.includes(v.toLowerCase()));
+              }
+              return true;
             case 'equals':
-              return val === (cond.value || '').toLowerCase();
+              if (cond.values && cond.values.length > 0) {
+                return cond.values.some(v => val === v.toLowerCase());
+              }
+              return true;
             default:
               return true;
           }
@@ -138,20 +157,17 @@ export default function App() {
       });
     }
 
-    // 위치 필터 적용
-    if (fieldWorkConfig.locationFilters) {
-      Object.entries(fieldWorkConfig.locationFilters).forEach(([col, values]: [string, any]) => {
-        if (values && values.length > 0) {
-          result = result.filter(asset => {
-            const val = asset.values[col] || '';
-            return values.some((v: string) => val.includes(v));
-          });
-        }
+    // 정렬 적용
+    if (fieldWorkConfig.sortColumn) {
+      result = [...result].sort((a, b) => {
+        const valA = parseFloat(a.values[fieldWorkConfig.sortColumn]) || 0;
+        const valB = parseFloat(b.values[fieldWorkConfig.sortColumn]) || 0;
+        return valA - valB;
       });
     }
 
     return result;
-  }, [filteredAssets, fieldWorkConfig]);
+  }, [filteredAssets, fieldWorkConfig, locationSelectedAssets]);
 
   // Pull to refresh
   const onRefresh = useCallback(() => {
@@ -325,7 +341,18 @@ export default function App() {
 
         {/* Main Content */}
         <View style={styles.content}>
-          {filteredAssets.length === 0 ? (
+          {/* 위치 계층이 설정되어 있고 아직 선택 완료 안됨 */}
+          {fieldWorkConfig?.locationHierarchy && fieldWorkConfig.locationHierarchy.length > 0 && locationSelectedAssets.length === 0 ? (
+            <LocationNavigator
+              assets={filteredAssets}
+              locationHierarchy={fieldWorkConfig.locationHierarchy}
+              sortColumn={fieldWorkConfig.sortColumn}
+              onSelectLocation={(filters, selected) => {
+                setLocationFilters(filters);
+                setLocationSelectedAssets(selected);
+              }}
+            />
+          ) : workFilteredAssets.length === 0 ? (
             <ScrollView
               contentContainerStyle={styles.emptyContainer}
               refreshControl={
@@ -347,6 +374,7 @@ export default function App() {
               schema={schema}
               schemaProperties={schemaProperties}
               onUpdateAsset={handleUpdateAsset}
+              editableFields={fieldWorkConfig?.editableFields}
             />
           )}
         </View>
@@ -355,11 +383,16 @@ export default function App() {
         <FieldWorkFilter
           visible={showFieldWorkFilter}
           onClose={() => setShowFieldWorkFilter(false)}
-          onApply={setFieldWorkConfig}
+          onApply={(config) => {
+            setFieldWorkConfig(config);
+            // 필터 변경 시 위치 선택 리셋
+            setLocationSelectedAssets([]);
+            setLocationFilters({});
+          }}
           schema={schema}
           schemaProperties={schemaProperties}
           assets={assets}
-          currentConfig={fieldWorkConfig}
+          currentConfig={fieldWorkConfig || undefined}
         />
       </SafeAreaView>
     </SafeAreaProvider>

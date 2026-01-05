@@ -7,23 +7,28 @@ import {
     StyleSheet,
     Modal,
     TextInput,
+    FlatList,
 } from 'react-native';
-import { ChevronRight, Check, Filter, MapPin, Target, X } from 'lucide-react-native';
+import { ChevronRight, ChevronDown, Check, Filter, MapPin, Target, X, Edit3, ArrowUpDown } from 'lucide-react-native';
 import { NotionProperty } from '../lib/notion';
 
-interface FilterConfig {
+// 필터 설정 인터페이스
+export interface FilterConfig {
+    // 위치 계층 컬럼 (건물 → 층 → 연구실)
+    locationHierarchy: string[];
+    // 정렬 컬럼 (동선)
+    sortColumn: string;
     // 작업 대상 조건
     targetConditions: TargetCondition[];
-    // 위치 필터
-    locationColumns: string[];
-    locationFilters: Record<string, string[]>; // column -> selected values
+    // 편집 가능 필드
+    editableFields: string[];
 }
 
-interface TargetCondition {
+export interface TargetCondition {
     id: string;
     column: string;
     type: 'is_empty' | 'is_not_empty' | 'contains' | 'not_contains' | 'equals';
-    value?: string;
+    values: string[]; // 다중 선택 지원
 }
 
 interface FieldWorkFilterProps {
@@ -45,122 +50,123 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
     assets,
     currentConfig,
 }) => {
-    const [step, setStep] = useState<'target' | 'location' | 'preview'>('target');
+    const [step, setStep] = useState<'hierarchy' | 'sort' | 'target' | 'editable'>('hierarchy');
+
+    // 위치 계층 (건물 → 층 → 연구실)
+    const [locationHierarchy, setLocationHierarchy] = useState<string[]>(
+        currentConfig?.locationHierarchy || []
+    );
+
+    // 정렬 컬럼
+    const [sortColumn, setSortColumn] = useState<string>(
+        currentConfig?.sortColumn || ''
+    );
+
+    // 작업 대상 조건
     const [targetConditions, setTargetConditions] = useState<TargetCondition[]>(
         currentConfig?.targetConditions || []
     );
-    const [locationColumns, setLocationColumns] = useState<string[]>(
-        currentConfig?.locationColumns || []
+
+    // 편집 가능 필드
+    const [editableFields, setEditableFields] = useState<string[]>(
+        currentConfig?.editableFields || []
     );
-    const [locationFilters, setLocationFilters] = useState<Record<string, string[]>>(
-        currentConfig?.locationFilters || {}
-    );
+
+    // UI 상태
     const [showColumnPicker, setShowColumnPicker] = useState(false);
-    const [pickerMode, setPickerMode] = useState<'target' | 'location'>('target');
-    const [editingCondition, setEditingCondition] = useState<TargetCondition | null>(null);
+    const [pickerMode, setPickerMode] = useState<'hierarchy' | 'sort' | 'target' | 'editable'>('hierarchy');
+    const [showValuePicker, setShowValuePicker] = useState(false);
+    const [activeConditionId, setActiveConditionId] = useState<string | null>(null);
+    const [valueSearchText, setValueSearchText] = useState('');
 
     // 각 컬럼의 고유 값 추출
     const columnValues = useMemo(() => {
-        const values: Record<string, Set<string>> = {};
+        const values: Record<string, string[]> = {};
         schema.forEach(col => {
-            values[col] = new Set<string>();
+            const set = new Set<string>();
             assets.forEach(asset => {
                 const val = asset.values[col];
                 if (val && val.trim()) {
-                    values[col].add(val);
+                    set.add(val);
                 }
             });
+            values[col] = Array.from(set).sort();
         });
         return values;
     }, [schema, assets]);
 
-    // 필터 적용된 결과 미리보기
-    const previewCount = useMemo(() => {
-        let filtered = assets;
+    // 계층 추가
+    const addHierarchyLevel = (column: string) => {
+        if (!locationHierarchy.includes(column)) {
+            setLocationHierarchy([...locationHierarchy, column]);
+        }
+        setShowColumnPicker(false);
+    };
 
-        // 작업 대상 조건 적용
-        targetConditions.forEach(cond => {
-            filtered = filtered.filter(asset => {
-                const val = (asset.values[cond.column] || '').toLowerCase();
-                switch (cond.type) {
-                    case 'is_empty':
-                        return !val || val === '';
-                    case 'is_not_empty':
-                        return val && val !== '';
-                    case 'contains':
-                        return val.includes((cond.value || '').toLowerCase());
-                    case 'not_contains':
-                        return !val.includes((cond.value || '').toLowerCase());
-                    case 'equals':
-                        return val === (cond.value || '').toLowerCase();
-                    default:
-                        return true;
-                }
-            });
-        });
+    // 계층 제거
+    const removeHierarchyLevel = (index: number) => {
+        setLocationHierarchy(prev => prev.filter((_, i) => i !== index));
+    };
 
-        // 위치 필터 적용
-        Object.entries(locationFilters).forEach(([col, values]) => {
-            if (values.length > 0) {
-                filtered = filtered.filter(asset => {
-                    const val = asset.values[col] || '';
-                    return values.some(v => val.includes(v));
-                });
-            }
-        });
-
-        return filtered.length;
-    }, [assets, targetConditions, locationFilters]);
-
+    // 조건 추가
     const addTargetCondition = (column: string) => {
         const newCondition: TargetCondition = {
             id: Date.now().toString(),
             column,
             type: 'is_empty',
+            values: [],
         };
         setTargetConditions([...targetConditions, newCondition]);
+        // 편집 가능 필드에도 자동 추가
+        if (!editableFields.includes(column)) {
+            setEditableFields([...editableFields, column]);
+        }
         setShowColumnPicker(false);
     };
 
+    // 조건 업데이트
     const updateCondition = (id: string, updates: Partial<TargetCondition>) => {
         setTargetConditions(prev =>
             prev.map(c => (c.id === id ? { ...c, ...updates } : c))
         );
     };
 
+    // 조건 제거
     const removeCondition = (id: string) => {
         setTargetConditions(prev => prev.filter(c => c.id !== id));
     };
 
-    const toggleLocationColumn = (column: string) => {
-        if (locationColumns.includes(column)) {
-            setLocationColumns(prev => prev.filter(c => c !== column));
-            setLocationFilters(prev => {
-                const next = { ...prev };
-                delete next[column];
-                return next;
-            });
+    // 값 선택 토글
+    const toggleConditionValue = (conditionId: string, value: string) => {
+        setTargetConditions(prev =>
+            prev.map(c => {
+                if (c.id === conditionId) {
+                    const values = c.values.includes(value)
+                        ? c.values.filter(v => v !== value)
+                        : [...c.values, value];
+                    return { ...c, values };
+                }
+                return c;
+            })
+        );
+    };
+
+    // 편집 필드 토글
+    const toggleEditableField = (column: string) => {
+        if (editableFields.includes(column)) {
+            setEditableFields(prev => prev.filter(c => c !== column));
         } else {
-            setLocationColumns(prev => [...prev, column]);
+            setEditableFields(prev => [...prev, column]);
         }
     };
 
-    const toggleLocationValue = (column: string, value: string) => {
-        setLocationFilters(prev => {
-            const current = prev[column] || [];
-            if (current.includes(value)) {
-                return { ...prev, [column]: current.filter(v => v !== value) };
-            } else {
-                return { ...prev, [column]: [...current, value] };
-            }
-        });
-    };
-
+    // 적용
     const handleApply = () => {
         onApply({
+            locationHierarchy,
+            sortColumn,
             targetConditions,
-            locationColumns,
-            locationFilters,
+            editableFields,
         });
         onClose();
     };
@@ -173,6 +179,8 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
         equals: '정확히 일치',
     };
 
+    const hierarchyLabels = ['건물', '층', '연구실', '추가'];
+
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
             <View style={styles.container}>
@@ -181,48 +189,132 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                     <TouchableOpacity onPress={onClose}>
                         <X size={24} color="#6b7280" />
                     </TouchableOpacity>
-                    <Text style={styles.headerTitle}>현장 작업 필터</Text>
+                    <Text style={styles.headerTitle}>현장 작업 설정</Text>
                     <TouchableOpacity onPress={handleApply}>
                         <Text style={styles.applyButton}>적용</Text>
                     </TouchableOpacity>
                 </View>
 
                 {/* Steps */}
-                <View style={styles.steps}>
-                    <TouchableOpacity
-                        style={[styles.stepTab, step === 'target' && styles.stepTabActive]}
-                        onPress={() => setStep('target')}
-                    >
-                        <Target size={16} color={step === 'target' ? '#6366f1' : '#9ca3af'} />
-                        <Text style={[styles.stepText, step === 'target' && styles.stepTextActive]}>
-                            작업 대상
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[styles.stepTab, step === 'location' && styles.stepTabActive]}
-                        onPress={() => setStep('location')}
-                    >
-                        <MapPin size={16} color={step === 'location' ? '#6366f1' : '#9ca3af'} />
-                        <Text style={[styles.stepText, step === 'location' && styles.stepTextActive]}>
-                            위치 선택
-                        </Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[styles.stepTab, step === 'preview' && styles.stepTabActive]}
-                        onPress={() => setStep('preview')}
-                    >
-                        <Filter size={16} color={step === 'preview' ? '#6366f1' : '#9ca3af'} />
-                        <Text style={[styles.stepText, step === 'preview' && styles.stepTextActive]}>
-                            미리보기
-                        </Text>
-                    </TouchableOpacity>
-                </View>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.stepsScroll}>
+                    <View style={styles.steps}>
+                        <TouchableOpacity
+                            style={[styles.stepTab, step === 'hierarchy' && styles.stepTabActive]}
+                            onPress={() => setStep('hierarchy')}
+                        >
+                            <MapPin size={16} color={step === 'hierarchy' ? '#6366f1' : '#9ca3af'} />
+                            <Text style={[styles.stepText, step === 'hierarchy' && styles.stepTextActive]}>
+                                위치 계층
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.stepTab, step === 'sort' && styles.stepTabActive]}
+                            onPress={() => setStep('sort')}
+                        >
+                            <ArrowUpDown size={16} color={step === 'sort' ? '#6366f1' : '#9ca3af'} />
+                            <Text style={[styles.stepText, step === 'sort' && styles.stepTextActive]}>
+                                정렬
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.stepTab, step === 'target' && styles.stepTabActive]}
+                            onPress={() => setStep('target')}
+                        >
+                            <Target size={16} color={step === 'target' ? '#6366f1' : '#9ca3af'} />
+                            <Text style={[styles.stepText, step === 'target' && styles.stepTextActive]}>
+                                작업 대상
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.stepTab, step === 'editable' && styles.stepTabActive]}
+                            onPress={() => setStep('editable')}
+                        >
+                            <Edit3 size={16} color={step === 'editable' ? '#6366f1' : '#9ca3af'} />
+                            <Text style={[styles.stepText, step === 'editable' && styles.stepTextActive]}>
+                                편집 필드
+                            </Text>
+                        </TouchableOpacity>
+                    </View>
+                </ScrollView>
 
                 <ScrollView style={styles.content}>
-                    {/* Step 1: 작업 대상 조건 */}
+                    {/* Step 1: 위치 계층 설정 */}
+                    {step === 'hierarchy' && (
+                        <View>
+                            <Text style={styles.sectionTitle}>위치 계층 설정</Text>
+                            <Text style={styles.sectionDesc}>
+                                건물 → 층 → 연구실 순서로 위치 컬럼을 선택하세요.
+                            </Text>
+
+                            {locationHierarchy.map((col, index) => (
+                                <View key={col} style={styles.hierarchyItem}>
+                                    <View style={styles.hierarchyLeft}>
+                                        <View style={styles.hierarchyBadge}>
+                                            <Text style={styles.hierarchyBadgeText}>
+                                                {hierarchyLabels[index] || `${index + 1}단계`}
+                                            </Text>
+                                        </View>
+                                        <Text style={styles.hierarchyColumn}>{col}</Text>
+                                    </View>
+                                    <TouchableOpacity onPress={() => removeHierarchyLevel(index)}>
+                                        <X size={20} color="#ef4444" />
+                                    </TouchableOpacity>
+                                </View>
+                            ))}
+
+                            {locationHierarchy.length < 4 && (
+                                <TouchableOpacity
+                                    style={styles.addButton}
+                                    onPress={() => {
+                                        setPickerMode('hierarchy');
+                                        setShowColumnPicker(true);
+                                    }}
+                                >
+                                    <Text style={styles.addButtonText}>
+                                        + {hierarchyLabels[locationHierarchy.length]} 컬럼 선택
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    )}
+
+                    {/* Step 2: 정렬 설정 */}
+                    {step === 'sort' && (
+                        <View>
+                            <Text style={styles.sectionTitle}>정렬 기준</Text>
+                            <Text style={styles.sectionDesc}>
+                                장비 순서를 정할 컬럼을 선택하세요 (예: 동선).
+                            </Text>
+
+                            {sortColumn ? (
+                                <View style={styles.sortSelected}>
+                                    <View style={styles.sortInfo}>
+                                        <ArrowUpDown size={20} color="#6366f1" />
+                                        <Text style={styles.sortColumnText}>{sortColumn}</Text>
+                                        <Text style={styles.sortDesc}>오름차순 정렬</Text>
+                                    </View>
+                                    <TouchableOpacity onPress={() => setSortColumn('')}>
+                                        <X size={20} color="#ef4444" />
+                                    </TouchableOpacity>
+                                </View>
+                            ) : (
+                                <TouchableOpacity
+                                    style={styles.addButton}
+                                    onPress={() => {
+                                        setPickerMode('sort');
+                                        setShowColumnPicker(true);
+                                    }}
+                                >
+                                    <Text style={styles.addButtonText}>+ 정렬 컬럼 선택</Text>
+                                </TouchableOpacity>
+                            )}
+                        </View>
+                    )}
+
+                    {/* Step 3: 작업 대상 조건 */}
                     {step === 'target' && (
                         <View>
-                            <Text style={styles.sectionTitle}>작업 대상 조건 설정</Text>
+                            <Text style={styles.sectionTitle}>작업 대상 조건</Text>
                             <Text style={styles.sectionDesc}>
                                 어떤 항목을 작업 대상으로 할지 조건을 설정하세요.
                             </Text>
@@ -235,6 +327,7 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                                             <X size={18} color="#ef4444" />
                                         </TouchableOpacity>
                                     </View>
+
                                     <View style={styles.conditionTypes}>
                                         {Object.entries(conditionTypeLabels).map(([type, label]) => (
                                             <TouchableOpacity
@@ -256,16 +349,42 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                                             </TouchableOpacity>
                                         ))}
                                     </View>
-                                    {(cond.type === 'contains' ||
-                                        cond.type === 'not_contains' ||
-                                        cond.type === 'equals') && (
-                                            <TextInput
-                                                style={styles.conditionInput}
-                                                value={cond.value || ''}
-                                                onChangeText={v => updateCondition(cond.id, { value: v })}
-                                                placeholder="값 입력..."
-                                            />
-                                        )}
+
+                                    {/* 값 선택 (다중 선택 지원) */}
+                                    {(cond.type === 'contains' || cond.type === 'not_contains' || cond.type === 'equals') && (
+                                        <View style={styles.valueSection}>
+                                            <TouchableOpacity
+                                                style={styles.valuePickerButton}
+                                                onPress={() => {
+                                                    setActiveConditionId(cond.id);
+                                                    setValueSearchText('');
+                                                    setShowValuePicker(true);
+                                                }}
+                                            >
+                                                <Text style={styles.valuePickerButtonText}>
+                                                    {cond.values.length > 0
+                                                        ? `${cond.values.length}개 선택됨`
+                                                        : '값 선택...'}
+                                                </Text>
+                                                <ChevronDown size={18} color="#6b7280" />
+                                            </TouchableOpacity>
+
+                                            {cond.values.length > 0 && (
+                                                <View style={styles.selectedValues}>
+                                                    {cond.values.map(val => (
+                                                        <View key={val} style={styles.selectedValueChip}>
+                                                            <Text style={styles.selectedValueText}>{val}</Text>
+                                                            <TouchableOpacity
+                                                                onPress={() => toggleConditionValue(cond.id, val)}
+                                                            >
+                                                                <X size={14} color="#6366f1" />
+                                                            </TouchableOpacity>
+                                                        </View>
+                                                    ))}
+                                                </View>
+                                            )}
+                                        </View>
+                                    )}
                                 </View>
                             ))}
 
@@ -281,106 +400,36 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                         </View>
                     )}
 
-                    {/* Step 2: 위치 선택 */}
-                    {step === 'location' && (
+                    {/* Step 4: 편집 가능 필드 */}
+                    {step === 'editable' && (
                         <View>
-                            <Text style={styles.sectionTitle}>위치 컬럼 선택</Text>
+                            <Text style={styles.sectionTitle}>편집 가능 필드</Text>
                             <Text style={styles.sectionDesc}>
-                                위치를 나타내는 컬럼을 선택하세요 (건물, 층, 실험실 등)
+                                카드에서 편집할 수 있는 필드를 선택하세요.
                             </Text>
 
-                            <View style={styles.columnList}>
+                            <View style={styles.editableList}>
                                 {schema.map(col => (
                                     <TouchableOpacity
                                         key={col}
                                         style={[
-                                            styles.columnItem,
-                                            locationColumns.includes(col) && styles.columnItemActive,
+                                            styles.editableItem,
+                                            editableFields.includes(col) && styles.editableItemActive,
                                         ]}
-                                        onPress={() => toggleLocationColumn(col)}
+                                        onPress={() => toggleEditableField(col)}
                                     >
-                                        <Text style={styles.columnItemText}>{col}</Text>
-                                        {locationColumns.includes(col) && (
+                                        <Text style={[
+                                            styles.editableItemText,
+                                            editableFields.includes(col) && styles.editableItemTextActive,
+                                        ]}>
+                                            {col}
+                                        </Text>
+                                        {editableFields.includes(col) && (
                                             <Check size={18} color="#6366f1" />
                                         )}
                                     </TouchableOpacity>
                                 ))}
                             </View>
-
-                            {locationColumns.length > 0 && (
-                                <>
-                                    <Text style={[styles.sectionTitle, { marginTop: 24 }]}>
-                                        현장 위치 선택
-                                    </Text>
-                                    {locationColumns.map(col => (
-                                        <View key={col} style={styles.locationSection}>
-                                            <Text style={styles.locationTitle}>{col}</Text>
-                                            <View style={styles.valueList}>
-                                                {Array.from(columnValues[col] || []).map(val => (
-                                                    <TouchableOpacity
-                                                        key={val}
-                                                        style={[
-                                                            styles.valueChip,
-                                                            locationFilters[col]?.includes(val) &&
-                                                            styles.valueChipActive,
-                                                        ]}
-                                                        onPress={() => toggleLocationValue(col, val)}
-                                                    >
-                                                        <Text
-                                                            style={[
-                                                                styles.valueChipText,
-                                                                locationFilters[col]?.includes(val) &&
-                                                                styles.valueChipTextActive,
-                                                            ]}
-                                                        >
-                                                            {val}
-                                                        </Text>
-                                                    </TouchableOpacity>
-                                                ))}
-                                            </View>
-                                        </View>
-                                    ))}
-                                </>
-                            )}
-                        </View>
-                    )}
-
-                    {/* Step 3: 미리보기 */}
-                    {step === 'preview' && (
-                        <View>
-                            <Text style={styles.sectionTitle}>필터 미리보기</Text>
-
-                            <View style={styles.previewCard}>
-                                <Text style={styles.previewNumber}>{previewCount}</Text>
-                                <Text style={styles.previewLabel}>
-                                    총 {assets.length}개 중 작업 대상
-                                </Text>
-                            </View>
-
-                            {targetConditions.length > 0 && (
-                                <View style={styles.summarySection}>
-                                    <Text style={styles.summaryTitle}>작업 대상 조건</Text>
-                                    {targetConditions.map(cond => (
-                                        <Text key={cond.id} style={styles.summaryItem}>
-                                            • {cond.column}: {conditionTypeLabels[cond.type]}
-                                            {cond.value ? ` "${cond.value}"` : ''}
-                                        </Text>
-                                    ))}
-                                </View>
-                            )}
-
-                            {Object.keys(locationFilters).length > 0 && (
-                                <View style={styles.summarySection}>
-                                    <Text style={styles.summaryTitle}>위치 필터</Text>
-                                    {Object.entries(locationFilters).map(([col, vals]) =>
-                                        vals.length > 0 ? (
-                                            <Text key={col} style={styles.summaryItem}>
-                                                • {col}: {vals.join(', ')}
-                                            </Text>
-                                        ) : null
-                                    )}
-                                </View>
-                            )}
                         </View>
                     )}
                 </ScrollView>
@@ -396,17 +445,111 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                                 </TouchableOpacity>
                             </View>
                             <ScrollView style={styles.pickerList}>
-                                {schema.map(col => (
-                                    <TouchableOpacity
-                                        key={col}
-                                        style={styles.pickerItem}
-                                        onPress={() => addTargetCondition(col)}
-                                    >
-                                        <Text style={styles.pickerItemText}>{col}</Text>
-                                        <ChevronRight size={18} color="#9ca3af" />
-                                    </TouchableOpacity>
-                                ))}
+                                {schema
+                                    .filter(col => {
+                                        if (pickerMode === 'hierarchy') {
+                                            return !locationHierarchy.includes(col);
+                                        }
+                                        return true;
+                                    })
+                                    .map(col => (
+                                        <TouchableOpacity
+                                            key={col}
+                                            style={styles.pickerItem}
+                                            onPress={() => {
+                                                if (pickerMode === 'hierarchy') {
+                                                    addHierarchyLevel(col);
+                                                } else if (pickerMode === 'sort') {
+                                                    setSortColumn(col);
+                                                    setShowColumnPicker(false);
+                                                } else if (pickerMode === 'target') {
+                                                    addTargetCondition(col);
+                                                }
+                                            }}
+                                        >
+                                            <Text style={styles.pickerItemText}>{col}</Text>
+                                            <ChevronRight size={18} color="#9ca3af" />
+                                        </TouchableOpacity>
+                                    ))}
                             </ScrollView>
+                        </View>
+                    </View>
+                </Modal>
+
+                {/* Value Picker Modal (다중 선택) */}
+                <Modal visible={showValuePicker} transparent animationType="fade">
+                    <View style={styles.pickerOverlay}>
+                        <View style={styles.pickerContainer}>
+                            <View style={styles.pickerHeader}>
+                                <Text style={styles.pickerTitle}>값 선택 (다중)</Text>
+                                <TouchableOpacity onPress={() => setShowValuePicker(false)}>
+                                    <X size={24} color="#6b7280" />
+                                </TouchableOpacity>
+                            </View>
+
+                            {/* 검색 입력 */}
+                            <View style={styles.searchInputContainer}>
+                                <TextInput
+                                    style={styles.searchInput}
+                                    value={valueSearchText}
+                                    onChangeText={setValueSearchText}
+                                    placeholder="검색 또는 직접 입력..."
+                                    placeholderTextColor="#9ca3af"
+                                />
+                                {valueSearchText.length > 0 && (
+                                    <TouchableOpacity
+                                        style={styles.addCustomValue}
+                                        onPress={() => {
+                                            if (activeConditionId && valueSearchText.trim()) {
+                                                toggleConditionValue(activeConditionId, valueSearchText.trim());
+                                                setValueSearchText('');
+                                            }
+                                        }}
+                                    >
+                                        <Text style={styles.addCustomValueText}>추가</Text>
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+
+                            <ScrollView style={styles.pickerList}>
+                                {activeConditionId && (() => {
+                                    const cond = targetConditions.find(c => c.id === activeConditionId);
+                                    if (!cond) return null;
+
+                                    const values = columnValues[cond.column] || [];
+                                    const filtered = values.filter(v =>
+                                        v.toLowerCase().includes(valueSearchText.toLowerCase())
+                                    );
+
+                                    return filtered.map(val => (
+                                        <TouchableOpacity
+                                            key={val}
+                                            style={[
+                                                styles.valueItem,
+                                                cond.values.includes(val) && styles.valueItemActive,
+                                            ]}
+                                            onPress={() => toggleConditionValue(activeConditionId, val)}
+                                        >
+                                            <Text style={[
+                                                styles.valueItemText,
+                                                cond.values.includes(val) && styles.valueItemTextActive,
+                                            ]}>
+                                                {val}
+                                            </Text>
+                                            {cond.values.includes(val) && (
+                                                <Check size={18} color="#6366f1" />
+                                            )}
+                                        </TouchableOpacity>
+                                    ));
+                                })()}
+                            </ScrollView>
+
+                            <TouchableOpacity
+                                style={styles.doneButton}
+                                onPress={() => setShowValuePicker(false)}
+                            >
+                                <Text style={styles.doneButtonText}>완료</Text>
+                            </TouchableOpacity>
                         </View>
                     </View>
                 </Modal>
@@ -439,18 +582,21 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#6366f1',
     },
-    steps: {
-        flexDirection: 'row',
+    stepsScroll: {
         backgroundColor: '#ffffff',
         borderBottomWidth: 1,
         borderBottomColor: '#e5e7eb',
     },
+    steps: {
+        flexDirection: 'row',
+        paddingHorizontal: 8,
+    },
     stepTab: {
-        flex: 1,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
         paddingVertical: 12,
+        paddingHorizontal: 16,
         gap: 6,
         borderBottomWidth: 2,
         borderBottomColor: 'transparent',
@@ -480,6 +626,58 @@ const styles = StyleSheet.create({
         fontSize: 14,
         color: '#6b7280',
         marginBottom: 16,
+    },
+    hierarchyItem: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        backgroundColor: '#ffffff',
+        padding: 16,
+        borderRadius: 12,
+        marginBottom: 8,
+    },
+    hierarchyLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    hierarchyBadge: {
+        backgroundColor: '#6366f1',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+    },
+    hierarchyBadgeText: {
+        color: '#ffffff',
+        fontSize: 12,
+        fontWeight: '600',
+    },
+    hierarchyColumn: {
+        fontSize: 16,
+        color: '#1f2937',
+        fontWeight: '500',
+    },
+    sortSelected: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        backgroundColor: '#ffffff',
+        padding: 16,
+        borderRadius: 12,
+    },
+    sortInfo: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    sortColumnText: {
+        fontSize: 16,
+        fontWeight: '500',
+        color: '#1f2937',
+    },
+    sortDesc: {
+        fontSize: 13,
+        color: '#6b7280',
     },
     conditionCard: {
         backgroundColor: '#ffffff',
@@ -519,15 +717,42 @@ const styles = StyleSheet.create({
     conditionTypeTextActive: {
         color: '#ffffff',
     },
-    conditionInput: {
+    valueSection: {
         marginTop: 12,
+    },
+    valuePickerButton: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         backgroundColor: '#f9fafb',
         borderWidth: 1,
         borderColor: '#e5e7eb',
         borderRadius: 8,
         paddingHorizontal: 12,
-        paddingVertical: 10,
+        paddingVertical: 12,
+    },
+    valuePickerButtonText: {
         fontSize: 15,
+        color: '#6b7280',
+    },
+    selectedValues: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+        marginTop: 10,
+    },
+    selectedValueChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#eef2ff',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 16,
+        gap: 6,
+    },
+    selectedValueText: {
+        fontSize: 13,
+        color: '#6366f1',
     },
     addButton: {
         backgroundColor: '#eef2ff',
@@ -540,10 +765,10 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#6366f1',
     },
-    columnList: {
+    editableList: {
         gap: 8,
     },
-    columnItem: {
+    editableItem: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
@@ -551,81 +776,18 @@ const styles = StyleSheet.create({
         padding: 16,
         borderRadius: 12,
     },
-    columnItemActive: {
+    editableItemActive: {
         backgroundColor: '#eef2ff',
         borderWidth: 1,
         borderColor: '#6366f1',
     },
-    columnItemText: {
+    editableItemText: {
         fontSize: 15,
         color: '#1f2937',
     },
-    locationSection: {
-        marginBottom: 16,
-    },
-    locationTitle: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: '#374151',
-        marginBottom: 8,
-    },
-    valueList: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: 8,
-    },
-    valueChip: {
-        paddingHorizontal: 12,
-        paddingVertical: 8,
-        borderRadius: 20,
-        backgroundColor: '#ffffff',
-        borderWidth: 1,
-        borderColor: '#e5e7eb',
-    },
-    valueChipActive: {
-        backgroundColor: '#6366f1',
-        borderColor: '#6366f1',
-    },
-    valueChipText: {
-        fontSize: 14,
-        color: '#374151',
-    },
-    valueChipTextActive: {
-        color: '#ffffff',
-    },
-    previewCard: {
-        backgroundColor: '#6366f1',
-        borderRadius: 16,
-        padding: 24,
-        alignItems: 'center',
-        marginBottom: 24,
-    },
-    previewNumber: {
-        fontSize: 48,
-        fontWeight: 'bold',
-        color: '#ffffff',
-    },
-    previewLabel: {
-        fontSize: 16,
-        color: '#c7d2fe',
-        marginTop: 4,
-    },
-    summarySection: {
-        backgroundColor: '#ffffff',
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 12,
-    },
-    summaryTitle: {
-        fontSize: 15,
-        fontWeight: '600',
-        color: '#374151',
-        marginBottom: 8,
-    },
-    summaryItem: {
-        fontSize: 14,
-        color: '#6b7280',
-        lineHeight: 22,
+    editableItemTextActive: {
+        color: '#6366f1',
+        fontWeight: '500',
     },
     pickerOverlay: {
         flex: 1,
@@ -653,6 +815,7 @@ const styles = StyleSheet.create({
     },
     pickerList: {
         padding: 8,
+        maxHeight: 300,
     },
     pickerItem: {
         flexDirection: 'row',
@@ -665,5 +828,62 @@ const styles = StyleSheet.create({
     pickerItemText: {
         fontSize: 15,
         color: '#1f2937',
+    },
+    searchInputContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e5e7eb',
+        gap: 10,
+    },
+    searchInput: {
+        flex: 1,
+        backgroundColor: '#f3f4f6',
+        borderRadius: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        fontSize: 15,
+    },
+    addCustomValue: {
+        backgroundColor: '#6366f1',
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 8,
+    },
+    addCustomValueText: {
+        color: '#ffffff',
+        fontWeight: '600',
+    },
+    valueItem: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 14,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f3f4f6',
+    },
+    valueItemActive: {
+        backgroundColor: '#eef2ff',
+    },
+    valueItemText: {
+        fontSize: 15,
+        color: '#1f2937',
+    },
+    valueItemTextActive: {
+        color: '#6366f1',
+        fontWeight: '500',
+    },
+    doneButton: {
+        backgroundColor: '#6366f1',
+        margin: 16,
+        padding: 16,
+        borderRadius: 12,
+        alignItems: 'center',
+    },
+    doneButtonText: {
+        color: '#ffffff',
+        fontSize: 16,
+        fontWeight: '600',
     },
 });
