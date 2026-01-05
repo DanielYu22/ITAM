@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -12,11 +12,12 @@ import {
 } from 'react-native';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Search, Database, RefreshCw, Settings } from 'lucide-react-native';
+import { Search, Database, RefreshCw, Settings, Filter } from 'lucide-react-native';
 import { NotionClient, Asset, NotionProperty } from './src/lib/notion';
 import { NOTION_API_KEY, NOTION_DATABASE_ID, API_BASE_URL } from './src/config';
 import { MobileCardView } from './src/components/MobileCardView';
 import { evaluateFilter, FilterCondition, DEFAULT_FILTER } from './src/lib/utils';
+import { FieldWorkFilter } from './src/components/FieldWorkFilter';
 
 export default function App() {
   // Settings state for configuration - check these first
@@ -35,6 +36,8 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<FilterCondition>(DEFAULT_FILTER);
   const [showSettings, setShowSettings] = useState(false);
+  const [showFieldWorkFilter, setShowFieldWorkFilter] = useState(false);
+  const [fieldWorkConfig, setFieldWorkConfig] = useState<any>(null);
 
   // Notion Client
   const [notionClient, setNotionClient] = useState<NotionClient | null>(null);
@@ -105,6 +108,50 @@ export default function App() {
       setFilteredAssets(filtered);
     }
   }, [assets, searchQuery, filter]);
+
+  // Field work filter 적용
+  const workFilteredAssets = useMemo(() => {
+    if (!fieldWorkConfig) return filteredAssets;
+
+    let result = filteredAssets;
+
+    // 작업 대상 조건 적용
+    if (fieldWorkConfig.targetConditions) {
+      fieldWorkConfig.targetConditions.forEach((cond: any) => {
+        result = result.filter(asset => {
+          const val = (asset.values[cond.column] || '').toLowerCase();
+          switch (cond.type) {
+            case 'is_empty':
+              return !val || val === '';
+            case 'is_not_empty':
+              return val && val !== '';
+            case 'contains':
+              return val.includes((cond.value || '').toLowerCase());
+            case 'not_contains':
+              return !val.includes((cond.value || '').toLowerCase());
+            case 'equals':
+              return val === (cond.value || '').toLowerCase();
+            default:
+              return true;
+          }
+        });
+      });
+    }
+
+    // 위치 필터 적용
+    if (fieldWorkConfig.locationFilters) {
+      Object.entries(fieldWorkConfig.locationFilters).forEach(([col, values]: [string, any]) => {
+        if (values && values.length > 0) {
+          result = result.filter(asset => {
+            const val = asset.values[col] || '';
+            return values.some((v: string) => val.includes(v));
+          });
+        }
+      });
+    }
+
+    return result;
+  }, [filteredAssets, fieldWorkConfig]);
 
   // Pull to refresh
   const onRefresh = useCallback(() => {
@@ -238,10 +285,17 @@ export default function App() {
           <View style={styles.headerLeft}>
             <Text style={styles.headerTitle}>NEXUS ITAM</Text>
             <Text style={styles.headerSubtitle}>
-              {filteredAssets.length} / {assets.length} assets
+              {workFilteredAssets.length} / {assets.length} assets
+              {fieldWorkConfig && ' (필터 적용중)'}
             </Text>
           </View>
           <View style={styles.headerRight}>
+            <TouchableOpacity
+              style={[styles.headerButton, fieldWorkConfig && styles.headerButtonActive]}
+              onPress={() => setShowFieldWorkFilter(true)}
+            >
+              <Filter size={20} color={fieldWorkConfig ? '#ffffff' : '#6366f1'} />
+            </TouchableOpacity>
             <TouchableOpacity
               style={styles.headerButton}
               onPress={onRefresh}
@@ -289,13 +343,24 @@ export default function App() {
             </ScrollView>
           ) : (
             <MobileCardView
-              assets={filteredAssets}
+              assets={workFilteredAssets}
               schema={schema}
               schemaProperties={schemaProperties}
               onUpdateAsset={handleUpdateAsset}
             />
           )}
         </View>
+
+        {/* Field Work Filter Modal */}
+        <FieldWorkFilter
+          visible={showFieldWorkFilter}
+          onClose={() => setShowFieldWorkFilter(false)}
+          onApply={setFieldWorkConfig}
+          schema={schema}
+          schemaProperties={schemaProperties}
+          assets={assets}
+          currentConfig={fieldWorkConfig}
+        />
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -377,6 +442,9 @@ const styles = StyleSheet.create({
     padding: 8,
     backgroundColor: '#eef2ff',
     borderRadius: 8,
+  },
+  headerButtonActive: {
+    backgroundColor: '#6366f1',
   },
   searchContainer: {
     flexDirection: 'row',

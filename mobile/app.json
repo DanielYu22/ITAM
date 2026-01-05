@@ -28,7 +28,7 @@
       "favicon": "./assets/favicon.png"
     },
     "extra": {
-      "apiBaseUrl": "https://your-app.vercel.app",
+      "apiBaseUrl": "https://itam-vzun.vercel.app",
       "notionApiKey": "",
       "notionDatabaseId": "",
       "geminiApiKey": ""
