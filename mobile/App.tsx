@@ -9,16 +9,18 @@ import {
   Alert,
   ScrollView,
   RefreshControl,
+  Modal,
 } from 'react-native';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Search, Database, RefreshCw, Settings, Filter } from 'lucide-react-native';
+import { Search, Database, RefreshCw, Settings, Filter, Home, X } from 'lucide-react-native';
 import { NotionClient, Asset, NotionProperty } from './src/lib/notion';
 import { NOTION_API_KEY, NOTION_DATABASE_ID, API_BASE_URL } from './src/config';
 import { MobileCardView } from './src/components/MobileCardView';
 import { evaluateFilter, FilterCondition, DEFAULT_FILTER } from './src/lib/utils';
 import { FieldWorkFilter, FilterConfig } from './src/components/FieldWorkFilter';
 import { LocationNavigator } from './src/components/LocationNavigator';
+import { HomeScreen, FilterTemplate } from './src/components/HomeScreen';
 
 export default function App() {
   // Settings state for configuration - check these first
@@ -42,6 +44,12 @@ export default function App() {
   // 위치 네비게이션 상태
   const [locationSelectedAssets, setLocationSelectedAssets] = useState<Asset[]>([]);
   const [locationFilters, setLocationFilters] = useState<Record<string, string>>({});
+  // 홈 화면 / 작업 모드
+  const [isWorkMode, setIsWorkMode] = useState(false);
+  // 필터 템플릿
+  const [filterTemplates, setFilterTemplates] = useState<FilterTemplate[]>([]);
+  const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
+  const [templateName, setTemplateName] = useState('');
 
   // Notion Client
   const [notionClient, setNotionClient] = useState<NotionClient | null>(null);
@@ -58,7 +66,7 @@ export default function App() {
     }
   }, [apiKey, databaseId]);
 
-  // Load data
+  // Load data - 전체 데이터 로드
   const loadData = useCallback(async () => {
     if (!notionClient) {
       console.log('[App] No Notion client configured');
@@ -67,19 +75,26 @@ export default function App() {
     }
 
     try {
-      console.log('[App] Loading data...');
+      console.log('[App] Loading all data...');
 
       // Get schema first
       const schemaProps = await notionClient.getDatabaseSchema();
       setSchemaProperties(schemaProps);
 
-      // Query database
-      const result = await notionClient.queryDatabase(undefined, undefined, 100);
+      // 전체 데이터베이스 로드 (100개 제한 없음)
+      const result = await notionClient.fetchAllDatabase();
       setAssets(result.assets);
       setSchema(result.schema);
       setFilteredAssets(result.assets);
 
-      console.log(`[App] Loaded ${result.assets.length} assets`);
+      console.log(`[App] Loaded ${result.assets.length} assets (all)`);
+
+      // 설정/템플릿 로드
+      const settings = await notionClient.loadSettings();
+      if (settings?.templates) {
+        setFilterTemplates(settings.templates as FilterTemplate[]);
+        console.log(`[App] Loaded ${settings.templates.length} filter templates`);
+      }
     } catch (error) {
       console.error('[App] Load error:', error);
       Alert.alert('Error', 'Failed to load data from Notion');
@@ -198,6 +213,51 @@ export default function App() {
     }
   }, [notionClient, schemaProperties]);
 
+  // 템플릿 저장
+  const saveTemplate = useCallback(async (name: string) => {
+    if (!notionClient || !fieldWorkConfig) return;
+
+    const newTemplate: FilterTemplate = {
+      id: Date.now().toString(),
+      name,
+      config: fieldWorkConfig,
+      createdAt: new Date().toISOString().slice(0, 10),
+    };
+
+    const updatedTemplates = [...filterTemplates, newTemplate];
+
+    try {
+      await notionClient.saveSettings({ templates: updatedTemplates });
+      setFilterTemplates(updatedTemplates);
+      Alert.alert('성공', `템플릿 "${name}"이 저장되었습니다.`);
+    } catch (error) {
+      console.error('[App] Save template error:', error);
+      Alert.alert('Error', 'Failed to save template');
+    }
+  }, [notionClient, fieldWorkConfig, filterTemplates]);
+
+  // 템플릿 로드
+  const loadTemplate = useCallback((template: FilterTemplate) => {
+    setFieldWorkConfig(template.config);
+    setLocationSelectedAssets([]);
+    setLocationFilters({});
+    Alert.alert('템플릿 로드', `"${template.name}" 템플릿이 적용되었습니다.`);
+  }, []);
+
+  // 작업 시작
+  const startWork = useCallback(() => {
+    setIsWorkMode(true);
+    setLocationSelectedAssets([]);
+    setLocationFilters({});
+  }, []);
+
+  // 홈으로 돌아가기
+  const goHome = useCallback(() => {
+    setIsWorkMode(false);
+    setLocationSelectedAssets([]);
+    setLocationFilters({});
+  }, []);
+
   // Settings screen
   if (showSettings) {
     return (
@@ -296,104 +356,159 @@ export default function App() {
       <SafeAreaView style={styles.container}>
         <StatusBar style="dark" />
 
-        {/* Header */}
-        <View style={styles.header}>
-          <View style={styles.headerLeft}>
-            <Text style={styles.headerTitle}>NEXUS ITAM</Text>
-            <Text style={styles.headerSubtitle}>
-              {workFilteredAssets.length} / {assets.length} assets
-              {fieldWorkConfig && ' (필터 적용중)'}
-            </Text>
-          </View>
-          <View style={styles.headerRight}>
-            <TouchableOpacity
-              style={[styles.headerButton, fieldWorkConfig && styles.headerButtonActive]}
-              onPress={() => setShowFieldWorkFilter(true)}
-            >
-              <Filter size={20} color={fieldWorkConfig ? '#ffffff' : '#6366f1'} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.headerButton}
-              onPress={onRefresh}
-            >
-              <RefreshCw size={20} color="#6366f1" />
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.headerButton}
-              onPress={() => setShowSettings(true)}
-            >
-              <Settings size={20} color="#6366f1" />
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* Search Bar */}
-        <View style={styles.searchContainer}>
-          <Search size={18} color="#9ca3af" />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search assets..."
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-            placeholderTextColor="#9ca3af"
-          />
-        </View>
-
-        {/* Main Content */}
-        <View style={styles.content}>
-          {/* 위치 계층이 설정되어 있고 아직 선택 완료 안됨 */}
-          {fieldWorkConfig?.locationHierarchy && fieldWorkConfig.locationHierarchy.length > 0 && locationSelectedAssets.length === 0 ? (
-            <LocationNavigator
-              assets={filteredAssets}
-              locationHierarchy={fieldWorkConfig.locationHierarchy}
-              sortColumn={fieldWorkConfig.sortColumn}
-              onSelectLocation={(filters, selected) => {
-                setLocationFilters(filters);
-                setLocationSelectedAssets(selected);
-              }}
+        {/* 홈 화면 모드 */}
+        {!isWorkMode ? (
+          <>
+            <HomeScreen
+              assets={assets}
+              filterConfig={fieldWorkConfig}
+              templates={filterTemplates}
+              onStartWork={startWork}
+              onOpenFilter={() => setShowFieldWorkFilter(true)}
+              onLoadTemplate={loadTemplate}
+              onSaveTemplate={() => setShowSaveTemplateModal(true)}
             />
-          ) : workFilteredAssets.length === 0 ? (
-            <ScrollView
-              contentContainerStyle={styles.emptyContainer}
-              refreshControl={
-                <RefreshControl
-                  refreshing={refreshing}
-                  onRefresh={onRefresh}
-                  colors={['#6366f1']}
-                />
-              }
-            >
-              <Text style={styles.emptyText}>No assets found</Text>
-              <Text style={styles.emptyHint}>
-                {searchQuery ? 'Try a different search' : 'Pull to refresh'}
-              </Text>
-            </ScrollView>
-          ) : (
-            <MobileCardView
-              assets={workFilteredAssets}
+
+            {/* 필터 설정 모달 */}
+            <FieldWorkFilter
+              visible={showFieldWorkFilter}
+              onClose={() => setShowFieldWorkFilter(false)}
+              onApply={(config) => {
+                setFieldWorkConfig(config);
+                setLocationSelectedAssets([]);
+                setLocationFilters({});
+              }}
               schema={schema}
               schemaProperties={schemaProperties}
-              onUpdateAsset={handleUpdateAsset}
-              editableFields={fieldWorkConfig?.editableFields}
+              assets={assets}
+              currentConfig={fieldWorkConfig || undefined}
             />
-          )}
-        </View>
 
-        {/* Field Work Filter Modal */}
-        <FieldWorkFilter
-          visible={showFieldWorkFilter}
-          onClose={() => setShowFieldWorkFilter(false)}
-          onApply={(config) => {
-            setFieldWorkConfig(config);
-            // 필터 변경 시 위치 선택 리셋
-            setLocationSelectedAssets([]);
-            setLocationFilters({});
-          }}
-          schema={schema}
-          schemaProperties={schemaProperties}
-          assets={assets}
-          currentConfig={fieldWorkConfig || undefined}
-        />
+            {/* 템플릿 저장 모달 */}
+            <Modal visible={showSaveTemplateModal} transparent animationType="fade">
+              <View style={styles.modalOverlay}>
+                <View style={styles.modalContent}>
+                  <Text style={styles.modalTitle}>템플릿 저장</Text>
+                  <TextInput
+                    style={styles.modalInput}
+                    placeholder="템플릿 이름"
+                    value={templateName}
+                    onChangeText={setTemplateName}
+                    placeholderTextColor="#9ca3af"
+                  />
+                  <View style={styles.modalButtons}>
+                    <TouchableOpacity
+                      style={[styles.modalButton, styles.modalButtonCancel]}
+                      onPress={() => {
+                        setShowSaveTemplateModal(false);
+                        setTemplateName('');
+                      }}
+                    >
+                      <Text style={styles.modalButtonCancelText}>취소</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.modalButton, styles.modalButtonSave]}
+                      onPress={() => {
+                        if (templateName.trim()) {
+                          saveTemplate(templateName.trim());
+                          setShowSaveTemplateModal(false);
+                          setTemplateName('');
+                        }
+                      }}
+                    >
+                      <Text style={styles.modalButtonSaveText}>저장</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </View>
+            </Modal>
+          </>
+        ) : (
+          /* 작업 모드 */
+          <>
+            {/* Header */}
+            <View style={styles.header}>
+              <TouchableOpacity onPress={goHome} style={styles.homeButton}>
+                <Home size={20} color="#6366f1" />
+              </TouchableOpacity>
+              <View style={styles.headerLeft}>
+                <Text style={styles.headerTitle}>현장 작업</Text>
+                <Text style={styles.headerSubtitle}>
+                  {workFilteredAssets.length} / {assets.length} assets
+                </Text>
+              </View>
+              <View style={styles.headerRight}>
+                <TouchableOpacity
+                  style={[styles.headerButton, fieldWorkConfig && styles.headerButtonActive]}
+                  onPress={() => setShowFieldWorkFilter(true)}
+                >
+                  <Filter size={20} color={fieldWorkConfig ? '#ffffff' : '#6366f1'} />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.headerButton}
+                  onPress={onRefresh}
+                >
+                  <RefreshCw size={20} color="#6366f1" />
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Main Content */}
+            <View style={styles.content}>
+              {/* 위치 계층이 설정되어 있고 아직 선택 완료 안됨 */}
+              {fieldWorkConfig?.locationHierarchy && fieldWorkConfig.locationHierarchy.length > 0 && locationSelectedAssets.length === 0 ? (
+                <LocationNavigator
+                  assets={filteredAssets}
+                  locationHierarchy={fieldWorkConfig.locationHierarchy}
+                  sortColumn={fieldWorkConfig.sortColumn}
+                  onSelectLocation={(filters, selected) => {
+                    setLocationFilters(filters);
+                    setLocationSelectedAssets(selected);
+                  }}
+                />
+              ) : workFilteredAssets.length === 0 ? (
+                <ScrollView
+                  contentContainerStyle={styles.emptyContainer}
+                  refreshControl={
+                    <RefreshControl
+                      refreshing={refreshing}
+                      onRefresh={onRefresh}
+                      colors={['#6366f1']}
+                    />
+                  }
+                >
+                  <Text style={styles.emptyText}>No assets found</Text>
+                  <Text style={styles.emptyHint}>
+                    {searchQuery ? 'Try a different search' : 'Pull to refresh'}
+                  </Text>
+                </ScrollView>
+              ) : (
+                <MobileCardView
+                  assets={workFilteredAssets}
+                  schema={schema}
+                  schemaProperties={schemaProperties}
+                  onUpdateAsset={handleUpdateAsset}
+                  editableFields={fieldWorkConfig?.editableFields}
+                />
+              )}
+            </View>
+
+            {/* Field Work Filter Modal (작업 모드용) */}
+            <FieldWorkFilter
+              visible={showFieldWorkFilter}
+              onClose={() => setShowFieldWorkFilter(false)}
+              onApply={(config) => {
+                setFieldWorkConfig(config);
+                setLocationSelectedAssets([]);
+                setLocationFilters({});
+              }}
+              schema={schema}
+              schemaProperties={schemaProperties}
+              assets={assets}
+              currentConfig={fieldWorkConfig || undefined}
+            />
+          </>
+        )}
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -563,5 +678,66 @@ const styles = StyleSheet.create({
     color: '#6b7280',
     marginTop: 8,
     lineHeight: 20,
+  },
+  homeButton: {
+    padding: 8,
+    marginRight: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  modalContent: {
+    backgroundColor: '#ffffff',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 400,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    color: '#1f2937',
+    marginBottom: 16,
+    textAlign: 'center',
+  },
+  modalInput: {
+    backgroundColor: '#f3f4f6',
+    borderWidth: 1,
+    borderColor: '#e5e7eb',
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 16,
+    marginBottom: 16,
+  },
+  modalButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  modalButton: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  modalButtonCancel: {
+    backgroundColor: '#f3f4f6',
+  },
+  modalButtonCancelText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#6b7280',
+  },
+  modalButtonSave: {
+    backgroundColor: '#6366f1',
+  },
+  modalButtonSaveText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#ffffff',
   },
 });
