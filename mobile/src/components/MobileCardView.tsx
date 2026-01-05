@@ -2,28 +2,26 @@ import React, { useState, useMemo } from 'react';
 import {
     View,
     Text,
-    TouchableOpacity,
-    ScrollView,
     StyleSheet,
-    Dimensions,
+    TouchableOpacity,
     Modal,
-    Linking,
     TextInput,
-    GestureResponderEvent,
+    ScrollView,
+    Alert,
+    KeyboardAvoidingView,
+    Platform,
+    TouchableWithoutFeedback,
+    Keyboard,
 } from 'react-native';
-import { ChevronLeft, ChevronRight, X, ExternalLink, Maximize2, Check, Plus } from 'lucide-react-native';
+import { Edit2, X, Check, Search, Plus, ChevronDown, ChevronRight } from 'lucide-react-native';
 import { Asset, NotionProperty } from '../lib/notion';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface MobileCardViewProps {
     assets: Asset[];
     schema: string[];
     schemaProperties: Record<string, NotionProperty>;
-    onUpdateAsset: (id: string, field: string, value: string) => void;
-    primaryFields?: string[];
+    onUpdateAsset: (assetId: string, field: string, value: string, type: string) => Promise<void>;
     editableFields?: string[];
-    sortColumn?: string;
 }
 
 export const MobileCardView: React.FC<MobileCardViewProps> = ({
@@ -31,477 +29,265 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     schema,
     schemaProperties,
     onUpdateAsset,
-    primaryFields,
-    editableFields,
-    sortColumn,
+    editableFields = [],
 }) => {
-    const [currentIndex, setCurrentIndex] = useState(0);
-    const [expandedAsset, setExpandedAsset] = useState<Asset | null>(null);
-    const [fieldPage, setFieldPage] = useState(0);
+    const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+    const [editModalVisible, setEditModalVisible] = useState(false);
+
+    // 편집 상태
     const [editingField, setEditingField] = useState<string | null>(null);
     const [editValue, setEditValue] = useState('');
+    const [isSaving, setIsSaving] = useState(false);
 
-    // Select/Multi-Select 드롭다운 상태
-    const [showSelectPicker, setShowSelectPicker] = useState(false);
-    const [selectSearchText, setSelectSearchText] = useState('');
-    const [selectedValues, setSelectedValues] = useState<string[]>([]);
-    const [isMultiSelect, setIsMultiSelect] = useState(false);
-    const [currentAssetId, setCurrentAssetId] = useState<string | null>(null);
+    // Select/Multi-Select UI 상태
+    const [showOptions, setShowOptions] = useState(false);
+    const [optionSearchText, setOptionSearchText] = useState('');
+    const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
 
-    // Swipe handling
-    const [touchStartX, setTouchStartX] = useState<number | null>(null);
+    const titleField = useMemo(() => {
+        return Object.keys(schemaProperties).find(k => schemaProperties[k].type === 'title') || 'Name';
+    }, [schemaProperties]);
 
-    // 숫자 정렬 적용된 자산 목록
-    const sortedAssets = useMemo(() => {
-        if (!sortColumn) return assets;
+    const handleEdit = (asset: Asset, field: string) => {
+        setSelectedAsset(asset);
+        setEditingField(field);
+        const currentValue = asset.values[field] || '';
+        setEditValue(currentValue);
 
-        return [...assets].sort((a, b) => {
-            const valA = a.values[sortColumn] || '';
-            const valB = b.values[sortColumn] || '';
+        const propType = schemaProperties[field]?.type;
+        if (propType === 'multi_select') {
+            setSelectedOptions(currentValue.split(',').map(s => s.trim()).filter(Boolean));
+        } else if (propType === 'select') {
+            setSelectedOptions(currentValue ? [currentValue] : []);
+        }
 
-            // 숫자인지 확인하고 숫자 정렬
-            const numA = parseFloat(valA);
-            const numB = parseFloat(valB);
+        setOptionSearchText('');
+        setEditModalVisible(true);
+        setShowOptions(false);
+    };
 
-            if (!isNaN(numA) && !isNaN(numB)) {
-                return numA - numB; // 숫자 오름차순
+    const handleSave = async () => {
+        if (!selectedAsset || !editingField) return;
+
+        setIsSaving(true);
+        try {
+            const propType = schemaProperties[editingField]?.type || 'rich_text';
+            let valueToSave = editValue;
+
+            if (propType === 'multi_select') {
+                valueToSave = selectedOptions.join(', ');
+            } else if (propType === 'select') {
+                valueToSave = selectedOptions[0] || '';
             }
 
-            return valA.localeCompare(valB, 'ko');
-        });
-    }, [assets, sortColumn]);
-
-    // Select/Multi-Select 옵션 추출
-    const getSelectOptions = (field: string): string[] => {
-        const prop = schemaProperties[field];
-        if (!prop) return [];
-
-        if (prop.type === 'select' && prop.select?.options) {
-            return prop.select.options.map(o => o.name);
-        }
-        if (prop.type === 'multi_select' && prop.multi_select?.options) {
-            return prop.multi_select.options.map(o => o.name);
-        }
-        return [];
-    };
-
-    // 편집 가능 필드 결정
-    const displayFields = useMemo(() => {
-        if (editableFields && editableFields.length > 0) return editableFields;
-        if (primaryFields && primaryFields.length > 0) return primaryFields;
-        const titleField = Object.keys(schemaProperties).find(k => schemaProperties[k].type === 'title');
-        const others = schema.filter(f => f !== titleField).slice(0, 4);
-        return titleField ? [titleField, ...others] : others;
-    }, [editableFields, primaryFields, schema, schemaProperties]);
-
-    const isFieldEditable = (field: string) => {
-        if (!editableFields || editableFields.length === 0) return true;
-        return editableFields.includes(field);
-    };
-
-    const fieldPages = useMemo(() => {
-        const pages: string[][] = [];
-        for (let i = 0; i < schema.length; i += 5) {
-            pages.push(schema.slice(i, i + 5));
-        }
-        return pages;
-    }, [schema]);
-
-    const currentAsset = sortedAssets[currentIndex];
-    const titleField = Object.keys(schemaProperties).find(k => schemaProperties[k].type === 'title');
-    const assetTitle = titleField && currentAsset ? currentAsset.values[titleField] : `Asset ${currentIndex + 1}`;
-
-    const goNext = () => {
-        if (currentIndex < sortedAssets.length - 1) {
-            setCurrentIndex(currentIndex + 1);
-        }
-    };
-
-    const goPrev = () => {
-        if (currentIndex > 0) {
-            setCurrentIndex(currentIndex - 1);
-        }
-    };
-
-    const handleTouchStart = (e: GestureResponderEvent) => {
-        setTouchStartX(e.nativeEvent.pageX);
-    };
-
-    const handleTouchEnd = (e: GestureResponderEvent) => {
-        if (touchStartX === null) return;
-        const touchEndX = e.nativeEvent.pageX;
-        const diff = touchStartX - touchEndX;
-
-        if (Math.abs(diff) > 50) {
-            if (diff > 0) goNext();
-            else goPrev();
-        }
-        setTouchStartX(null);
-    };
-
-    // 필드 편집 시작
-    const startEditing = (field: string, value: string, assetId: string) => {
-        if (!isFieldEditable(field)) return;
-
-        const prop = schemaProperties[field];
-
-        // Select 또는 Multi-Select 타입이면 드롭다운 표시
-        if (prop?.type === 'select' || prop?.type === 'multi_select') {
-            setEditingField(field);
-            setIsMultiSelect(prop.type === 'multi_select');
-            setCurrentAssetId(assetId);
-
-            // Multi-Select는 현재 값을 배열로 파싱
-            if (prop.type === 'multi_select') {
-                setSelectedValues(value ? value.split(',').map(v => v.trim()).filter(v => v) : []);
-            } else {
-                setSelectedValues(value ? [value] : []);
-            }
-
-            setSelectSearchText('');
-            setShowSelectPicker(true);
-        } else {
-            // 일반 텍스트 편집
-            setEditingField(field);
-            setEditValue(value);
-            setCurrentAssetId(assetId);
-        }
-    };
-
-    const saveEdit = () => {
-        if (editingField && currentAssetId) {
-            onUpdateAsset(currentAssetId, editingField, editValue);
+            await onUpdateAsset(selectedAsset.id, editingField, valueToSave, propType);
+            setEditModalVisible(false);
             setEditingField(null);
-            setEditValue('');
-            setCurrentAssetId(null);
+        } catch (error) {
+            Alert.alert('Error', 'Failed to update asset');
+        } finally {
+            setIsSaving(false);
         }
     };
 
-    const cancelEdit = () => {
-        setEditingField(null);
-        setEditValue('');
-        setShowSelectPicker(false);
-        setSelectSearchText('');
-        setSelectedValues([]);
-        setCurrentAssetId(null);
-    };
-
-    // Select 값 토글
-    const toggleSelectValue = (val: string) => {
-        if (isMultiSelect) {
-            setSelectedValues(prev =>
-                prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val]
+    const toggleOption = (option: string, isMulti: boolean) => {
+        if (isMulti) {
+            setSelectedOptions(prev =>
+                prev.includes(option)
+                    ? prev.filter(o => o !== option)
+                    : [...prev, option]
             );
         } else {
-            // 단일 선택: 즉시 저장
-            if (editingField && currentAssetId) {
-                onUpdateAsset(currentAssetId, editingField, val);
-            }
-            cancelEdit();
+            setSelectedOptions([option]);
+            setEditValue(option); // For display in main input
+            setShowOptions(false);
         }
     };
 
-    // Multi-Select 저장
-    const saveMultiSelect = () => {
-        if (editingField && currentAssetId) {
-            onUpdateAsset(currentAssetId, editingField, selectedValues.join(', '));
-        }
-        cancelEdit();
-    };
+    // 옵션 필터링
+    const filteredOptions = useMemo(() => {
+        if (!editingField || !schemaProperties[editingField]?.options) return [];
 
-    // 새 옵션 생성
-    const createNewOption = (val: string) => {
-        if (isMultiSelect) {
-            setSelectedValues(prev => [...prev, val]);
-            setSelectSearchText('');
-        } else {
-            if (editingField && currentAssetId) {
-                onUpdateAsset(currentAssetId, editingField, val);
-            }
-            cancelEdit();
-        }
-    };
+        const options = schemaProperties[editingField].options || [];
+        if (!optionSearchText) return options;
 
-    if (!currentAsset) {
-        return (
-            <View style={styles.emptyContainer}>
-                <Text style={styles.emptyText}>No assets to display</Text>
-            </View>
+        return options.filter(opt =>
+            opt.name.toLowerCase().includes(optionSearchText.toLowerCase())
         );
-    }
-
-    const renderField = (field: string, asset: Asset) => {
-        const value = asset.values[field] || '';
-        const isEditing = editingField === field && currentAssetId === asset.id && !showSelectPicker;
-        const canEdit = isFieldEditable(field);
-        const prop = schemaProperties[field];
-        const isSelectType = prop?.type === 'select' || prop?.type === 'multi_select';
-
-        return (
-            <View key={field} style={styles.fieldContainer}>
-                <View style={styles.fieldHeader}>
-                    <Text style={styles.fieldLabel}>{field}</Text>
-                    {canEdit && (
-                        <Text style={[styles.editHint, isSelectType && styles.editHintSelect]}>
-                            {isSelectType ? (prop?.type === 'multi_select' ? '다중선택' : '선택') : '편집 가능'}
-                        </Text>
-                    )}
-                </View>
-                {isEditing ? (
-                    <View style={styles.editContainer}>
-                        <TextInput
-                            style={styles.editInput}
-                            value={editValue}
-                            onChangeText={setEditValue}
-                            autoFocus
-                            multiline
-                        />
-                        <View style={styles.editButtons}>
-                            <TouchableOpacity
-                                style={[styles.editButton, styles.saveButton]}
-                                onPress={saveEdit}
-                            >
-                                <Text style={styles.editButtonText}>저장</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[styles.editButton, styles.cancelButton]}
-                                onPress={cancelEdit}
-                            >
-                                <Text style={styles.editButtonText}>취소</Text>
-                            </TouchableOpacity>
-                        </View>
-                    </View>
-                ) : (
-                    <TouchableOpacity
-                        onPress={() => startEditing(field, value, asset.id)}
-                        disabled={!canEdit}
-                    >
-                        <Text style={[
-                            styles.fieldValue,
-                            !canEdit && styles.fieldValueReadOnly,
-                            isSelectType && styles.fieldValueSelect
-                        ]}>
-                            {value || '-'}
-                        </Text>
-                    </TouchableOpacity>
-                )}
-            </View>
-        );
-    };
-
-    // Select 드롭다운 렌더링
-    const renderSelectPicker = () => {
-        if (!editingField) return null;
-
-        const options = getSelectOptions(editingField);
-        const filteredOptions = options.filter(o =>
-            o.toLowerCase().includes(selectSearchText.toLowerCase())
-        );
-        const showCreate = selectSearchText.trim() &&
-            !options.some(o => o.toLowerCase() === selectSearchText.toLowerCase());
-
-        return (
-            <Modal visible={showSelectPicker} transparent animationType="fade">
-                <View style={styles.pickerOverlay}>
-                    <View style={styles.pickerContainer}>
-                        <View style={styles.pickerHeader}>
-                            <Text style={styles.pickerTitle}>
-                                {isMultiSelect ? '다중 선택' : '선택'}: {editingField}
-                            </Text>
-                            <TouchableOpacity onPress={cancelEdit}>
-                                <X size={24} color="#6b7280" />
-                            </TouchableOpacity>
-                        </View>
-
-                        {/* 검색 입력 */}
-                        <View style={styles.searchContainer}>
-                            <TextInput
-                                style={styles.searchInput}
-                                value={selectSearchText}
-                                onChangeText={setSelectSearchText}
-                                placeholder="검색 또는 새로 만들기..."
-                                placeholderTextColor="#9ca3af"
-                                autoFocus
-                            />
-                            {selectSearchText.length > 0 && (
-                                <TouchableOpacity onPress={() => setSelectSearchText('')}>
-                                    <X size={18} color="#9ca3af" />
-                                </TouchableOpacity>
-                            )}
-                        </View>
-
-                        {/* 선택된 값 표시 (Multi-Select) */}
-                        {isMultiSelect && selectedValues.length > 0 && (
-                            <View style={styles.selectedBar}>
-                                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-                                    {selectedValues.map(val => (
-                                        <TouchableOpacity
-                                            key={val}
-                                            style={styles.selectedChip}
-                                            onPress={() => toggleSelectValue(val)}
-                                        >
-                                            <Text style={styles.selectedChipText}>{val}</Text>
-                                            <X size={14} color="#6366f1" />
-                                        </TouchableOpacity>
-                                    ))}
-                                </ScrollView>
-                            </View>
-                        )}
-
-                        {/* 옵션 목록 */}
-                        <ScrollView style={styles.optionsList}>
-                            {/* 새로 만들기 옵션 */}
-                            {showCreate && (
-                                <TouchableOpacity
-                                    style={styles.createOption}
-                                    onPress={() => createNewOption(selectSearchText.trim())}
-                                >
-                                    <Plus size={18} color="#6366f1" />
-                                    <Text style={styles.createOptionText}>
-                                        "{selectSearchText.trim()}" 생성
-                                    </Text>
-                                </TouchableOpacity>
-                            )}
-
-                            {filteredOptions.map(option => {
-                                const isSelected = selectedValues.includes(option);
-                                return (
-                                    <TouchableOpacity
-                                        key={option}
-                                        style={[styles.optionItem, isSelected && styles.optionItemSelected]}
-                                        onPress={() => toggleSelectValue(option)}
-                                    >
-                                        <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>
-                                            {option}
-                                        </Text>
-                                        {isSelected && <Check size={18} color="#6366f1" />}
-                                    </TouchableOpacity>
-                                );
-                            })}
-
-                            {filteredOptions.length === 0 && !showCreate && (
-                                <Text style={styles.noOptions}>옵션이 없습니다</Text>
-                            )}
-                        </ScrollView>
-
-                        {/* Multi-Select 저장 버튼 */}
-                        {isMultiSelect && (
-                            <TouchableOpacity style={styles.doneButton} onPress={saveMultiSelect}>
-                                <Text style={styles.doneButtonText}>완료</Text>
-                            </TouchableOpacity>
-                        )}
-                    </View>
-                </View>
-            </Modal>
-        );
-    };
+    }, [editingField, schemaProperties, optionSearchText]);
 
     return (
         <View style={styles.container}>
-            {/* Progress indicator */}
-            <View style={styles.progressBar}>
-                <Text style={styles.progressText}>
-                    {currentIndex + 1} / {sortedAssets.length}
-                </Text>
-                <View style={styles.progressTrack}>
-                    <View
-                        style={[
-                            styles.progressFill,
-                            { width: `${((currentIndex + 1) / sortedAssets.length) * 100}%` }
-                        ]}
-                    />
-                </View>
-                <TouchableOpacity
-                    onPress={() => setExpandedAsset(currentAsset)}
-                    style={styles.expandButton}
-                >
-                    <Maximize2 size={18} color="#6366f1" />
-                </TouchableOpacity>
-            </View>
+            <ScrollView contentContainerStyle={styles.listContent}>
+                {assets.map(asset => (
+                    <View key={asset.id} style={styles.card}>
+                        <View style={styles.cardHeader}>
+                            <Text style={styles.cardTitle}>
+                                {asset.values[titleField] || 'Untitled'}
+                            </Text>
+                        </View>
 
-            {/* Card View */}
-            <View
-                style={styles.cardContainer}
-                onTouchStart={handleTouchStart}
-                onTouchEnd={handleTouchEnd}
-            >
-                <TouchableOpacity
-                    style={[styles.navButton, styles.navButtonLeft]}
-                    onPress={goPrev}
-                    disabled={currentIndex === 0}
-                >
-                    <ChevronLeft size={24} color={currentIndex === 0 ? '#d1d5db' : '#6366f1'} />
-                </TouchableOpacity>
-
-                <View style={styles.card}>
-                    <Text style={styles.cardTitle}>{assetTitle}</Text>
-                    {sortColumn && currentAsset.values[sortColumn] && (
-                        <Text style={styles.sortBadge}>
-                            {sortColumn}: {currentAsset.values[sortColumn]}
-                        </Text>
-                    )}
-
-                    <ScrollView style={styles.fieldsContainer} showsVerticalScrollIndicator={false}>
-                        {displayFields.map(field => renderField(field, currentAsset))}
-                    </ScrollView>
-                </View>
-
-                <TouchableOpacity
-                    style={[styles.navButton, styles.navButtonRight]}
-                    onPress={goNext}
-                    disabled={currentIndex === sortedAssets.length - 1}
-                >
-                    <ChevronRight size={24} color={currentIndex === sortedAssets.length - 1 ? '#d1d5db' : '#6366f1'} />
-                </TouchableOpacity>
-            </View>
-
-            {/* Expanded Modal */}
-            <Modal visible={!!expandedAsset} animationType="slide" presentationStyle="pageSheet">
-                <View style={styles.expandedContainer}>
-                    <View style={styles.expandedHeader}>
-                        <Text style={styles.expandedTitle}>
-                            {expandedAsset && titleField ? expandedAsset.values[titleField] : 'Asset Details'}
-                        </Text>
-                        <TouchableOpacity onPress={() => setExpandedAsset(null)}>
-                            <X size={24} color="#6b7280" />
-                        </TouchableOpacity>
+                        <View style={styles.cardBody}>
+                            {(editableFields.length > 0 ? editableFields : schema)
+                                .filter(field => field !== titleField) // 타이틀은 헤더에 표시되므로 제외
+                                .map(field => (
+                                    <TouchableOpacity
+                                        key={field}
+                                        style={styles.fieldRow}
+                                        onPress={() => handleEdit(asset, field)}
+                                        activeOpacity={0.7}
+                                    >
+                                        <Text style={styles.fieldLabel}>{field}</Text>
+                                        <View style={styles.fieldValueContainer}>
+                                            <Text style={styles.fieldValue} numberOfLines={2}>
+                                                {asset.values[field] || '-'}
+                                            </Text>
+                                            {editableFields.includes(field) && (
+                                                <Edit2 size={14} color="#6366f1" style={styles.editIcon} />
+                                            )}
+                                        </View>
+                                    </TouchableOpacity>
+                                ))}
+                        </View>
                     </View>
+                ))}
+                <View style={styles.footer} />
+            </ScrollView>
 
-                    {/* Field pages pagination */}
-                    {fieldPages.length > 1 && (
-                        <View style={styles.pageTabs}>
-                            {fieldPages.map((_, idx) => (
+            {/* Edit Modal */}
+            <Modal
+                visible={editModalVisible}
+                transparent
+                animationType="slide"
+                onRequestClose={() => setEditModalVisible(false)}
+            >
+                <KeyboardAvoidingView
+                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                    style={styles.modalOverlay}
+                >
+                    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                        <View style={styles.modalSubOverlay}>
+                            <View style={styles.modalContent}>
+                                <View style={styles.modalHeader}>
+                                    <Text style={styles.modalTitle}>
+                                        {editingField} 편집
+                                    </Text>
+                                    <TouchableOpacity
+                                        onPress={() => setEditModalVisible(false)}
+                                        disabled={isSaving}
+                                    >
+                                        <X size={24} color="#6b7280" />
+                                    </TouchableOpacity>
+                                </View>
+
+                                {editingField && (
+                                    <View style={styles.inputContainer}>
+                                        {['select', 'multi_select'].includes(schemaProperties[editingField]?.type) ? (
+                                            <View style={styles.selectContainer}>
+                                                {/* 선택된 값 표시 영역 */}
+                                                <TouchableOpacity
+                                                    style={styles.selectedValueBox}
+                                                    onPress={() => setShowOptions(!showOptions)}
+                                                >
+                                                    <View style={styles.selectedTags}>
+                                                        {selectedOptions.length > 0 ? (
+                                                            selectedOptions.map(opt => (
+                                                                <View key={opt} style={styles.tag}>
+                                                                    <Text style={styles.tagText}>{opt}</Text>
+                                                                    {schemaProperties[editingField].type === 'multi_select' && (
+                                                                        <TouchableOpacity onPress={() => toggleOption(opt, true)}>
+                                                                            <X size={12} color="#4b5563" />
+                                                                        </TouchableOpacity>
+                                                                    )}
+                                                                </View>
+                                                            ))
+                                                        ) : (
+                                                            <Text style={styles.placeholderText}>값을 선택하세요</Text>
+                                                        )}
+                                                    </View>
+                                                    <ChevronDown size={20} color="#9ca3af" />
+                                                </TouchableOpacity>
+
+                                                {/* 옵션 드롭다운 */}
+                                                {(showOptions || optionSearchText) && (
+                                                    <View style={styles.dropdownContainer}>
+                                                        <View style={styles.optionSearch}>
+                                                            <Search size={16} color="#9ca3af" />
+                                                            <TextInput
+                                                                style={styles.optionSearchInput}
+                                                                value={optionSearchText}
+                                                                onChangeText={(text) => {
+                                                                    setOptionSearchText(text);
+                                                                    setShowOptions(true);
+                                                                }}
+                                                                placeholder="옵션 검색 또는 생성..."
+                                                                placeholderTextColor="#9ca3af"
+                                                            />
+                                                        </View>
+
+                                                        <ScrollView style={styles.optionsList} keyboardShouldPersistTaps="handled">
+                                                            {filteredOptions.map(opt => {
+                                                                const isSelected = selectedOptions.includes(opt.name);
+                                                                return (
+                                                                    <TouchableOpacity
+                                                                        key={opt.id}
+                                                                        style={[styles.optionItem, isSelected && styles.optionItemSelected]}
+                                                                        onPress={() => toggleOption(opt.name, schemaProperties[editingField].type === 'multi_select')}
+                                                                    >
+                                                                        <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>
+                                                                            {opt.name}
+                                                                        </Text>
+                                                                        {isSelected && <Check size={16} color="#6366f1" />}
+                                                                    </TouchableOpacity>
+                                                                );
+                                                            })}
+
+                                                            {/* 결과 없음 & 생성 옵션 */}
+                                                            {optionSearchText && !filteredOptions.some(o => o.name.toLowerCase() === optionSearchText.toLowerCase()) && (
+                                                                <TouchableOpacity
+                                                                    style={styles.createOptionItem}
+                                                                    onPress={() => {
+                                                                        toggleOption(optionSearchText, schemaProperties[editingField].type === 'multi_select');
+                                                                        setOptionSearchText('');
+                                                                    }}
+                                                                >
+                                                                    <Plus size={16} color="#6366f1" />
+                                                                    <Text style={styles.createOptionText}>
+                                                                        "{optionSearchText}" 생성
+                                                                    </Text>
+                                                                </TouchableOpacity>
+                                                            )}
+                                                        </ScrollView>
+                                                    </View>
+                                                )}
+                                            </View>
+                                        ) : (
+                                            <TextInput
+                                                style={styles.textInput}
+                                                value={editValue}
+                                                onChangeText={setEditValue}
+                                                placeholder="값을 입력하세요"
+                                                multiline={schemaProperties[editingField]?.type === 'rich_text'}
+                                                autoFocus
+                                            />
+                                        )}
+                                    </View>
+                                )}
+
                                 <TouchableOpacity
-                                    key={idx}
-                                    style={[styles.pageTab, fieldPage === idx && styles.pageTabActive]}
-                                    onPress={() => setFieldPage(idx)}
+                                    style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
+                                    onPress={handleSave}
+                                    disabled={isSaving}
                                 >
-                                    <Text style={[styles.pageTabText, fieldPage === idx && styles.pageTabTextActive]}>
-                                        {idx + 1}
+                                    <Text style={styles.saveButtonText}>
+                                        {isSaving ? '저장 중...' : '저장'}
                                     </Text>
                                 </TouchableOpacity>
-                            ))}
+                            </View>
                         </View>
-                    )}
-
-                    <ScrollView style={styles.expandedFields}>
-                        {expandedAsset && fieldPages[fieldPage]?.map(field => renderField(field, expandedAsset))}
-                    </ScrollView>
-
-                    {expandedAsset?.notionUrl && (
-                        <TouchableOpacity
-                            style={styles.notionLink}
-                            onPress={() => Linking.openURL(expandedAsset.notionUrl!)}
-                        >
-                            <ExternalLink size={18} color="#6366f1" />
-                            <Text style={styles.notionLinkText}>Notion에서 열기</Text>
-                        </TouchableOpacity>
-                    )}
-                </View>
+                    </TouchableWithoutFeedback>
+                </KeyboardAvoidingView>
             </Modal>
-
-            {/* Select Picker Modal */}
-            {renderSelectPicker()}
         </View>
     );
 };
@@ -510,301 +296,168 @@ const styles = StyleSheet.create({
     container: {
         flex: 1,
     },
-    emptyContainer: {
-        flex: 1,
-        justifyContent: 'center',
-        alignItems: 'center',
+    listContent: {
+        padding: 16,
+        paddingBottom: 100,
     },
-    emptyText: {
-        fontSize: 16,
-        color: '#6b7280',
-    },
-    progressBar: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 16,
-        paddingVertical: 12,
-        gap: 12,
-    },
-    progressText: {
-        fontSize: 14,
-        fontWeight: '500',
-        color: '#6b7280',
-    },
-    progressTrack: {
-        flex: 1,
-        height: 4,
-        backgroundColor: '#e5e7eb',
-        borderRadius: 2,
-    },
-    progressFill: {
-        height: '100%',
-        backgroundColor: '#6366f1',
-        borderRadius: 2,
-    },
-    expandButton: {
-        padding: 4,
-    },
-    cardContainer: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        paddingHorizontal: 8,
-    },
-    navButton: {
-        padding: 8,
-    },
-    navButtonLeft: {},
-    navButtonRight: {},
     card: {
-        flex: 1,
         backgroundColor: '#ffffff',
         borderRadius: 16,
-        padding: 20,
-        marginHorizontal: 8,
+        marginBottom: 16,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 8,
-        elevation: 4,
-        maxHeight: '90%',
+        shadowOpacity: 0.05,
+        shadowRadius: 4,
+        elevation: 2,
+        overflow: 'hidden',
+    },
+    cardHeader: {
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f3f4f6',
+        backgroundColor: '#f9fafb',
     },
     cardTitle: {
-        fontSize: 20,
-        fontWeight: 'bold',
+        fontSize: 18,
+        fontWeight: '600',
         color: '#1f2937',
-        marginBottom: 8,
     },
-    sortBadge: {
-        fontSize: 13,
-        color: '#6366f1',
-        backgroundColor: '#eef2ff',
-        paddingHorizontal: 10,
-        paddingVertical: 4,
-        borderRadius: 12,
-        alignSelf: 'flex-start',
+    cardBody: {
+        padding: 16,
+    },
+    fieldRow: {
         marginBottom: 12,
-    },
-    fieldsContainer: {
-        flex: 1,
-    },
-    fieldContainer: {
-        marginBottom: 16,
-    },
-    fieldHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: 4,
     },
     fieldLabel: {
         fontSize: 12,
-        fontWeight: '600',
         color: '#6b7280',
-        textTransform: 'uppercase',
+        marginBottom: 4,
+        fontWeight: '500',
     },
-    editHint: {
-        fontSize: 10,
-        color: '#10b981',
-    },
-    editHintSelect: {
-        color: '#6366f1',
+    fieldValueContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        backgroundColor: '#f9fafb',
+        padding: 10,
+        borderRadius: 8,
     },
     fieldValue: {
         fontSize: 15,
         color: '#1f2937',
-        padding: 10,
-        backgroundColor: '#f9fafb',
-        borderRadius: 8,
-        minHeight: 40,
-    },
-    fieldValueReadOnly: {
-        color: '#9ca3af',
-    },
-    fieldValueSelect: {
-        borderWidth: 1,
-        borderColor: '#e5e7eb',
-        borderStyle: 'dashed',
-    },
-    editContainer: {
-        gap: 8,
-    },
-    editInput: {
-        fontSize: 15,
-        color: '#1f2937',
-        padding: 10,
-        backgroundColor: '#ffffff',
-        borderWidth: 1,
-        borderColor: '#6366f1',
-        borderRadius: 8,
-        minHeight: 60,
-    },
-    editButtons: {
-        flexDirection: 'row',
-        gap: 8,
-    },
-    editButton: {
-        flex: 1,
-        paddingVertical: 8,
-        borderRadius: 6,
-        alignItems: 'center',
-    },
-    saveButton: {
-        backgroundColor: '#6366f1',
-    },
-    cancelButton: {
-        backgroundColor: '#6b7280',
-    },
-    editButtonText: {
-        color: '#ffffff',
-        fontSize: 14,
-        fontWeight: '600',
-    },
-    expandedContainer: {
-        flex: 1,
-        backgroundColor: '#f3f4f6',
-    },
-    expandedHeader: {
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        padding: 16,
-        backgroundColor: '#ffffff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#e5e7eb',
-    },
-    expandedTitle: {
-        fontSize: 18,
-        fontWeight: 'bold',
-        color: '#1f2937',
         flex: 1,
     },
-    pageTabs: {
-        flexDirection: 'row',
-        padding: 12,
-        gap: 8,
-        backgroundColor: '#ffffff',
+    editIcon: {
+        marginLeft: 8,
     },
-    pageTab: {
-        paddingHorizontal: 12,
-        paddingVertical: 6,
-        borderRadius: 16,
-        backgroundColor: '#f3f4f6',
+    footer: {
+        height: 40,
     },
-    pageTabActive: {
-        backgroundColor: '#6366f1',
-    },
-    pageTabText: {
-        fontSize: 14,
-        color: '#6b7280',
-    },
-    pageTabTextActive: {
-        color: '#ffffff',
-        fontWeight: '500',
-    },
-    expandedFields: {
-        flex: 1,
-        padding: 16,
-    },
-    notionLink: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 16,
-        backgroundColor: '#ffffff',
-        borderTopWidth: 1,
-        borderTopColor: '#e5e7eb',
-        gap: 8,
-    },
-    notionLinkText: {
-        color: '#6366f1',
-        fontSize: 16,
-        fontWeight: '500',
-    },
-    // Select Picker styles
-    pickerOverlay: {
+    modalOverlay: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.5)',
         justifyContent: 'flex-end',
     },
-    pickerContainer: {
+    modalSubOverlay: {
+        flex: 1,
+        justifyContent: 'flex-end',
+    },
+    modalContent: {
         backgroundColor: '#ffffff',
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
+        padding: 20,
         maxHeight: '80%',
     },
-    pickerHeader: {
+    modalHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 16,
-        borderBottomWidth: 1,
-        borderBottomColor: '#e5e7eb',
+        marginBottom: 20,
     },
-    pickerTitle: {
+    modalTitle: {
         fontSize: 18,
         fontWeight: 'bold',
         color: '#1f2937',
     },
-    searchContainer: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: '#e5e7eb',
-        gap: 10,
+    inputContainer: {
+        marginBottom: 20,
     },
-    searchInput: {
-        flex: 1,
+    textInput: {
         backgroundColor: '#f3f4f6',
-        borderRadius: 8,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        fontSize: 15,
+        borderRadius: 12,
+        padding: 16,
+        fontSize: 16,
+        color: '#1f2937',
+        minHeight: 50,
     },
-    selectedBar: {
-        padding: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: '#e5e7eb',
+    selectContainer: {
+        position: 'relative',
+        zIndex: 1000,
     },
-    selectedChip: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        backgroundColor: '#eef2ff',
-        paddingHorizontal: 10,
-        paddingVertical: 6,
-        borderRadius: 16,
-        marginRight: 8,
-        gap: 4,
-    },
-    selectedChipText: {
-        fontSize: 13,
-        color: '#6366f1',
-        fontWeight: '500',
-    },
-    optionsList: {
-        maxHeight: 300,
-        padding: 8,
-    },
-    createOption: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        padding: 14,
-        backgroundColor: '#eef2ff',
-        borderRadius: 8,
-        marginBottom: 4,
-        gap: 10,
-    },
-    createOptionText: {
-        fontSize: 15,
-        color: '#6366f1',
-        fontWeight: '500',
-    },
-    optionItem: {
+    selectedValueBox: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        padding: 14,
+        backgroundColor: '#f3f4f6',
+        borderRadius: 12,
+        padding: 12,
+        minHeight: 50,
+    },
+    selectedTags: {
+        flex: 1,
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
+    },
+    tag: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#e0e7ff',
+        borderRadius: 6,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        gap: 6,
+    },
+    tagText: {
+        fontSize: 14,
+        color: '#4338ca',
+        fontWeight: '500',
+    },
+    placeholderText: {
+        color: '#9ca3af',
+        fontSize: 16,
+    },
+    dropdownContainer: {
+        marginTop: 8,
+        backgroundColor: '#ffffff',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        maxHeight: 250,
+        overflow: 'hidden',
+    },
+    optionSearch: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f3f4f6',
+        gap: 8,
+    },
+    optionSearchInput: {
+        flex: 1,
+        fontSize: 15,
+        color: '#1f2937',
+    },
+    optionsList: {
+        maxHeight: 200,
+    },
+    optionItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 12,
         borderBottomWidth: 1,
         borderBottomColor: '#f3f4f6',
     },
@@ -819,19 +472,29 @@ const styles = StyleSheet.create({
         color: '#6366f1',
         fontWeight: '500',
     },
-    noOptions: {
-        textAlign: 'center',
-        color: '#9ca3af',
-        padding: 20,
+    createOptionItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+        gap: 8,
+        borderTopWidth: 1,
+        borderTopColor: '#f3f4f6',
     },
-    doneButton: {
+    createOptionText: {
+        fontSize: 15,
+        color: '#6366f1',
+        fontWeight: '500',
+    },
+    saveButton: {
         backgroundColor: '#6366f1',
-        margin: 16,
-        padding: 16,
         borderRadius: 12,
+        padding: 16,
         alignItems: 'center',
     },
-    doneButtonText: {
+    saveButtonDisabled: {
+        backgroundColor: '#9ca3af',
+    },
+    saveButtonText: {
         color: '#ffffff',
         fontSize: 16,
         fontWeight: '600',

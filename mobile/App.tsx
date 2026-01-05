@@ -175,9 +175,12 @@ export default function App() {
     // 정렬 적용
     if (fieldWorkConfig.sortColumn) {
       result = [...result].sort((a, b) => {
-        const valA = parseFloat(a.values[fieldWorkConfig.sortColumn]) || 0;
-        const valB = parseFloat(b.values[fieldWorkConfig.sortColumn]) || 0;
-        return valA - valB;
+        const valA = a.values[fieldWorkConfig.sortColumn] || '';
+        const valB = b.values[fieldWorkConfig.sortColumn] || '';
+
+        // 숫자, 문자열 혼합된 경우도 자연스럽게 정렬 (Natural Sort)
+        // 예: "Move 1", "Move 2", "Move 10" 순서 보장
+        return String(valA).localeCompare(String(valB), undefined, { numeric: true, sensitivity: 'base' });
       });
     }
 
@@ -554,7 +557,6 @@ export default function App() {
                   schemaProperties={schemaProperties}
                   onUpdateAsset={handleUpdateAsset}
                   editableFields={fieldWorkConfig?.editableFields}
-                  sortColumn={fieldWorkConfig?.sortColumn}
                 />
               )}
             </View>

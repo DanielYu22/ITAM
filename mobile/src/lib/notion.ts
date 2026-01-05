@@ -5,7 +5,6 @@ export interface Asset {
     url: string;
     values: Record<string, string>;
     raw: Record<string, any>;
-    notionUrl?: string;
 }
 
 export interface NotionConfig {
@@ -13,23 +12,11 @@ export interface NotionConfig {
     databaseId: string;
 }
 
-export interface SelectOption {
-    id: string;
-    name: string;
-    color: string;
-}
-
 export interface NotionProperty {
     id: string;
     type: string;
     name: string;
-    options?: SelectOption[];
-    select?: {
-        options: SelectOption[];
-    };
-    multi_select?: {
-        options: SelectOption[];
-    };
+    options?: { id: string; name: string; color: string }[];
 }
 
 export class NotionClient {
