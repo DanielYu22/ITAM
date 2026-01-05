@@ -271,37 +271,68 @@ export default function App() {
             </TouchableOpacity>
           </View>
           <ScrollView style={styles.settingsBody}>
-            <View style={styles.settingItem}>
-              <Text style={styles.settingLabel}>API Base URL</Text>
-              <TextInput
-                style={styles.settingInput}
-                value={apiBaseUrl}
-                onChangeText={setApiBaseUrl}
-                placeholder="https://your-app.vercel.app"
-                autoCapitalize="none"
-              />
+            {/* 현재 설정 값 (읽기 전용) */}
+            <View style={styles.settingSection}>
+              <Text style={styles.settingSectionTitle}>현재 설정 (하드코딩)</Text>
+
+              <View style={styles.settingInfoItem}>
+                <Text style={styles.settingInfoLabel}>API Base URL</Text>
+                <Text style={styles.settingInfoValue} selectable>{API_BASE_URL || '(비어있음)'}</Text>
+              </View>
+
+              <View style={styles.settingInfoItem}>
+                <Text style={styles.settingInfoLabel}>Notion API Key</Text>
+                <Text style={styles.settingInfoValue} selectable>
+                  {NOTION_API_KEY ? `${NOTION_API_KEY.slice(0, 12)}...${NOTION_API_KEY.slice(-6)}` : '(비어있음)'}
+                </Text>
+              </View>
+
+              <View style={styles.settingInfoItem}>
+                <Text style={styles.settingInfoLabel}>Database ID</Text>
+                <Text style={styles.settingInfoValue} selectable>{NOTION_DATABASE_ID || '(비어있음)'}</Text>
+              </View>
             </View>
-            <View style={styles.settingItem}>
-              <Text style={styles.settingLabel}>Notion API Key</Text>
-              <TextInput
-                style={styles.settingInput}
-                value={apiKey}
-                onChangeText={setApiKey}
-                placeholder="secret_xxx..."
-                autoCapitalize="none"
-                secureTextEntry
-              />
+
+            {/* 임시 설정 변경 */}
+            <View style={styles.settingSection}>
+              <Text style={styles.settingSectionTitle}>임시 설정 변경</Text>
+              <Text style={styles.settingSectionDesc}>
+                앱 재시작 시 초기화됩니다. 영구 변경은 config.ts 파일을 수정하세요.
+              </Text>
+
+              <View style={styles.settingItem}>
+                <Text style={styles.settingLabel}>API Base URL</Text>
+                <TextInput
+                  style={styles.settingInput}
+                  value={apiBaseUrl}
+                  onChangeText={setApiBaseUrl}
+                  placeholder="https://your-app.vercel.app"
+                  autoCapitalize="none"
+                />
+              </View>
+              <View style={styles.settingItem}>
+                <Text style={styles.settingLabel}>Notion API Key</Text>
+                <TextInput
+                  style={styles.settingInput}
+                  value={apiKey}
+                  onChangeText={setApiKey}
+                  placeholder="secret_xxx..."
+                  autoCapitalize="none"
+                  secureTextEntry
+                />
+              </View>
+              <View style={styles.settingItem}>
+                <Text style={styles.settingLabel}>Database ID</Text>
+                <TextInput
+                  style={styles.settingInput}
+                  value={databaseId}
+                  onChangeText={setDatabaseId}
+                  placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+                  autoCapitalize="none"
+                />
+              </View>
             </View>
-            <View style={styles.settingItem}>
-              <Text style={styles.settingLabel}>Database ID</Text>
-              <TextInput
-                style={styles.settingInput}
-                value={databaseId}
-                onChangeText={setDatabaseId}
-                placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
-                autoCapitalize="none"
-              />
-            </View>
+
             <Text style={styles.settingHint}>
               터널 사용 시: Vercel 배포 URL 또는 ngrok URL을 API Base URL에 입력하세요.
             </Text>
@@ -745,5 +776,38 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
     color: '#ffffff',
+  },
+  settingSection: {
+    backgroundColor: '#ffffff',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 16,
+  },
+  settingSectionTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: '#1f2937',
+    marginBottom: 8,
+  },
+  settingSectionDesc: {
+    fontSize: 13,
+    color: '#6b7280',
+    marginBottom: 12,
+  },
+  settingInfoItem: {
+    marginBottom: 12,
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#f3f4f6',
+  },
+  settingInfoLabel: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginBottom: 4,
+  },
+  settingInfoValue: {
+    fontSize: 14,
+    color: '#1f2937',
+    fontFamily: 'monospace',
   },
 });
