@@ -11,7 +11,7 @@ import {
     TextInput,
     GestureResponderEvent,
 } from 'react-native';
-import { ChevronLeft, ChevronRight, X, ExternalLink, Maximize2 } from 'lucide-react-native';
+import { ChevronLeft, ChevronRight, X, ExternalLink, Maximize2, Check, Plus } from 'lucide-react-native';
 import { Asset, NotionProperty } from '../lib/notion';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
@@ -22,7 +22,8 @@ interface MobileCardViewProps {
     schemaProperties: Record<string, NotionProperty>;
     onUpdateAsset: (id: string, field: string, value: string) => void;
     primaryFields?: string[];
-    editableFields?: string[]; // 편집 가능한 필드 목록
+    editableFields?: string[];
+    sortColumn?: string;
 }
 
 export const MobileCardView: React.FC<MobileCardViewProps> = ({
@@ -31,7 +32,8 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     schemaProperties,
     onUpdateAsset,
     primaryFields,
-    editableFields
+    editableFields,
+    sortColumn,
 }) => {
     const [currentIndex, setCurrentIndex] = useState(0);
     const [expandedAsset, setExpandedAsset] = useState<Asset | null>(null);
@@ -39,10 +41,51 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     const [editingField, setEditingField] = useState<string | null>(null);
     const [editValue, setEditValue] = useState('');
 
+    // Select/Multi-Select 드롭다운 상태
+    const [showSelectPicker, setShowSelectPicker] = useState(false);
+    const [selectSearchText, setSelectSearchText] = useState('');
+    const [selectedValues, setSelectedValues] = useState<string[]>([]);
+    const [isMultiSelect, setIsMultiSelect] = useState(false);
+    const [currentAssetId, setCurrentAssetId] = useState<string | null>(null);
+
     // Swipe handling
     const [touchStartX, setTouchStartX] = useState<number | null>(null);
 
-    // 편집 가능 필드가 지정되면 그것을 사용, 아니면 기본 5개
+    // 숫자 정렬 적용된 자산 목록
+    const sortedAssets = useMemo(() => {
+        if (!sortColumn) return assets;
+
+        return [...assets].sort((a, b) => {
+            const valA = a.values[sortColumn] || '';
+            const valB = b.values[sortColumn] || '';
+
+            // 숫자인지 확인하고 숫자 정렬
+            const numA = parseFloat(valA);
+            const numB = parseFloat(valB);
+
+            if (!isNaN(numA) && !isNaN(numB)) {
+                return numA - numB; // 숫자 오름차순
+            }
+
+            return valA.localeCompare(valB, 'ko');
+        });
+    }, [assets, sortColumn]);
+
+    // Select/Multi-Select 옵션 추출
+    const getSelectOptions = (field: string): string[] => {
+        const prop = schemaProperties[field];
+        if (!prop) return [];
+
+        if (prop.type === 'select' && prop.select?.options) {
+            return prop.select.options.map(o => o.name);
+        }
+        if (prop.type === 'multi_select' && prop.multi_select?.options) {
+            return prop.multi_select.options.map(o => o.name);
+        }
+        return [];
+    };
+
+    // 편집 가능 필드 결정
     const displayFields = useMemo(() => {
         if (editableFields && editableFields.length > 0) return editableFields;
         if (primaryFields && primaryFields.length > 0) return primaryFields;
@@ -51,7 +94,6 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
         return titleField ? [titleField, ...others] : others;
     }, [editableFields, primaryFields, schema, schemaProperties]);
 
-    // 편집 가능 여부 확인
     const isFieldEditable = (field: string) => {
         if (!editableFields || editableFields.length === 0) return true;
         return editableFields.includes(field);
@@ -65,12 +107,12 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
         return pages;
     }, [schema]);
 
-    const currentAsset = assets[currentIndex];
+    const currentAsset = sortedAssets[currentIndex];
     const titleField = Object.keys(schemaProperties).find(k => schemaProperties[k].type === 'title');
     const assetTitle = titleField && currentAsset ? currentAsset.values[titleField] : `Asset ${currentIndex + 1}`;
 
     const goNext = () => {
-        if (currentIndex < assets.length - 1) {
+        if (currentIndex < sortedAssets.length - 1) {
             setCurrentIndex(currentIndex + 1);
         }
     };
@@ -97,23 +139,87 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
         setTouchStartX(null);
     };
 
-    const startEditing = (field: string, value: string) => {
+    // 필드 편집 시작
+    const startEditing = (field: string, value: string, assetId: string) => {
         if (!isFieldEditable(field)) return;
-        setEditingField(field);
-        setEditValue(value);
+
+        const prop = schemaProperties[field];
+
+        // Select 또는 Multi-Select 타입이면 드롭다운 표시
+        if (prop?.type === 'select' || prop?.type === 'multi_select') {
+            setEditingField(field);
+            setIsMultiSelect(prop.type === 'multi_select');
+            setCurrentAssetId(assetId);
+
+            // Multi-Select는 현재 값을 배열로 파싱
+            if (prop.type === 'multi_select') {
+                setSelectedValues(value ? value.split(',').map(v => v.trim()).filter(v => v) : []);
+            } else {
+                setSelectedValues(value ? [value] : []);
+            }
+
+            setSelectSearchText('');
+            setShowSelectPicker(true);
+        } else {
+            // 일반 텍스트 편집
+            setEditingField(field);
+            setEditValue(value);
+            setCurrentAssetId(assetId);
+        }
     };
 
-    const saveEdit = (assetId: string) => {
-        if (editingField) {
-            onUpdateAsset(assetId, editingField, editValue);
+    const saveEdit = () => {
+        if (editingField && currentAssetId) {
+            onUpdateAsset(currentAssetId, editingField, editValue);
             setEditingField(null);
             setEditValue('');
+            setCurrentAssetId(null);
         }
     };
 
     const cancelEdit = () => {
         setEditingField(null);
         setEditValue('');
+        setShowSelectPicker(false);
+        setSelectSearchText('');
+        setSelectedValues([]);
+        setCurrentAssetId(null);
+    };
+
+    // Select 값 토글
+    const toggleSelectValue = (val: string) => {
+        if (isMultiSelect) {
+            setSelectedValues(prev =>
+                prev.includes(val) ? prev.filter(v => v !== val) : [...prev, val]
+            );
+        } else {
+            // 단일 선택: 즉시 저장
+            if (editingField && currentAssetId) {
+                onUpdateAsset(currentAssetId, editingField, val);
+            }
+            cancelEdit();
+        }
+    };
+
+    // Multi-Select 저장
+    const saveMultiSelect = () => {
+        if (editingField && currentAssetId) {
+            onUpdateAsset(currentAssetId, editingField, selectedValues.join(', '));
+        }
+        cancelEdit();
+    };
+
+    // 새 옵션 생성
+    const createNewOption = (val: string) => {
+        if (isMultiSelect) {
+            setSelectedValues(prev => [...prev, val]);
+            setSelectSearchText('');
+        } else {
+            if (editingField && currentAssetId) {
+                onUpdateAsset(currentAssetId, editingField, val);
+            }
+            cancelEdit();
+        }
     };
 
     if (!currentAsset) {
@@ -126,14 +232,20 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
 
     const renderField = (field: string, asset: Asset) => {
         const value = asset.values[field] || '';
-        const isEditing = editingField === field;
+        const isEditing = editingField === field && currentAssetId === asset.id && !showSelectPicker;
         const canEdit = isFieldEditable(field);
+        const prop = schemaProperties[field];
+        const isSelectType = prop?.type === 'select' || prop?.type === 'multi_select';
 
         return (
             <View key={field} style={styles.fieldContainer}>
                 <View style={styles.fieldHeader}>
                     <Text style={styles.fieldLabel}>{field}</Text>
-                    {canEdit && <Text style={styles.editHint}>편집 가능</Text>}
+                    {canEdit && (
+                        <Text style={[styles.editHint, isSelectType && styles.editHintSelect]}>
+                            {isSelectType ? (prop?.type === 'multi_select' ? '다중선택' : '선택') : '편집 가능'}
+                        </Text>
+                    )}
                 </View>
                 {isEditing ? (
                     <View style={styles.editContainer}>
@@ -147,7 +259,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                         <View style={styles.editButtons}>
                             <TouchableOpacity
                                 style={[styles.editButton, styles.saveButton]}
-                                onPress={() => saveEdit(asset.id)}
+                                onPress={saveEdit}
                             >
                                 <Text style={styles.editButtonText}>저장</Text>
                             </TouchableOpacity>
@@ -161,10 +273,14 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                     </View>
                 ) : (
                     <TouchableOpacity
-                        onPress={() => startEditing(field, value)}
+                        onPress={() => startEditing(field, value, asset.id)}
                         disabled={!canEdit}
                     >
-                        <Text style={[styles.fieldValue, !canEdit && styles.fieldValueReadOnly]}>
+                        <Text style={[
+                            styles.fieldValue,
+                            !canEdit && styles.fieldValueReadOnly,
+                            isSelectType && styles.fieldValueSelect
+                        ]}>
                             {value || '-'}
                         </Text>
                     </TouchableOpacity>
@@ -173,18 +289,125 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
         );
     };
 
+    // Select 드롭다운 렌더링
+    const renderSelectPicker = () => {
+        if (!editingField) return null;
+
+        const options = getSelectOptions(editingField);
+        const filteredOptions = options.filter(o =>
+            o.toLowerCase().includes(selectSearchText.toLowerCase())
+        );
+        const showCreate = selectSearchText.trim() &&
+            !options.some(o => o.toLowerCase() === selectSearchText.toLowerCase());
+
+        return (
+            <Modal visible={showSelectPicker} transparent animationType="fade">
+                <View style={styles.pickerOverlay}>
+                    <View style={styles.pickerContainer}>
+                        <View style={styles.pickerHeader}>
+                            <Text style={styles.pickerTitle}>
+                                {isMultiSelect ? '다중 선택' : '선택'}: {editingField}
+                            </Text>
+                            <TouchableOpacity onPress={cancelEdit}>
+                                <X size={24} color="#6b7280" />
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* 검색 입력 */}
+                        <View style={styles.searchContainer}>
+                            <TextInput
+                                style={styles.searchInput}
+                                value={selectSearchText}
+                                onChangeText={setSelectSearchText}
+                                placeholder="검색 또는 새로 만들기..."
+                                placeholderTextColor="#9ca3af"
+                                autoFocus
+                            />
+                            {selectSearchText.length > 0 && (
+                                <TouchableOpacity onPress={() => setSelectSearchText('')}>
+                                    <X size={18} color="#9ca3af" />
+                                </TouchableOpacity>
+                            )}
+                        </View>
+
+                        {/* 선택된 값 표시 (Multi-Select) */}
+                        {isMultiSelect && selectedValues.length > 0 && (
+                            <View style={styles.selectedBar}>
+                                <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+                                    {selectedValues.map(val => (
+                                        <TouchableOpacity
+                                            key={val}
+                                            style={styles.selectedChip}
+                                            onPress={() => toggleSelectValue(val)}
+                                        >
+                                            <Text style={styles.selectedChipText}>{val}</Text>
+                                            <X size={14} color="#6366f1" />
+                                        </TouchableOpacity>
+                                    ))}
+                                </ScrollView>
+                            </View>
+                        )}
+
+                        {/* 옵션 목록 */}
+                        <ScrollView style={styles.optionsList}>
+                            {/* 새로 만들기 옵션 */}
+                            {showCreate && (
+                                <TouchableOpacity
+                                    style={styles.createOption}
+                                    onPress={() => createNewOption(selectSearchText.trim())}
+                                >
+                                    <Plus size={18} color="#6366f1" />
+                                    <Text style={styles.createOptionText}>
+                                        "{selectSearchText.trim()}" 생성
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
+
+                            {filteredOptions.map(option => {
+                                const isSelected = selectedValues.includes(option);
+                                return (
+                                    <TouchableOpacity
+                                        key={option}
+                                        style={[styles.optionItem, isSelected && styles.optionItemSelected]}
+                                        onPress={() => toggleSelectValue(option)}
+                                    >
+                                        <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>
+                                            {option}
+                                        </Text>
+                                        {isSelected && <Check size={18} color="#6366f1" />}
+                                    </TouchableOpacity>
+                                );
+                            })}
+
+                            {filteredOptions.length === 0 && !showCreate && (
+                                <Text style={styles.noOptions}>옵션이 없습니다</Text>
+                            )}
+                        </ScrollView>
+
+                        {/* Multi-Select 저장 버튼 */}
+                        {isMultiSelect && (
+                            <TouchableOpacity style={styles.doneButton} onPress={saveMultiSelect}>
+                                <Text style={styles.doneButtonText}>완료</Text>
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                </View>
+            </Modal>
+        );
+    };
+
     return (
         <View style={styles.container}>
             {/* Progress indicator */}
             <View style={styles.progressBar}>
                 <Text style={styles.progressText}>
-                    {currentIndex + 1} / {assets.length}
+                    {currentIndex + 1} / {sortedAssets.length}
                 </Text>
                 <View style={styles.progressTrack}>
                     <View
                         style={[
                             styles.progressFill,
-                            { width: `${((currentIndex + 1) / assets.length) * 100}%` }
+                            { width: `${((currentIndex + 1) / sortedAssets.length) * 100}%` }
                         ]}
                     />
                 </View>
@@ -198,101 +421,87 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
 
             {/* Card View */}
             <View
-                style={styles.cardWrapper}
+                style={styles.cardContainer}
                 onTouchStart={handleTouchStart}
                 onTouchEnd={handleTouchEnd}
             >
-                <View style={styles.card}>
-                    {/* Card Header */}
-                    <View style={styles.cardHeader}>
-                        <Text style={styles.cardTitle} numberOfLines={1}>{assetTitle}</Text>
-                        <Text style={styles.cardSubtitle}>탭하여 편집 • 스와이프로 이동</Text>
-                    </View>
-
-                    {/* Card Body */}
-                    <ScrollView style={styles.cardBody}>
-                        {displayFields.map(field => renderField(field, currentAsset))}
-                    </ScrollView>
-
-                    {/* Card Footer */}
-                    <View style={styles.cardFooter}>
-                        <TouchableOpacity
-                            onPress={() => Linking.openURL(currentAsset.url)}
-                            style={styles.notionButton}
-                        >
-                            <ExternalLink size={16} color="#6366f1" />
-                            <Text style={styles.notionButtonText}>Open in Notion</Text>
-                        </TouchableOpacity>
-                    </View>
-                </View>
-            </View>
-
-            {/* Navigation Arrows */}
-            <View style={styles.navigation}>
                 <TouchableOpacity
+                    style={[styles.navButton, styles.navButtonLeft]}
                     onPress={goPrev}
                     disabled={currentIndex === 0}
-                    style={[styles.navButton, currentIndex === 0 && styles.navButtonDisabled]}
                 >
-                    <ChevronLeft size={24} color={currentIndex === 0 ? '#9ca3af' : '#1f2937'} />
+                    <ChevronLeft size={24} color={currentIndex === 0 ? '#d1d5db' : '#6366f1'} />
                 </TouchableOpacity>
+
+                <View style={styles.card}>
+                    <Text style={styles.cardTitle}>{assetTitle}</Text>
+                    {sortColumn && currentAsset.values[sortColumn] && (
+                        <Text style={styles.sortBadge}>
+                            {sortColumn}: {currentAsset.values[sortColumn]}
+                        </Text>
+                    )}
+
+                    <ScrollView style={styles.fieldsContainer} showsVerticalScrollIndicator={false}>
+                        {displayFields.map(field => renderField(field, currentAsset))}
+                    </ScrollView>
+                </View>
+
                 <TouchableOpacity
+                    style={[styles.navButton, styles.navButtonRight]}
                     onPress={goNext}
-                    disabled={currentIndex === assets.length - 1}
-                    style={[styles.navButton, currentIndex === assets.length - 1 && styles.navButtonDisabled]}
+                    disabled={currentIndex === sortedAssets.length - 1}
                 >
-                    <ChevronRight size={24} color={currentIndex === assets.length - 1 ? '#9ca3af' : '#1f2937'} />
+                    <ChevronRight size={24} color={currentIndex === sortedAssets.length - 1 ? '#d1d5db' : '#6366f1'} />
                 </TouchableOpacity>
             </View>
 
             {/* Expanded Modal */}
-            <Modal
-                visible={!!expandedAsset}
-                animationType="slide"
-                presentationStyle="fullScreen"
-            >
-                <View style={styles.modalContainer}>
-                    {/* Modal Header */}
-                    <View style={styles.modalHeader}>
-                        <Text style={styles.modalTitle} numberOfLines={1}>
-                            {titleField && expandedAsset ? expandedAsset.values[titleField] : 'Asset Details'}
+            <Modal visible={!!expandedAsset} animationType="slide" presentationStyle="pageSheet">
+                <View style={styles.expandedContainer}>
+                    <View style={styles.expandedHeader}>
+                        <Text style={styles.expandedTitle}>
+                            {expandedAsset && titleField ? expandedAsset.values[titleField] : 'Asset Details'}
                         </Text>
                         <TouchableOpacity onPress={() => setExpandedAsset(null)}>
                             <X size={24} color="#6b7280" />
                         </TouchableOpacity>
                     </View>
 
-                    {/* Field Pages */}
-                    <ScrollView style={styles.modalBody}>
-                        {fieldPages[fieldPage]?.map(field =>
-                            expandedAsset && renderField(field, expandedAsset)
-                        )}
+                    {/* Field pages pagination */}
+                    {fieldPages.length > 1 && (
+                        <View style={styles.pageTabs}>
+                            {fieldPages.map((_, idx) => (
+                                <TouchableOpacity
+                                    key={idx}
+                                    style={[styles.pageTab, fieldPage === idx && styles.pageTabActive]}
+                                    onPress={() => setFieldPage(idx)}
+                                >
+                                    <Text style={[styles.pageTabText, fieldPage === idx && styles.pageTabTextActive]}>
+                                        {idx + 1}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    )}
+
+                    <ScrollView style={styles.expandedFields}>
+                        {expandedAsset && fieldPages[fieldPage]?.map(field => renderField(field, expandedAsset))}
                     </ScrollView>
 
-                    {/* Page Navigation */}
-                    {fieldPages.length > 1 && (
-                        <View style={styles.pageNavigation}>
-                            <TouchableOpacity
-                                onPress={() => setFieldPage(p => Math.max(0, p - 1))}
-                                disabled={fieldPage === 0}
-                                style={[styles.pageButton, fieldPage === 0 && styles.pageButtonDisabled]}
-                            >
-                                <ChevronLeft size={20} color={fieldPage === 0 ? '#9ca3af' : '#1f2937'} />
-                            </TouchableOpacity>
-                            <Text style={styles.pageText}>
-                                Page {fieldPage + 1} / {fieldPages.length}
-                            </Text>
-                            <TouchableOpacity
-                                onPress={() => setFieldPage(p => Math.min(fieldPages.length - 1, p + 1))}
-                                disabled={fieldPage === fieldPages.length - 1}
-                                style={[styles.pageButton, fieldPage === fieldPages.length - 1 && styles.pageButtonDisabled]}
-                            >
-                                <ChevronRight size={20} color={fieldPage === fieldPages.length - 1 ? '#9ca3af' : '#1f2937'} />
-                            </TouchableOpacity>
-                        </View>
+                    {expandedAsset?.notionUrl && (
+                        <TouchableOpacity
+                            style={styles.notionLink}
+                            onPress={() => Linking.openURL(expandedAsset.notionUrl!)}
+                        >
+                            <ExternalLink size={18} color="#6366f1" />
+                            <Text style={styles.notionLinkText}>Notion에서 열기</Text>
+                        </TouchableOpacity>
                     )}
                 </View>
             </Modal>
+
+            {/* Select Picker Modal */}
+            {renderSelectPicker()}
         </View>
     );
 };
@@ -300,141 +509,135 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: '#f3f4f6',
     },
     emptyContainer: {
         flex: 1,
         justifyContent: 'center',
         alignItems: 'center',
-        backgroundColor: '#f3f4f6',
     },
     emptyText: {
-        color: '#6b7280',
         fontSize: 16,
+        color: '#6b7280',
     },
     progressBar: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: 16,
         paddingVertical: 12,
-        backgroundColor: '#ffffff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#e5e7eb',
+        gap: 12,
     },
     progressText: {
         fontSize: 14,
+        fontWeight: '500',
         color: '#6b7280',
-        marginRight: 12,
     },
     progressTrack: {
         flex: 1,
         height: 4,
         backgroundColor: '#e5e7eb',
         borderRadius: 2,
-        overflow: 'hidden',
     },
     progressFill: {
         height: '100%',
         backgroundColor: '#6366f1',
+        borderRadius: 2,
     },
     expandButton: {
-        marginLeft: 12,
+        padding: 4,
+    },
+    cardContainer: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 8,
+    },
+    navButton: {
         padding: 8,
     },
-    cardWrapper: {
-        flex: 1,
-        padding: 16,
-    },
+    navButtonLeft: {},
+    navButtonRight: {},
     card: {
         flex: 1,
         backgroundColor: '#ffffff',
-        borderRadius: 24,
+        borderRadius: 16,
+        padding: 20,
+        marginHorizontal: 8,
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
         shadowOpacity: 0.1,
         shadowRadius: 8,
         elevation: 4,
-        overflow: 'hidden',
-    },
-    cardHeader: {
-        padding: 20,
-        backgroundColor: '#6366f1',
+        maxHeight: '90%',
     },
     cardTitle: {
         fontSize: 20,
         fontWeight: 'bold',
-        color: '#ffffff',
+        color: '#1f2937',
+        marginBottom: 8,
     },
-    cardSubtitle: {
-        fontSize: 14,
-        color: '#c7d2fe',
-        marginTop: 4,
-    },
-    cardBody: {
-        flex: 1,
-        padding: 16,
-    },
-    cardFooter: {
-        padding: 16,
-        borderTopWidth: 1,
-        borderTopColor: '#e5e7eb',
-    },
-    notionButton: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        justifyContent: 'center',
-        paddingVertical: 12,
-        paddingHorizontal: 16,
-        backgroundColor: '#eef2ff',
-        borderRadius: 12,
-    },
-    notionButtonText: {
-        marginLeft: 8,
+    sortBadge: {
+        fontSize: 13,
         color: '#6366f1',
-        fontWeight: '500',
+        backgroundColor: '#eef2ff',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+        alignSelf: 'flex-start',
+        marginBottom: 12,
+    },
+    fieldsContainer: {
+        flex: 1,
     },
     fieldContainer: {
-        backgroundColor: '#f9fafb',
-        borderRadius: 12,
-        padding: 16,
-        marginBottom: 12,
+        marginBottom: 16,
     },
     fieldHeader: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
-        marginBottom: 8,
+        marginBottom: 4,
     },
     fieldLabel: {
         fontSize: 12,
-        fontWeight: 'bold',
+        fontWeight: '600',
         color: '#6b7280',
         textTransform: 'uppercase',
-        letterSpacing: 0.5,
     },
     editHint: {
         fontSize: 10,
         color: '#10b981',
-        fontWeight: '500',
+    },
+    editHintSelect: {
+        color: '#6366f1',
     },
     fieldValue: {
-        fontSize: 16,
+        fontSize: 15,
         color: '#1f2937',
+        padding: 10,
+        backgroundColor: '#f9fafb',
+        borderRadius: 8,
+        minHeight: 40,
     },
     fieldValueReadOnly: {
         color: '#9ca3af',
+    },
+    fieldValueSelect: {
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        borderStyle: 'dashed',
     },
     editContainer: {
         gap: 8,
     },
     editInput: {
+        fontSize: 15,
+        color: '#1f2937',
+        padding: 10,
         backgroundColor: '#ffffff',
         borderWidth: 1,
-        borderColor: '#d1d5db',
+        borderColor: '#6366f1',
         borderRadius: 8,
-        padding: 12,
-        fontSize: 16,
-        color: '#1f2937',
+        minHeight: 60,
     },
     editButtons: {
         flexDirection: 'row',
@@ -442,8 +645,8 @@ const styles = StyleSheet.create({
     },
     editButton: {
         flex: 1,
-        paddingVertical: 10,
-        borderRadius: 8,
+        paddingVertical: 8,
+        borderRadius: 6,
         alignItems: 'center',
     },
     saveButton: {
@@ -454,56 +657,56 @@ const styles = StyleSheet.create({
     },
     editButtonText: {
         color: '#ffffff',
+        fontSize: 14,
         fontWeight: '600',
     },
-    navigation: {
-        position: 'absolute',
-        top: '50%',
-        left: 0,
-        right: 0,
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        paddingHorizontal: 8,
-        pointerEvents: 'box-none',
-    },
-    navButton: {
-        padding: 12,
-        backgroundColor: 'rgba(255, 255, 255, 0.9)',
-        borderRadius: 50,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.1,
-        shadowRadius: 4,
-        elevation: 2,
-    },
-    navButtonDisabled: {
-        opacity: 0.5,
-    },
-    modalContainer: {
+    expandedContainer: {
         flex: 1,
         backgroundColor: '#f3f4f6',
     },
-    modalHeader: {
+    expandedHeader: {
         flexDirection: 'row',
-        alignItems: 'center',
         justifyContent: 'space-between',
+        alignItems: 'center',
         padding: 16,
         backgroundColor: '#ffffff',
         borderBottomWidth: 1,
         borderBottomColor: '#e5e7eb',
     },
-    modalTitle: {
-        flex: 1,
+    expandedTitle: {
         fontSize: 18,
         fontWeight: 'bold',
         color: '#1f2937',
-        marginRight: 16,
+        flex: 1,
     },
-    modalBody: {
+    pageTabs: {
+        flexDirection: 'row',
+        padding: 12,
+        gap: 8,
+        backgroundColor: '#ffffff',
+    },
+    pageTab: {
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 16,
+        backgroundColor: '#f3f4f6',
+    },
+    pageTabActive: {
+        backgroundColor: '#6366f1',
+    },
+    pageTabText: {
+        fontSize: 14,
+        color: '#6b7280',
+    },
+    pageTabTextActive: {
+        color: '#ffffff',
+        fontWeight: '500',
+    },
+    expandedFields: {
         flex: 1,
         padding: 16,
     },
-    pageNavigation: {
+    notionLink: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
@@ -511,18 +714,126 @@ const styles = StyleSheet.create({
         backgroundColor: '#ffffff',
         borderTopWidth: 1,
         borderTopColor: '#e5e7eb',
-        gap: 16,
+        gap: 8,
     },
-    pageButton: {
-        padding: 8,
+    notionLinkText: {
+        color: '#6366f1',
+        fontSize: 16,
+        fontWeight: '500',
+    },
+    // Select Picker styles
+    pickerOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
+    },
+    pickerContainer: {
+        backgroundColor: '#ffffff',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        maxHeight: '80%',
+    },
+    pickerHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 16,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e5e7eb',
+    },
+    pickerTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#1f2937',
+    },
+    searchContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e5e7eb',
+        gap: 10,
+    },
+    searchInput: {
+        flex: 1,
         backgroundColor: '#f3f4f6',
         borderRadius: 8,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        fontSize: 15,
     },
-    pageButtonDisabled: {
-        opacity: 0.5,
+    selectedBar: {
+        padding: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e5e7eb',
     },
-    pageText: {
-        fontSize: 14,
-        color: '#6b7280',
+    selectedChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#eef2ff',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 16,
+        marginRight: 8,
+        gap: 4,
+    },
+    selectedChipText: {
+        fontSize: 13,
+        color: '#6366f1',
+        fontWeight: '500',
+    },
+    optionsList: {
+        maxHeight: 300,
+        padding: 8,
+    },
+    createOption: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 14,
+        backgroundColor: '#eef2ff',
+        borderRadius: 8,
+        marginBottom: 4,
+        gap: 10,
+    },
+    createOptionText: {
+        fontSize: 15,
+        color: '#6366f1',
+        fontWeight: '500',
+    },
+    optionItem: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 14,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f3f4f6',
+    },
+    optionItemSelected: {
+        backgroundColor: '#eef2ff',
+    },
+    optionText: {
+        fontSize: 15,
+        color: '#1f2937',
+    },
+    optionTextSelected: {
+        color: '#6366f1',
+        fontWeight: '500',
+    },
+    noOptions: {
+        textAlign: 'center',
+        color: '#9ca3af',
+        padding: 20,
+    },
+    doneButton: {
+        backgroundColor: '#6366f1',
+        margin: 16,
+        padding: 16,
+        borderRadius: 12,
+        alignItems: 'center',
+    },
+    doneButtonText: {
+        color: '#ffffff',
+        fontSize: 16,
+        fontWeight: '600',
     },
 });

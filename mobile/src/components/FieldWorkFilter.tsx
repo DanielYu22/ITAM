@@ -81,6 +81,7 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
     const [columnSearchText, setColumnSearchText] = useState('');
     const [sortAscending, setSortAscending] = useState(true);
     const [editableSearchText, setEditableSearchText] = useState('');
+    const [selectedTargetColumns, setSelectedTargetColumns] = useState<string[]>([]);
 
     // 각 컬럼의 고유 값 추출
     const columnValues = useMemo(() => {
@@ -466,7 +467,9 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                     <View style={styles.pickerOverlay}>
                         <View style={styles.pickerContainer}>
                             <View style={styles.pickerHeader}>
-                                <Text style={styles.pickerTitle}>컬럼 선택</Text>
+                                <Text style={styles.pickerTitle}>
+                                    {pickerMode === 'target' ? '컬럼 선택 (다중)' : '컬럼 선택'}
+                                </Text>
                                 <View style={styles.pickerHeaderRight}>
                                     <TouchableOpacity
                                         style={styles.sortToggle}
@@ -479,6 +482,7 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                                     <TouchableOpacity onPress={() => {
                                         setShowColumnPicker(false);
                                         setColumnSearchText('');
+                                        setSelectedTargetColumns([]);
                                     }}>
                                         <X size={24} color="#6b7280" />
                                     </TouchableOpacity>
@@ -502,6 +506,15 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                                 )}
                             </View>
 
+                            {/* target 모드에서 선택된 컬럼 표시 */}
+                            {pickerMode === 'target' && selectedTargetColumns.length > 0 && (
+                                <View style={styles.selectedColumnsBar}>
+                                    <Text style={styles.selectedColumnsText}>
+                                        {selectedTargetColumns.length}개 선택됨
+                                    </Text>
+                                </View>
+                            )}
+
                             <ScrollView style={styles.pickerList}>
                                 {schema
                                     .filter(col => {
@@ -520,27 +533,74 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                                             ? a.localeCompare(b, 'ko')
                                             : b.localeCompare(a, 'ko');
                                     })
-                                    .map(col => (
-                                        <TouchableOpacity
-                                            key={col}
-                                            style={styles.pickerItem}
-                                            onPress={() => {
-                                                if (pickerMode === 'hierarchy') {
-                                                    addHierarchyLevel(col);
-                                                } else if (pickerMode === 'sort') {
-                                                    setSortColumn(col);
-                                                    setShowColumnPicker(false);
-                                                } else if (pickerMode === 'target') {
-                                                    addTargetCondition(col);
-                                                }
-                                                setColumnSearchText('');
-                                            }}
-                                        >
-                                            <Text style={styles.pickerItemText}>{col}</Text>
-                                            <ChevronRight size={18} color="#9ca3af" />
-                                        </TouchableOpacity>
-                                    ))}
+                                    .map(col => {
+                                        const isSelected = selectedTargetColumns.includes(col);
+
+                                        if (pickerMode === 'target') {
+                                            // target 모드: 체크박스 스타일
+                                            return (
+                                                <TouchableOpacity
+                                                    key={col}
+                                                    style={[styles.pickerItem, isSelected && styles.pickerItemSelected]}
+                                                    onPress={() => {
+                                                        setSelectedTargetColumns(prev =>
+                                                            prev.includes(col)
+                                                                ? prev.filter(c => c !== col)
+                                                                : [...prev, col]
+                                                        );
+                                                    }}
+                                                >
+                                                    <View style={[styles.checkbox, isSelected && styles.checkboxChecked]}>
+                                                        {isSelected && <Check size={14} color="#ffffff" />}
+                                                    </View>
+                                                    <Text style={[styles.pickerItemText, isSelected && styles.pickerItemTextSelected]}>
+                                                        {col}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                            );
+                                        }
+
+                                        // 기존 모드: 단일 선택
+                                        return (
+                                            <TouchableOpacity
+                                                key={col}
+                                                style={styles.pickerItem}
+                                                onPress={() => {
+                                                    if (pickerMode === 'hierarchy') {
+                                                        addHierarchyLevel(col);
+                                                    } else if (pickerMode === 'sort') {
+                                                        setSortColumn(col);
+                                                        setShowColumnPicker(false);
+                                                    }
+                                                    setColumnSearchText('');
+                                                }}
+                                            >
+                                                <Text style={styles.pickerItemText}>{col}</Text>
+                                                <ChevronRight size={18} color="#9ca3af" />
+                                            </TouchableOpacity>
+                                        );
+                                    })}
                             </ScrollView>
+
+                            {/* target 모드: 적용 버튼 */}
+                            {pickerMode === 'target' && (
+                                <TouchableOpacity
+                                    style={[styles.doneButton, selectedTargetColumns.length === 0 && styles.doneButtonDisabled]}
+                                    onPress={() => {
+                                        selectedTargetColumns.forEach(col => addTargetCondition(col));
+                                        setSelectedTargetColumns([]);
+                                        setColumnSearchText('');
+                                        setShowColumnPicker(false);
+                                    }}
+                                    disabled={selectedTargetColumns.length === 0}
+                                >
+                                    <Text style={styles.doneButtonText}>
+                                        {selectedTargetColumns.length > 0
+                                            ? `${selectedTargetColumns.length}개 조건 추가`
+                                            : '컬럼을 선택하세요'}
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
                         </View>
                     </View>
                 </Modal>
@@ -926,9 +986,45 @@ const styles = StyleSheet.create({
         borderBottomWidth: 1,
         borderBottomColor: '#f3f4f6',
     },
+    pickerItemSelected: {
+        backgroundColor: '#eef2ff',
+    },
     pickerItemText: {
         fontSize: 15,
         color: '#1f2937',
+    },
+    pickerItemTextSelected: {
+        color: '#6366f1',
+        fontWeight: '500',
+    },
+    checkbox: {
+        width: 22,
+        height: 22,
+        borderWidth: 2,
+        borderColor: '#d1d5db',
+        borderRadius: 4,
+        marginRight: 12,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    checkboxChecked: {
+        backgroundColor: '#6366f1',
+        borderColor: '#6366f1',
+    },
+    selectedColumnsBar: {
+        backgroundColor: '#eef2ff',
+        paddingHorizontal: 16,
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e5e7eb',
+    },
+    selectedColumnsText: {
+        fontSize: 14,
+        fontWeight: '500',
+        color: '#6366f1',
+    },
+    doneButtonDisabled: {
+        backgroundColor: '#9ca3af',
     },
     searchInputContainer: {
         flexDirection: 'row',

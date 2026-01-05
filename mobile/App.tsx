@@ -554,6 +554,7 @@ export default function App() {
                   schemaProperties={schemaProperties}
                   onUpdateAsset={handleUpdateAsset}
                   editableFields={fieldWorkConfig?.editableFields}
+                  sortColumn={fieldWorkConfig?.sortColumn}
                 />
               )}
             </View>
