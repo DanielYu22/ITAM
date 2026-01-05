@@ -213,28 +213,55 @@ export default function App() {
     }
   }, [notionClient, schemaProperties]);
 
-  // 템플릿 저장
-  const saveTemplate = useCallback(async (name: string) => {
+  // 템플릿 저장 (새로 저장 또는 덮어쓰기)
+  const saveTemplate = useCallback(async (name: string, overwriteId?: string) => {
     if (!notionClient || !fieldWorkConfig) return;
 
-    const newTemplate: FilterTemplate = {
-      id: Date.now().toString(),
-      name,
-      config: fieldWorkConfig,
-      createdAt: new Date().toISOString().slice(0, 10),
-    };
+    let updatedTemplates: FilterTemplate[];
 
-    const updatedTemplates = [...filterTemplates, newTemplate];
+    if (overwriteId) {
+      // 덮어쓰기 모드
+      updatedTemplates = filterTemplates.map(t =>
+        t.id === overwriteId
+          ? { ...t, name, config: fieldWorkConfig, createdAt: new Date().toISOString().slice(0, 10) }
+          : t
+      );
+    } else {
+      // 새로 저장
+      const newTemplate: FilterTemplate = {
+        id: Date.now().toString(),
+        name,
+        config: fieldWorkConfig,
+        createdAt: new Date().toISOString().slice(0, 10),
+      };
+      updatedTemplates = [...filterTemplates, newTemplate];
+    }
 
     try {
       await notionClient.saveSettings({ templates: updatedTemplates });
       setFilterTemplates(updatedTemplates);
-      Alert.alert('성공', `템플릿 "${name}"이 저장되었습니다.`);
+      Alert.alert('성공', overwriteId ? `템플릿이 업데이트되었습니다.` : `템플릿 "${name}"이 저장되었습니다.`);
     } catch (error) {
       console.error('[App] Save template error:', error);
       Alert.alert('Error', 'Failed to save template');
     }
   }, [notionClient, fieldWorkConfig, filterTemplates]);
+
+  // 템플릿 삭제
+  const deleteTemplate = useCallback(async (templateId: string) => {
+    if (!notionClient) return;
+
+    const updatedTemplates = filterTemplates.filter(t => t.id !== templateId);
+
+    try {
+      await notionClient.saveSettings({ templates: updatedTemplates });
+      setFilterTemplates(updatedTemplates);
+      Alert.alert('성공', '템플릿이 삭제되었습니다.');
+    } catch (error) {
+      console.error('[App] Delete template error:', error);
+      Alert.alert('Error', 'Failed to delete template');
+    }
+  }, [notionClient, filterTemplates]);
 
   // 템플릿 로드
   const loadTemplate = useCallback((template: FilterTemplate) => {
@@ -398,7 +425,8 @@ export default function App() {
               onStartWork={startWork}
               onOpenFilter={() => setShowFieldWorkFilter(true)}
               onLoadTemplate={loadTemplate}
-              onSaveTemplate={() => setShowSaveTemplateModal(true)}
+              onSaveTemplate={saveTemplate}
+              onDeleteTemplate={deleteTemplate}
               onEditAsset={(asset) => {
                 // 검색에서 선택한 자산을 편집하기 위해 작업 모드로 전환
                 setLocationSelectedAssets([asset]);

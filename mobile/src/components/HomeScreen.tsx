@@ -7,6 +7,7 @@ import {
     StyleSheet,
     TextInput,
     Modal,
+    Alert,
 } from 'react-native';
 import {
     Play,
@@ -19,6 +20,10 @@ import {
     Search,
     X,
     ChevronRight,
+    MoreVertical,
+    Copy,
+    Trash2,
+    Edit,
 } from 'lucide-react-native';
 import { FilterConfig } from './FieldWorkFilter';
 import { Asset, NotionProperty } from '../lib/notion';
@@ -31,7 +36,8 @@ interface HomeScreenProps {
     onStartWork: () => void;
     onOpenFilter: () => void;
     onLoadTemplate: (template: FilterTemplate) => void;
-    onSaveTemplate: () => void;
+    onSaveTemplate: (name: string, overwriteId?: string) => void;
+    onDeleteTemplate: (templateId: string) => void;
     onEditAsset: (asset: Asset) => void;
 }
 
@@ -51,10 +57,18 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     onOpenFilter,
     onLoadTemplate,
     onSaveTemplate,
+    onDeleteTemplate,
     onEditAsset,
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [showSearchResults, setShowSearchResults] = useState(false);
+
+    // 템플릿 관리 상태
+    const [showSaveModal, setShowSaveModal] = useState(false);
+    const [templateName, setTemplateName] = useState('');
+    const [selectedTemplate, setSelectedTemplate] = useState<FilterTemplate | null>(null);
+    const [showTemplateMenu, setShowTemplateMenu] = useState(false);
+    const [saveMode, setSaveMode] = useState<'new' | 'overwrite'>('new');
 
     // Title 필드 찾기
     const titleField = useMemo(() => {
@@ -67,12 +81,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
         const query = searchQuery.toLowerCase();
         return assets.filter(asset => {
-            // 모든 필드에서 검색
             return Object.values(asset.values).some(val =>
                 String(val).toLowerCase().includes(query)
             );
         }).sort((a, b) => {
-            // Name 필드 기준 정렬
             const nameA = a.values[titleField] || '';
             const nameB = b.values[titleField] || '';
             return nameA.localeCompare(nameB, 'ko');
@@ -126,6 +138,75 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         if (searchQuery.trim()) {
             setShowSearchResults(true);
         }
+    };
+
+    // 새 템플릿 저장
+    const handleSaveNew = () => {
+        setSaveMode('new');
+        setTemplateName('');
+        setShowSaveModal(true);
+    };
+
+    // 템플릿 덮어쓰기
+    const handleOverwrite = (template: FilterTemplate) => {
+        setSaveMode('overwrite');
+        setSelectedTemplate(template);
+        setTemplateName(template.name);
+        setShowSaveModal(true);
+        setShowTemplateMenu(false);
+    };
+
+    // 템플릿 복제
+    const handleDuplicate = (template: FilterTemplate) => {
+        onLoadTemplate(template);
+        setSaveMode('new');
+        setTemplateName(`${template.name} (복사)`);
+        setShowSaveModal(true);
+        setShowTemplateMenu(false);
+    };
+
+    // 템플릿 삭제
+    const handleDelete = (template: FilterTemplate) => {
+        Alert.alert(
+            '템플릿 삭제',
+            `"${template.name}" 템플릿을 삭제하시겠습니까?`,
+            [
+                { text: '취소', style: 'cancel' },
+                {
+                    text: '삭제',
+                    style: 'destructive',
+                    onPress: () => {
+                        onDeleteTemplate(template.id);
+                        setShowTemplateMenu(false);
+                        setSelectedTemplate(null);
+                    }
+                }
+            ]
+        );
+    };
+
+    // 저장 확인
+    const confirmSave = () => {
+        if (!templateName.trim()) {
+            Alert.alert('오류', '템플릿 이름을 입력하세요.');
+            return;
+        }
+
+        if (saveMode === 'overwrite' && selectedTemplate) {
+            onSaveTemplate(templateName.trim(), selectedTemplate.id);
+        } else {
+            onSaveTemplate(templateName.trim());
+        }
+
+        setShowSaveModal(false);
+        setTemplateName('');
+        setSelectedTemplate(null);
+    };
+
+    // 템플릿 메뉴 열기
+    const openTemplateMenu = (template: FilterTemplate) => {
+        setSelectedTemplate(template);
+        setShowTemplateMenu(true);
     };
 
     return (
@@ -244,9 +325,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     <View style={styles.sectionHeader}>
                         <Text style={styles.sectionTitle}>저장된 템플릿</Text>
                         {hasFilter && (
-                            <TouchableOpacity onPress={onSaveTemplate} style={styles.saveButton}>
+                            <TouchableOpacity onPress={handleSaveNew} style={styles.saveButton}>
                                 <Bookmark size={16} color="#ffffff" />
-                                <Text style={styles.saveButtonText}>현재 저장</Text>
+                                <Text style={styles.saveButtonText}>새로 저장</Text>
                             </TouchableOpacity>
                         )}
                     </View>
@@ -254,17 +335,24 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     {templates.length > 0 ? (
                         <View style={styles.templateList}>
                             {templates.map(template => (
-                                <TouchableOpacity
-                                    key={template.id}
-                                    style={styles.templateItem}
-                                    onPress={() => onLoadTemplate(template)}
-                                >
-                                    <View style={styles.templateInfo}>
-                                        <Text style={styles.templateName}>{template.name}</Text>
-                                        <Text style={styles.templateDate}>{template.createdAt}</Text>
-                                    </View>
-                                    <Play size={18} color="#6366f1" />
-                                </TouchableOpacity>
+                                <View key={template.id} style={styles.templateItem}>
+                                    <TouchableOpacity
+                                        style={styles.templateMain}
+                                        onPress={() => onLoadTemplate(template)}
+                                    >
+                                        <View style={styles.templateInfo}>
+                                            <Text style={styles.templateName}>{template.name}</Text>
+                                            <Text style={styles.templateDate}>{template.createdAt}</Text>
+                                        </View>
+                                        <Play size={18} color="#6366f1" />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={styles.templateMenuButton}
+                                        onPress={() => openTemplateMenu(template)}
+                                    >
+                                        <MoreVertical size={18} color="#9ca3af" />
+                                    </TouchableOpacity>
+                                </View>
                             ))}
                         </View>
                     ) : (
@@ -336,6 +424,96 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         )}
                     </ScrollView>
                 </View>
+            </Modal>
+
+            {/* 템플릿 저장 모달 */}
+            <Modal visible={showSaveModal} transparent animationType="fade">
+                <View style={styles.saveModalOverlay}>
+                    <View style={styles.saveModalContent}>
+                        <Text style={styles.saveModalTitle}>
+                            {saveMode === 'overwrite' ? '템플릿 덮어쓰기' : '새 템플릿 저장'}
+                        </Text>
+                        <TextInput
+                            style={styles.saveModalInput}
+                            value={templateName}
+                            onChangeText={setTemplateName}
+                            placeholder="템플릿 이름"
+                            placeholderTextColor="#9ca3af"
+                            autoFocus
+                        />
+                        <View style={styles.saveModalButtons}>
+                            <TouchableOpacity
+                                style={[styles.saveModalButton, styles.saveModalButtonCancel]}
+                                onPress={() => {
+                                    setShowSaveModal(false);
+                                    setTemplateName('');
+                                }}
+                            >
+                                <Text style={styles.saveModalButtonCancelText}>취소</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[styles.saveModalButton, styles.saveModalButtonConfirm]}
+                                onPress={confirmSave}
+                            >
+                                <Text style={styles.saveModalButtonConfirmText}>
+                                    {saveMode === 'overwrite' ? '덮어쓰기' : '저장'}
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
+                    </View>
+                </View>
+            </Modal>
+
+            {/* 템플릿 메뉴 모달 */}
+            <Modal visible={showTemplateMenu} transparent animationType="fade">
+                <TouchableOpacity
+                    style={styles.menuOverlay}
+                    activeOpacity={1}
+                    onPress={() => setShowTemplateMenu(false)}
+                >
+                    <View style={styles.menuContent}>
+                        <Text style={styles.menuTitle}>{selectedTemplate?.name}</Text>
+
+                        <TouchableOpacity
+                            style={styles.menuItem}
+                            onPress={() => {
+                                if (selectedTemplate) {
+                                    onLoadTemplate(selectedTemplate);
+                                    setShowTemplateMenu(false);
+                                }
+                            }}
+                        >
+                            <Play size={20} color="#1f2937" />
+                            <Text style={styles.menuItemText}>적용하기</Text>
+                        </TouchableOpacity>
+
+                        {hasFilter && (
+                            <TouchableOpacity
+                                style={styles.menuItem}
+                                onPress={() => selectedTemplate && handleOverwrite(selectedTemplate)}
+                            >
+                                <Edit size={20} color="#1f2937" />
+                                <Text style={styles.menuItemText}>현재 설정으로 덮어쓰기</Text>
+                            </TouchableOpacity>
+                        )}
+
+                        <TouchableOpacity
+                            style={styles.menuItem}
+                            onPress={() => selectedTemplate && handleDuplicate(selectedTemplate)}
+                        >
+                            <Copy size={20} color="#1f2937" />
+                            <Text style={styles.menuItemText}>복제하기</Text>
+                        </TouchableOpacity>
+
+                        <TouchableOpacity
+                            style={[styles.menuItem, styles.menuItemDanger]}
+                            onPress={() => selectedTemplate && handleDelete(selectedTemplate)}
+                        >
+                            <Trash2 size={20} color="#ef4444" />
+                            <Text style={[styles.menuItemText, styles.menuItemTextDanger]}>삭제</Text>
+                        </TouchableOpacity>
+                    </View>
+                </TouchableOpacity>
             </Modal>
         </>
     );
@@ -497,11 +675,16 @@ const styles = StyleSheet.create({
     },
     templateItem: {
         flexDirection: 'row',
-        justifyContent: 'space-between',
         alignItems: 'center',
         backgroundColor: '#f9fafb',
-        padding: 14,
         borderRadius: 10,
+    },
+    templateMain: {
+        flex: 1,
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        padding: 14,
     },
     templateInfo: {
         flex: 1,
@@ -515,6 +698,11 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: '#9ca3af',
         marginTop: 2,
+    },
+    templateMenuButton: {
+        padding: 14,
+        borderLeftWidth: 1,
+        borderLeftColor: '#e5e7eb',
     },
     noTemplates: {
         fontSize: 14,
@@ -604,5 +792,98 @@ const styles = StyleSheet.create({
     noResultsText: {
         fontSize: 16,
         color: '#9ca3af',
+    },
+    saveModalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: 20,
+    },
+    saveModalContent: {
+        backgroundColor: '#ffffff',
+        borderRadius: 16,
+        padding: 24,
+        width: '100%',
+        maxWidth: 400,
+    },
+    saveModalTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#1f2937',
+        marginBottom: 16,
+        textAlign: 'center',
+    },
+    saveModalInput: {
+        backgroundColor: '#f3f4f6',
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        borderRadius: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        fontSize: 16,
+        marginBottom: 16,
+    },
+    saveModalButtons: {
+        flexDirection: 'row',
+        gap: 12,
+    },
+    saveModalButton: {
+        flex: 1,
+        paddingVertical: 12,
+        borderRadius: 10,
+        alignItems: 'center',
+    },
+    saveModalButtonCancel: {
+        backgroundColor: '#f3f4f6',
+    },
+    saveModalButtonCancelText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#6b7280',
+    },
+    saveModalButtonConfirm: {
+        backgroundColor: '#6366f1',
+    },
+    saveModalButtonConfirmText: {
+        fontSize: 16,
+        fontWeight: '600',
+        color: '#ffffff',
+    },
+    menuOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
+    },
+    menuContent: {
+        backgroundColor: '#ffffff',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        padding: 20,
+    },
+    menuTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#1f2937',
+        marginBottom: 16,
+        textAlign: 'center',
+    },
+    menuItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingVertical: 14,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f3f4f6',
+    },
+    menuItemText: {
+        fontSize: 16,
+        color: '#1f2937',
+    },
+    menuItemDanger: {
+        borderBottomWidth: 0,
+    },
+    menuItemTextDanger: {
+        color: '#ef4444',
     },
 });
