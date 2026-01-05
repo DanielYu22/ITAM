@@ -363,10 +363,16 @@ export default function App() {
               assets={assets}
               filterConfig={fieldWorkConfig}
               templates={filterTemplates}
+              schemaProperties={schemaProperties}
               onStartWork={startWork}
               onOpenFilter={() => setShowFieldWorkFilter(true)}
               onLoadTemplate={loadTemplate}
               onSaveTemplate={() => setShowSaveTemplateModal(true)}
+              onEditAsset={(asset) => {
+                // 검색에서 선택한 자산을 편집하기 위해 작업 모드로 전환
+                setLocationSelectedAssets([asset]);
+                setIsWorkMode(true);
+              }}
             />
 
             {/* 필터 설정 모달 */}

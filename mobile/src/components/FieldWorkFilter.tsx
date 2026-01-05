@@ -78,6 +78,9 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
     const [showValuePicker, setShowValuePicker] = useState(false);
     const [activeConditionId, setActiveConditionId] = useState<string | null>(null);
     const [valueSearchText, setValueSearchText] = useState('');
+    const [columnSearchText, setColumnSearchText] = useState('');
+    const [sortAscending, setSortAscending] = useState(true);
+    const [editableSearchText, setEditableSearchText] = useState('');
 
     // 각 컬럼의 고유 값 추출
     const columnValues = useMemo(() => {
@@ -408,27 +411,51 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                                 카드에서 편집할 수 있는 필드를 선택하세요.
                             </Text>
 
-                            <View style={styles.editableList}>
-                                {schema.map(col => (
-                                    <TouchableOpacity
-                                        key={col}
-                                        style={[
-                                            styles.editableItem,
-                                            editableFields.includes(col) && styles.editableItemActive,
-                                        ]}
-                                        onPress={() => toggleEditableField(col)}
-                                    >
-                                        <Text style={[
-                                            styles.editableItemText,
-                                            editableFields.includes(col) && styles.editableItemTextActive,
-                                        ]}>
-                                            {col}
-                                        </Text>
-                                        {editableFields.includes(col) && (
-                                            <Check size={18} color="#6366f1" />
-                                        )}
+                            {/* 검색 입력 */}
+                            <View style={styles.editableSearch}>
+                                <TextInput
+                                    style={styles.editableSearchInput}
+                                    value={editableSearchText}
+                                    onChangeText={setEditableSearchText}
+                                    placeholder="필드 검색..."
+                                    placeholderTextColor="#9ca3af"
+                                />
+                                {editableSearchText.length > 0 && (
+                                    <TouchableOpacity onPress={() => setEditableSearchText('')}>
+                                        <X size={18} color="#9ca3af" />
                                     </TouchableOpacity>
-                                ))}
+                                )}
+                            </View>
+
+                            <View style={styles.editableList}>
+                                {schema
+                                    .filter(col => {
+                                        if (editableSearchText) {
+                                            return col.toLowerCase().includes(editableSearchText.toLowerCase());
+                                        }
+                                        return true;
+                                    })
+                                    .sort((a, b) => a.localeCompare(b, 'ko'))
+                                    .map(col => (
+                                        <TouchableOpacity
+                                            key={col}
+                                            style={[
+                                                styles.editableItem,
+                                                editableFields.includes(col) && styles.editableItemActive,
+                                            ]}
+                                            onPress={() => toggleEditableField(col)}
+                                        >
+                                            <Text style={[
+                                                styles.editableItemText,
+                                                editableFields.includes(col) && styles.editableItemTextActive,
+                                            ]}>
+                                                {col}
+                                            </Text>
+                                            {editableFields.includes(col) && (
+                                                <Check size={18} color="#6366f1" />
+                                            )}
+                                        </TouchableOpacity>
+                                    ))}
                             </View>
                         </View>
                     )}
@@ -440,17 +467,58 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                         <View style={styles.pickerContainer}>
                             <View style={styles.pickerHeader}>
                                 <Text style={styles.pickerTitle}>컬럼 선택</Text>
-                                <TouchableOpacity onPress={() => setShowColumnPicker(false)}>
-                                    <X size={24} color="#6b7280" />
-                                </TouchableOpacity>
+                                <View style={styles.pickerHeaderRight}>
+                                    <TouchableOpacity
+                                        style={styles.sortToggle}
+                                        onPress={() => setSortAscending(!sortAscending)}
+                                    >
+                                        <Text style={styles.sortToggleText}>
+                                            {sortAscending ? 'A→Z' : 'Z→A'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity onPress={() => {
+                                        setShowColumnPicker(false);
+                                        setColumnSearchText('');
+                                    }}>
+                                        <X size={24} color="#6b7280" />
+                                    </TouchableOpacity>
+                                </View>
                             </View>
+
+                            {/* 검색 입력 */}
+                            <View style={styles.searchInputContainer}>
+                                <TextInput
+                                    style={styles.searchInput}
+                                    value={columnSearchText}
+                                    onChangeText={setColumnSearchText}
+                                    placeholder="컬럼 검색..."
+                                    placeholderTextColor="#9ca3af"
+                                    autoFocus
+                                />
+                                {columnSearchText.length > 0 && (
+                                    <TouchableOpacity onPress={() => setColumnSearchText('')}>
+                                        <X size={18} color="#9ca3af" />
+                                    </TouchableOpacity>
+                                )}
+                            </View>
+
                             <ScrollView style={styles.pickerList}>
                                 {schema
                                     .filter(col => {
-                                        if (pickerMode === 'hierarchy') {
-                                            return !locationHierarchy.includes(col);
+                                        // 이미 선택된 항목 제외 (hierarchy 모드)
+                                        if (pickerMode === 'hierarchy' && locationHierarchy.includes(col)) {
+                                            return false;
+                                        }
+                                        // 검색 필터
+                                        if (columnSearchText) {
+                                            return col.toLowerCase().includes(columnSearchText.toLowerCase());
                                         }
                                         return true;
+                                    })
+                                    .sort((a, b) => {
+                                        return sortAscending
+                                            ? a.localeCompare(b, 'ko')
+                                            : b.localeCompare(a, 'ko');
                                     })
                                     .map(col => (
                                         <TouchableOpacity
@@ -465,6 +533,7 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                                                 } else if (pickerMode === 'target') {
                                                     addTargetCondition(col);
                                                 }
+                                                setColumnSearchText('');
                                             }}
                                         >
                                             <Text style={styles.pickerItemText}>{col}</Text>
@@ -789,6 +858,22 @@ const styles = StyleSheet.create({
         color: '#6366f1',
         fontWeight: '500',
     },
+    editableSearch: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#ffffff',
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+    },
+    editableSearchInput: {
+        flex: 1,
+        fontSize: 15,
+        color: '#1f2937',
+    },
     pickerOverlay: {
         flex: 1,
         backgroundColor: 'rgba(0,0,0,0.5)',
@@ -812,6 +897,22 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: 'bold',
         color: '#1f2937',
+    },
+    pickerHeaderRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+    },
+    sortToggle: {
+        backgroundColor: '#eef2ff',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 6,
+    },
+    sortToggleText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#6366f1',
     },
     pickerList: {
         padding: 8,
