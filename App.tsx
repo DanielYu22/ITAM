@@ -435,7 +435,7 @@ export default function App() {
   }
 
   // No config state
-  if (!apiKey || !databaseId) {
+  if (!databaseId) {
     return (
       <SafeAreaProvider>
         <SafeAreaView style={styles.container}>
