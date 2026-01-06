@@ -249,123 +249,125 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                 >
                     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                         <View style={styles.modalSubOverlay}>
-                            <View style={styles.modalContent}>
-                                <View style={styles.modalHeader}>
-                                    <Text style={styles.modalTitle}>
-                                        {editingField} 편집
-                                    </Text>
+                            <TouchableWithoutFeedback onPress={() => { }}>
+                                <View style={styles.modalContent}>
+                                    <View style={styles.modalHeader}>
+                                        <Text style={styles.modalTitle}>
+                                            {editingField} 편집
+                                        </Text>
+                                        <TouchableOpacity
+                                            onPress={() => setEditModalVisible(false)}
+                                            disabled={isSaving}
+                                        >
+                                            <X size={24} color="#6b7280" />
+                                        </TouchableOpacity>
+                                    </View>
+
+                                    {editingField && (
+                                        <View style={styles.inputContainer}>
+                                            {['select', 'multi_select'].includes(schemaProperties[editingField]?.type) ? (
+                                                <View style={styles.selectContainer}>
+                                                    {/* 선택된 값 표시 영역 */}
+                                                    <TouchableOpacity
+                                                        style={styles.selectedValueBox}
+                                                        onPress={() => setShowOptions(!showOptions)}
+                                                    >
+                                                        <View style={styles.selectedTags}>
+                                                            {selectedOptions.length > 0 ? (
+                                                                selectedOptions.map(opt => (
+                                                                    <View key={opt} style={styles.tag}>
+                                                                        <Text style={styles.tagText}>{opt}</Text>
+                                                                        {schemaProperties[editingField].type === 'multi_select' && (
+                                                                            <TouchableOpacity onPress={() => toggleOption(opt, true)}>
+                                                                                <X size={12} color="#4b5563" />
+                                                                            </TouchableOpacity>
+                                                                        )}
+                                                                    </View>
+                                                                ))
+                                                            ) : (
+                                                                <Text style={styles.placeholderText}>값을 선택하세요</Text>
+                                                            )}
+                                                        </View>
+                                                        <ChevronDown size={20} color="#9ca3af" />
+                                                    </TouchableOpacity>
+
+                                                    {/* 옵션 드롭다운 */}
+                                                    {(showOptions || optionSearchText) && (
+                                                        <View style={styles.dropdownContainer}>
+                                                            <View style={styles.optionSearch}>
+                                                                <Search size={16} color="#9ca3af" />
+                                                                <TextInput
+                                                                    style={styles.optionSearchInput}
+                                                                    value={optionSearchText}
+                                                                    onChangeText={(text) => {
+                                                                        setOptionSearchText(text);
+                                                                        setShowOptions(true);
+                                                                    }}
+                                                                    placeholder="옵션 검색 또는 생성..."
+                                                                    placeholderTextColor="#9ca3af"
+                                                                />
+                                                            </View>
+
+                                                            <ScrollView style={styles.optionsList} keyboardShouldPersistTaps="handled">
+                                                                {filteredOptions.map(opt => {
+                                                                    const isSelected = selectedOptions.includes(opt.name);
+                                                                    return (
+                                                                        <TouchableOpacity
+                                                                            key={opt.id}
+                                                                            style={[styles.optionItem, isSelected && styles.optionItemSelected]}
+                                                                            onPress={() => toggleOption(opt.name, schemaProperties[editingField].type === 'multi_select')}
+                                                                        >
+                                                                            <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>
+                                                                                {opt.name}
+                                                                            </Text>
+                                                                            {isSelected && <Check size={16} color="#6366f1" />}
+                                                                        </TouchableOpacity>
+                                                                    );
+                                                                })}
+
+                                                                {/* 결과 없음 & 생성 옵션 */}
+                                                                {optionSearchText && !filteredOptions.some(o => o.name.toLowerCase() === optionSearchText.toLowerCase()) && (
+                                                                    <TouchableOpacity
+                                                                        style={styles.createOptionItem}
+                                                                        onPress={() => {
+                                                                            toggleOption(optionSearchText, schemaProperties[editingField].type === 'multi_select');
+                                                                            setOptionSearchText('');
+                                                                        }}
+                                                                    >
+                                                                        <Plus size={16} color="#6366f1" />
+                                                                        <Text style={styles.createOptionText}>
+                                                                            "{optionSearchText}" 생성
+                                                                        </Text>
+                                                                    </TouchableOpacity>
+                                                                )}
+                                                            </ScrollView>
+                                                        </View>
+                                                    )}
+                                                </View>
+                                            ) : (
+                                                <TextInput
+                                                    style={styles.textInput}
+                                                    value={editValue}
+                                                    onChangeText={setEditValue}
+                                                    placeholder="값을 입력하세요"
+                                                    multiline={schemaProperties[editingField]?.type === 'rich_text'}
+                                                    autoFocus
+                                                />
+                                            )}
+                                        </View>
+                                    )}
+
                                     <TouchableOpacity
-                                        onPress={() => setEditModalVisible(false)}
+                                        style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
+                                        onPress={handleSave}
                                         disabled={isSaving}
                                     >
-                                        <X size={24} color="#6b7280" />
+                                        <Text style={styles.saveButtonText}>
+                                            {isSaving ? '저장 중...' : '저장'}
+                                        </Text>
                                     </TouchableOpacity>
                                 </View>
-
-                                {editingField && (
-                                    <View style={styles.inputContainer}>
-                                        {['select', 'multi_select'].includes(schemaProperties[editingField]?.type) ? (
-                                            <View style={styles.selectContainer}>
-                                                {/* 선택된 값 표시 영역 */}
-                                                <TouchableOpacity
-                                                    style={styles.selectedValueBox}
-                                                    onPress={() => setShowOptions(!showOptions)}
-                                                >
-                                                    <View style={styles.selectedTags}>
-                                                        {selectedOptions.length > 0 ? (
-                                                            selectedOptions.map(opt => (
-                                                                <View key={opt} style={styles.tag}>
-                                                                    <Text style={styles.tagText}>{opt}</Text>
-                                                                    {schemaProperties[editingField].type === 'multi_select' && (
-                                                                        <TouchableOpacity onPress={() => toggleOption(opt, true)}>
-                                                                            <X size={12} color="#4b5563" />
-                                                                        </TouchableOpacity>
-                                                                    )}
-                                                                </View>
-                                                            ))
-                                                        ) : (
-                                                            <Text style={styles.placeholderText}>값을 선택하세요</Text>
-                                                        )}
-                                                    </View>
-                                                    <ChevronDown size={20} color="#9ca3af" />
-                                                </TouchableOpacity>
-
-                                                {/* 옵션 드롭다운 */}
-                                                {(showOptions || optionSearchText) && (
-                                                    <View style={styles.dropdownContainer}>
-                                                        <View style={styles.optionSearch}>
-                                                            <Search size={16} color="#9ca3af" />
-                                                            <TextInput
-                                                                style={styles.optionSearchInput}
-                                                                value={optionSearchText}
-                                                                onChangeText={(text) => {
-                                                                    setOptionSearchText(text);
-                                                                    setShowOptions(true);
-                                                                }}
-                                                                placeholder="옵션 검색 또는 생성..."
-                                                                placeholderTextColor="#9ca3af"
-                                                            />
-                                                        </View>
-
-                                                        <ScrollView style={styles.optionsList} keyboardShouldPersistTaps="handled">
-                                                            {filteredOptions.map(opt => {
-                                                                const isSelected = selectedOptions.includes(opt.name);
-                                                                return (
-                                                                    <TouchableOpacity
-                                                                        key={opt.id}
-                                                                        style={[styles.optionItem, isSelected && styles.optionItemSelected]}
-                                                                        onPress={() => toggleOption(opt.name, schemaProperties[editingField].type === 'multi_select')}
-                                                                    >
-                                                                        <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>
-                                                                            {opt.name}
-                                                                        </Text>
-                                                                        {isSelected && <Check size={16} color="#6366f1" />}
-                                                                    </TouchableOpacity>
-                                                                );
-                                                            })}
-
-                                                            {/* 결과 없음 & 생성 옵션 */}
-                                                            {optionSearchText && !filteredOptions.some(o => o.name.toLowerCase() === optionSearchText.toLowerCase()) && (
-                                                                <TouchableOpacity
-                                                                    style={styles.createOptionItem}
-                                                                    onPress={() => {
-                                                                        toggleOption(optionSearchText, schemaProperties[editingField].type === 'multi_select');
-                                                                        setOptionSearchText('');
-                                                                    }}
-                                                                >
-                                                                    <Plus size={16} color="#6366f1" />
-                                                                    <Text style={styles.createOptionText}>
-                                                                        "{optionSearchText}" 생성
-                                                                    </Text>
-                                                                </TouchableOpacity>
-                                                            )}
-                                                        </ScrollView>
-                                                    </View>
-                                                )}
-                                            </View>
-                                        ) : (
-                                            <TextInput
-                                                style={styles.textInput}
-                                                value={editValue}
-                                                onChangeText={setEditValue}
-                                                placeholder="값을 입력하세요"
-                                                multiline={schemaProperties[editingField]?.type === 'rich_text'}
-                                                autoFocus
-                                            />
-                                        )}
-                                    </View>
-                                )}
-
-                                <TouchableOpacity
-                                    style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
-                                    onPress={handleSave}
-                                    disabled={isSaving}
-                                >
-                                    <Text style={styles.saveButtonText}>
-                                        {isSaving ? '저장 중...' : '저장'}
-                                    </Text>
-                                </TouchableOpacity>
-                            </View>
+                            </TouchableWithoutFeedback>
                         </View>
                     </TouchableWithoutFeedback>
                 </KeyboardAvoidingView>
@@ -418,7 +420,7 @@ const styles = StyleSheet.create({
         width: SCREEN_WIDTH,
         height: '100%',
         padding: 16,
-        paddingBottom: 40,
+        paddingBottom: 0, // Removed extra padding that caused scroll issues
     },
     card: {
         flex: 1,

@@ -580,7 +580,7 @@ export default function App() {
               {/* 위치 계층이 설정되어 있고 아직 선택 완료 안됨 */}
               {fieldWorkConfig?.locationHierarchy && fieldWorkConfig.locationHierarchy.length > 0 && locationSelectedAssets.length === 0 ? (
                 <LocationNavigator
-                  assets={filteredAssets}
+                  assets={workFilteredAssets}
                   locationHierarchy={fieldWorkConfig.locationHierarchy}
                   sortColumn={fieldWorkConfig.sortColumn}
                   initialLevel={Object.keys(locationFilters).length}
