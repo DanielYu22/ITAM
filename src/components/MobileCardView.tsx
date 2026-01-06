@@ -416,6 +416,7 @@ const styles = StyleSheet.create({
     },
     cardContainer: {
         width: SCREEN_WIDTH,
+        height: '100%',
         padding: 16,
         paddingBottom: 40,
     },
