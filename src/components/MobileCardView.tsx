@@ -418,9 +418,9 @@ const styles = StyleSheet.create({
     },
     cardContainer: {
         width: SCREEN_WIDTH,
-        height: '100%',
+        flex: 1, // Changed from height: '100%' for better flexibility
         padding: 16,
-        paddingBottom: 0, // Removed extra padding that caused scroll issues
+        paddingBottom: 0,
     },
     card: {
         flex: 1,
@@ -450,7 +450,7 @@ const styles = StyleSheet.create({
     },
     cardBodyContent: {
         padding: 20,
-        paddingBottom: 40,
+        paddingBottom: 100, // Increased padding to ensure last items are scrollable
     },
     fieldRow: {
         marginBottom: 16,
