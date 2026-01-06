@@ -13,7 +13,19 @@ import {
 } from 'react-native';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
-import { Search, Database, RefreshCw, Settings, Filter, Home, X } from 'lucide-react-native';
+import {
+  Filter,
+  RefreshCw,
+  Settings,
+  Search,
+  Home,
+  ChevronLeft,
+  ChevronRight,
+  Database,
+  Layout,
+  PlusCircle,
+  AlertCircle
+} from 'lucide-react-native';
 import { NotionClient, Asset, NotionProperty } from './src/lib/notion';
 import { NOTION_API_KEY, NOTION_DATABASE_ID, API_BASE_URL } from './src/config';
 import { MobileCardView } from './src/components/MobileCardView';
@@ -33,8 +45,8 @@ export default function App() {
   const [filteredAssets, setFilteredAssets] = useState<Asset[]>([]);
   const [schema, setSchema] = useState<string[]>([]);
   const [schemaProperties, setSchemaProperties] = useState<Record<string, NotionProperty>>({});
-  // Only show loading if we have config to load
-  const [loading, setLoading] = useState(!!NOTION_API_KEY && !!NOTION_DATABASE_ID);
+  // Only show loading if we have databaseId to load
+  const [loading, setLoading] = useState(!!NOTION_DATABASE_ID);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<FilterCondition>(DEFAULT_FILTER);
@@ -56,7 +68,7 @@ export default function App() {
 
   // Initialize Notion client
   useEffect(() => {
-    if (apiKey && databaseId) {
+    if (databaseId) {
       const client = new NotionClient({ apiKey, databaseId });
       setNotionClient(client);
       setLoading(true); // Start loading when client is ready
@@ -139,36 +151,52 @@ export default function App() {
 
     let result = filteredAssets;
 
-    // 작업 대상 조건 적용
-    if (fieldWorkConfig.targetConditions) {
-      fieldWorkConfig.targetConditions.forEach((cond) => {
-        result = result.filter(asset => {
-          const val = (asset.values[cond.column] || '').toLowerCase();
-          switch (cond.type) {
-            case 'is_empty':
-              return !val || val === '';
-            case 'is_not_empty':
-              return val && val !== '';
-            case 'contains':
-              // 다중 선택 지원
-              if (cond.values && cond.values.length > 0) {
-                return cond.values.some(v => val.includes(v.toLowerCase()));
-              }
-              return true;
-            case 'not_contains':
-              if (cond.values && cond.values.length > 0) {
-                return !cond.values.some(v => val.includes(v.toLowerCase()));
-              }
-              return true;
-            case 'equals':
-              if (cond.values && cond.values.length > 0) {
-                return cond.values.some(v => val === v.toLowerCase());
-              }
-              return true;
-            default:
-              return true;
-          }
+    // 작업 대상 조건 적용 (그룹 및 중첩 논리 지원)
+    const targetGroups = fieldWorkConfig.targetGroups || (fieldWorkConfig.targetConditions ? [{
+      id: 'legacy-group',
+      operator: fieldWorkConfig.targetLogicalOperator || 'and',
+      conditions: fieldWorkConfig.targetConditions
+    }] : []);
+
+    if (targetGroups.length > 0) {
+      const isGlobalOr = fieldWorkConfig.globalLogicalOperator === 'or';
+
+      result = result.filter(asset => {
+        const groupMatches = targetGroups.map(group => {
+          if (!group.conditions || group.conditions.length === 0) return true;
+
+          const isGroupOr = group.operator === 'or';
+          const conditionMatches = group.conditions.map(cond => {
+            const val = (asset.values[cond.column] || '').toLowerCase();
+            switch (cond.type) {
+              case 'is_empty':
+                return !val || val === '';
+              case 'is_not_empty':
+                return val && val !== '';
+              case 'contains':
+                if (cond.values && cond.values.length > 0) {
+                  return cond.values.some(v => val.includes(v.toLowerCase()));
+                }
+                return true;
+              case 'not_contains':
+                if (cond.values && cond.values.length > 0) {
+                  return !cond.values.some(v => val.includes(v.toLowerCase()));
+                }
+                return true;
+              case 'equals':
+                if (cond.values && cond.values.length > 0) {
+                  return cond.values.some(v => val === v.toLowerCase());
+                }
+                return true;
+              default:
+                return true;
+            }
+          });
+
+          return isGroupOr ? conditionMatches.some(m => m) : conditionMatches.every(m => m);
         });
+
+        return isGlobalOr ? groupMatches.some(m => m) : groupMatches.every(m => m);
       });
     }
 
@@ -180,7 +208,8 @@ export default function App() {
 
         // 숫자, 문자열 혼합된 경우도 자연스럽게 정렬 (Natural Sort)
         // 예: "Move 1", "Move 2", "Move 10" 순서 보장
-        return String(valA).localeCompare(String(valB), undefined, { numeric: true, sensitivity: 'base' });
+        const comparison = String(valA).localeCompare(String(valB), undefined, { numeric: true, sensitivity: 'base' });
+        return fieldWorkConfig.sortDirection === 'desc' ? -comparison : comparison;
       });
     }
 
@@ -282,6 +311,24 @@ export default function App() {
   }, []);
 
   // 홈으로 돌아가기
+  const handleBackToLocation = () => {
+    if (!fieldWorkConfig?.locationHierarchy) return;
+
+    const prevLevel = Object.keys(locationFilters).length - 1;
+    if (prevLevel < 0) { // Already at the top level
+      setLocationFilters({});
+      setLocationSelectedAssets([]);
+      return;
+    }
+
+    const newFilters = { ...locationFilters };
+    const lastCol = fieldWorkConfig.locationHierarchy[prevLevel];
+    delete newFilters[lastCol];
+
+    setLocationFilters(newFilters);
+    setLocationSelectedAssets([]);
+  };
+
   const goHome = useCallback(() => {
     setIsWorkMode(false);
     setLocationSelectedAssets([]);
@@ -496,9 +543,16 @@ export default function App() {
           <>
             {/* Header */}
             <View style={styles.header}>
-              <TouchableOpacity onPress={goHome} style={styles.homeButton}>
-                <Home size={20} color="#6366f1" />
-              </TouchableOpacity>
+              <View style={styles.headerLeftContainer}>
+                <TouchableOpacity onPress={goHome} style={styles.homeButton}>
+                  <Home size={20} color="#6366f1" />
+                </TouchableOpacity>
+                {Object.keys(locationFilters).length > 0 && (
+                  <TouchableOpacity onPress={handleBackToLocation} style={styles.backButtonInline}>
+                    <ChevronLeft size={24} color="#6366f1" />
+                  </TouchableOpacity>
+                )}
+              </View>
               <View style={styles.headerLeft}>
                 <Text style={styles.headerTitle}>현장 작업</Text>
                 <Text style={styles.headerSubtitle}>
@@ -529,6 +583,8 @@ export default function App() {
                   assets={filteredAssets}
                   locationHierarchy={fieldWorkConfig.locationHierarchy}
                   sortColumn={fieldWorkConfig.sortColumn}
+                  initialLevel={Object.keys(locationFilters).length}
+                  initialSelectedValues={locationFilters}
                   onSelectLocation={(filters, selected) => {
                     setLocationFilters(filters);
                     setLocationSelectedAssets(selected);
@@ -639,7 +695,9 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: '#e5e7eb',
   },
-  headerLeft: {},
+  headerLeft: {
+    flex: 1,
+  },
   headerTitle: {
     fontSize: 20,
     fontWeight: 'bold',
@@ -749,7 +807,15 @@ const styles = StyleSheet.create({
   },
   homeButton: {
     padding: 8,
-    marginRight: 8,
+    marginRight: 4,
+  },
+  headerLeftContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  backButtonInline: {
+    padding: 8,
+    marginRight: 4,
   },
   modalOverlay: {
     flex: 1,

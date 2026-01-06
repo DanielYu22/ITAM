@@ -97,37 +97,54 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
         let result = assets;
 
-        if (filterConfig.targetConditions) {
-            filterConfig.targetConditions.forEach((cond) => {
-                result = result.filter(asset => {
-                    const val = (asset.values[cond.column] || '').toLowerCase();
-                    switch (cond.type) {
-                        case 'is_empty':
-                            return !val || val === '';
-                        case 'is_not_empty':
-                            return val && val !== '';
-                        case 'contains':
-                            if (cond.values && cond.values.length > 0) {
-                                return cond.values.some(v => val.includes(v.toLowerCase()));
-                            }
-                            return true;
-                        case 'not_contains':
-                            if (cond.values && cond.values.length > 0) {
-                                return !cond.values.some(v => val.includes(v.toLowerCase()));
-                            }
-                            return true;
-                        case 'equals':
-                            if (cond.values && cond.values.length > 0) {
-                                return cond.values.some(v => val === v.toLowerCase());
-                            }
-                            return true;
-                        default:
-                            return true;
-                    }
+        // 작업 대상 조건 적용 (그룹 및 중첩 논리 지원)
+        const targetGroups = filterConfig.targetGroups || (filterConfig.targetConditions ? [{
+            id: 'legacy-group',
+            operator: filterConfig.targetLogicalOperator || 'and',
+            conditions: filterConfig.targetConditions
+        }] : []);
+
+        if (targetGroups.length > 0) {
+            const isGlobalOr = filterConfig.globalLogicalOperator === 'or';
+
+            result = result.filter(asset => {
+                const groupMatches = targetGroups.map(group => {
+                    if (!group.conditions || group.conditions.length === 0) return true;
+
+                    const isGroupOr = group.operator === 'or';
+                    const conditionMatches = group.conditions.map(cond => {
+                        const val = (asset.values[cond.column] || '').toLowerCase();
+                        switch (cond.type) {
+                            case 'is_empty':
+                                return !val || val === '';
+                            case 'is_not_empty':
+                                return val && val !== '';
+                            case 'contains':
+                                if (cond.values && cond.values.length > 0) {
+                                    return cond.values.some(v => val.includes(v.toLowerCase()));
+                                }
+                                return true;
+                            case 'not_contains':
+                                if (cond.values && cond.values.length > 0) {
+                                    return !cond.values.some(v => val.includes(v.toLowerCase()));
+                                }
+                                return true;
+                            case 'equals':
+                                if (cond.values && cond.values.length > 0) {
+                                    return cond.values.some(v => val === v.toLowerCase());
+                                }
+                                return true;
+                            default:
+                                return true;
+                        }
+                    });
+
+                    return isGroupOr ? conditionMatches.some(m => m) : conditionMatches.every(m => m);
                 });
+
+                return isGlobalOr ? groupMatches.some(m => m) : groupMatches.every(m => m);
             });
         }
-
         return result.length;
     };
 
@@ -290,15 +307,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                 </View>
                             )}
 
-                            {filterConfig.targetConditions && filterConfig.targetConditions.length > 0 && (
-                                <View style={styles.filterItem}>
-                                    <Target size={16} color="#6366f1" />
-                                    <Text style={styles.filterItemLabel}>작업 조건:</Text>
-                                    <Text style={styles.filterItemValue}>
-                                        {filterConfig.targetConditions.length}개
-                                    </Text>
-                                </View>
-                            )}
+                            {(() => {
+                                const totalConditions = (filterConfig.targetGroups?.reduce((acc, g) => acc + (g.conditions?.length || 0), 0) || 0) +
+                                    (filterConfig.targetConditions?.length || 0);
+                                return totalConditions > 0 ? (
+                                    <View style={styles.filterItem}>
+                                        <Target size={16} color="#6366f1" />
+                                        <Text style={styles.filterItemLabel}>작업 조건:</Text>
+                                        <Text style={styles.filterItemValue}>
+                                            {totalConditions}개
+                                        </Text>
+                                    </View>
+                                ) : null;
+                            })()}
 
                             {filterConfig.editableFields && filterConfig.editableFields.length > 0 && (
                                 <View style={styles.filterItem}>

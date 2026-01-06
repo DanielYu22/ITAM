@@ -45,7 +45,7 @@ export interface FilterTemplate {
     id: string;
     name: string;
     filter: FilterCondition;
-    sorts?: SortRule[]; // Add sort support
+    sorts?: SortRule[];
     visibleColumns?: string[];
 }
 
@@ -76,7 +76,6 @@ export const evaluateFilter = (asset: Asset, filter: FilterCondition): boolean =
         case 'ends_with': return value.endsWith(target);
         case 'is_empty': return !value || value === '';
         case 'is_not_empty': return !!value && value !== '';
-        // Is In / Is Not In (for simple text check, usually not used but supported)
         case 'is_in':
             return (target.split('|').filter(Boolean) || []).some(t => value === t);
         case 'is_not_in':
@@ -91,12 +90,10 @@ export const DEFAULT_FILTER: FilterCondition = {
     conditions: []
 };
 
-
 export const toNotionFilter = (filter: FilterCondition, schemaTypes: Record<string, string>): any => {
     const result = toNotionFilterInternal(filter, schemaTypes);
     console.log('[toNotionFilter] Input:', JSON.stringify(filter, null, 2));
     console.log('[toNotionFilter] Output:', JSON.stringify(result, null, 2));
-    console.log('[toNotionFilter] Schema types:', schemaTypes);
     return result;
 };
 
@@ -112,7 +109,6 @@ const toNotionFilterInternal = (filter: FilterCondition, schemaTypes: Record<str
     }
 
     if (!filter.field || !filter.operator) return undefined;
-    // Value is required unless it's an existence check
     if (!filter.value && filter.operator !== 'is_empty' && filter.operator !== 'is_not_empty') return undefined;
 
     const type = schemaTypes[filter.field] || 'rich_text';
@@ -122,22 +118,19 @@ const toNotionFilterInternal = (filter: FilterCondition, schemaTypes: Record<str
     if (type === 'select' || type === 'status') {
         if (filter.operator === 'equals') return { property: filter.field, [type]: { equals: val } };
         if (filter.operator === 'does_not_equal') return { property: filter.field, [type]: { does_not_equal: val } };
-        if (filter.operator === 'not_equals') return { property: filter.field, [type]: { does_not_equal: val } }; // Legacy
+        if (filter.operator === 'not_equals') return { property: filter.field, [type]: { does_not_equal: val } };
         if (filter.operator === 'is_empty') return { property: filter.field, [type]: { is_empty: true } };
         if (filter.operator === 'is_not_empty') return { property: filter.field, [type]: { is_not_empty: true } };
 
-        // Contains for Select -> OR with equals (multi-value support)
         if (filter.operator === 'contains' && val) {
             const values = val.split('|').filter(Boolean);
             if (values.length === 0) return undefined;
             if (values.length === 1) {
                 return { property: filter.field, [type]: { equals: values[0] } };
             }
-            // OR: any value matches
             return { or: values.map(v => ({ property: filter.field, [type]: { equals: v } })) };
         }
 
-        // Does not contain for Select -> AND with does_not_equal + empty
         if (filter.operator === 'does_not_contain' && val) {
             const values = val.split('|').filter(Boolean);
             if (values.length === 0) return undefined;
@@ -146,7 +139,6 @@ const toNotionFilterInternal = (filter: FilterCondition, schemaTypes: Record<str
             return { or: [{ and: notEqualConditions }, emptyCondition] };
         }
 
-        // "Is One Of" for single select -> OR with equals
         if (filter.operator === 'is_in' && val) {
             const values = val.split('|').filter(Boolean);
             if (values.length === 0) return undefined;
@@ -155,30 +147,24 @@ const toNotionFilterInternal = (filter: FilterCondition, schemaTypes: Record<str
         if (filter.operator === 'is_not_in' && val) {
             const values = val.split('|').filter(Boolean);
             if (values.length === 0) return undefined;
-            // AND with does_not_equal
             return { and: values.map(v => ({ property: filter.field, [type]: { does_not_equal: v } })) };
         }
-        // fallback
         return { property: filter.field, [type]: { equals: val } };
     }
 
     if (type === 'multi_select') {
-        // Contains: OR logic (any of selected values matches)
         if (filter.operator === 'contains' && val) {
             const values = val.split('|').filter(Boolean);
             if (values.length === 0) return undefined;
             if (values.length === 1) {
                 return { property: filter.field, [type]: { contains: values[0] } };
             }
-            // OR: any value matches
             return { or: values.map(v => ({ property: filter.field, [type]: { contains: v } })) };
         }
 
-        // Does not contain: AND logic + empty included
         if (filter.operator === 'does_not_contain' && val) {
             const values = val.split('|').filter(Boolean);
             if (values.length === 0) return undefined;
-            // AND all does_not_contain + OR with is_empty
             const notContainConditions = values.map(v => ({ property: filter.field, [type]: { does_not_contain: v } }));
             const emptyCondition = { property: filter.field, [type]: { is_empty: true } };
             return { or: [{ and: notContainConditions }, emptyCondition] };
@@ -187,7 +173,6 @@ const toNotionFilterInternal = (filter: FilterCondition, schemaTypes: Record<str
         if (filter.operator === 'is_empty') return { property: filter.field, [type]: { is_empty: true } };
         if (filter.operator === 'is_not_empty') return { property: filter.field, [type]: { is_not_empty: true } };
 
-        // Legacy
         if (filter.operator === 'is_in' && val) {
             const values = val.split('|').filter(Boolean);
             if (values.length === 0) return undefined;
@@ -221,7 +206,7 @@ const toNotionFilterInternal = (filter: FilterCondition, schemaTypes: Record<str
     switch (filter.operator) {
         case 'equals': textCondition.equals = val; break;
         case 'does_not_equal': textCondition.does_not_equal = val; break;
-        case 'not_equals': textCondition.does_not_equal = val; break; // Legacy support
+        case 'not_equals': textCondition.does_not_equal = val; break;
         case 'contains': textCondition.contains = val; break;
         case 'does_not_contain': textCondition.does_not_contain = val; break;
         case 'starts_with': textCondition.starts_with = val; break;
@@ -231,7 +216,6 @@ const toNotionFilterInternal = (filter: FilterCondition, schemaTypes: Record<str
         default: textCondition.contains = val;
     }
 
-    // Check if type actually supports these? Rich Text supports all.
     return { property: filter.field, [type === 'title' ? 'title' : 'rich_text']: textCondition };
 };
 

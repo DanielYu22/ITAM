@@ -3,11 +3,11 @@ export default async function handler(req, res) {
     const apiPath = Array.isArray(match) ? match.join('/') : match;
     const targetUrl = `https://api.notion.com/${apiPath}`;
 
-    const apiKey = process.env.VITE_NOTION_KEY;
+    const apiKey = process.env.VITE_NOTION_KEY || process.env.NOTION_API_KEY;
     const notionVersion = '2022-06-28';
 
     if (!apiKey) {
-        return res.status(500).json({ error: 'Server Configuration Error: Missing VITE_NOTION_KEY' });
+        return res.status(500).json({ error: 'Server Configuration Error: Missing NOTION_API_KEY in environment variables' });
     }
 
     try {

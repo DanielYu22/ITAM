@@ -18,10 +18,23 @@ export interface FilterConfig {
     locationHierarchy: string[];
     // 정렬 컬럼 (동선)
     sortColumn: string;
-    // 작업 대상 조건
-    targetConditions: TargetCondition[];
+    // 정렬 방향 (오름차순/내림차순)
+    sortDirection: 'asc' | 'desc';
+    // 작업 대상 그룹 (중첩 논리 지원)
+    targetGroups: TargetGroup[];
+    // 그룹 간 논리 관계 ('and' | 'or')
+    globalLogicalOperator: 'and' | 'or';
+    // 구버전 호환용 (사용 자제)
+    targetConditions?: TargetCondition[];
+    targetLogicalOperator?: 'and' | 'or';
     // 편집 가능 필드
     editableFields: string[];
+}
+
+export interface TargetGroup {
+    id: string;
+    operator: 'and' | 'or';
+    conditions: TargetCondition[];
 }
 
 export interface TargetCondition {
@@ -61,10 +74,24 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
     const [sortColumn, setSortColumn] = useState<string>(
         currentConfig?.sortColumn || ''
     );
+    const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>(
+        currentConfig?.sortDirection || 'asc'
+    );
 
-    // 작업 대상 조건
-    const [targetConditions, setTargetConditions] = useState<TargetCondition[]>(
-        currentConfig?.targetConditions || []
+    // 작업 대상 그룹
+    const [targetGroups, setTargetGroups] = useState<TargetGroup[]>(() => {
+        if (currentConfig?.targetGroups) return currentConfig.targetGroups;
+        if (currentConfig?.targetConditions && currentConfig.targetConditions.length > 0) {
+            return [{
+                id: 'default-group',
+                operator: currentConfig.targetLogicalOperator || 'and',
+                conditions: currentConfig.targetConditions
+            }];
+        }
+        return [{ id: 'group-1', operator: 'and', conditions: [] }];
+    });
+    const [globalLogicalOperator, setGlobalLogicalOperator] = useState<'and' | 'or'>(
+        currentConfig?.globalLogicalOperator || 'and'
     );
 
     // 편집 가능 필드
@@ -75,6 +102,7 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
     // UI 상태
     const [showColumnPicker, setShowColumnPicker] = useState(false);
     const [pickerMode, setPickerMode] = useState<'hierarchy' | 'sort' | 'target' | 'editable'>('hierarchy');
+    const [activeGroupId, setActiveGroupId] = useState<string | null>(null); // 현재 컬럼을 추가할 그룹
     const [showValuePicker, setShowValuePicker] = useState(false);
     const [activeConditionId, setActiveConditionId] = useState<string | null>(null);
     const [valueSearchText, setValueSearchText] = useState('');
@@ -82,6 +110,31 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
     const [sortAscending, setSortAscending] = useState(true);
     const [editableSearchText, setEditableSearchText] = useState('');
     const [selectedTargetColumns, setSelectedTargetColumns] = useState<string[]>([]);
+
+    // currentConfig가 변경되거나 모달이 열릴 때 내부 상태 업데이트
+    useEffect(() => {
+        if (visible && currentConfig) {
+            setLocationHierarchy(currentConfig.locationHierarchy || []);
+            setSortColumn(currentConfig.sortColumn || '');
+            setSortDirection(currentConfig.sortDirection || 'asc');
+
+            // 그룹 마이그레이션 및 업데이트
+            if (currentConfig.targetGroups && currentConfig.targetGroups.length > 0) {
+                setTargetGroups(currentConfig.targetGroups);
+            } else if (currentConfig.targetConditions && currentConfig.targetConditions.length > 0) {
+                setTargetGroups([{
+                    id: 'default-group',
+                    operator: currentConfig.targetLogicalOperator || 'and',
+                    conditions: currentConfig.targetConditions
+                }]);
+            } else {
+                setTargetGroups([{ id: 'group-1', operator: 'and', conditions: [] }]);
+            }
+
+            setGlobalLogicalOperator(currentConfig.globalLogicalOperator || 'and');
+            setEditableFields(currentConfig.editableFields || []);
+        }
+    }, [visible, currentConfig]);
 
     // 각 컬럼의 고유 값 추출
     const columnValues = useMemo(() => {
@@ -113,37 +166,89 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
     };
 
     // 조건 추가
-    const addTargetCondition = (column: string) => {
-        const newCondition: TargetCondition = {
-            id: Date.now().toString(),
-            column,
-            type: 'is_empty',
-            values: [],
+    // 그룹 추가
+    const addGroup = () => {
+        const newGroup: TargetGroup = {
+            id: `group-${Date.now()}`,
+            operator: 'and',
+            conditions: []
         };
-        setTargetConditions([...targetConditions, newCondition]);
+        setTargetGroups(prev => [...prev, newGroup]);
+    };
+
+    // 그룹 제거
+    const removeGroup = (id: string) => {
+        setTargetGroups(prev => {
+            if (prev.length <= 1) return prev; // 최소 1개 그룹 유지
+            return prev.filter(g => g.id !== id);
+        });
+    };
+
+    // 그룹 연산자 업데이트
+    const updateGroupOperator = (id: string, operator: 'and' | 'or') => {
+        setTargetGroups(prev => prev.map(g => g.id === id ? { ...g, operator } : g));
+    };
+
+    // 조건 추가 (특정 그룹에)
+    const addConditionsToGroup = (groupId: string, columns: string | string[]) => {
+        const columnsToProcess = Array.isArray(columns) ? columns : [columns];
+
+        setTargetGroups(prev => prev.map(group => {
+            if (group.id !== groupId) return group;
+
+            const existingColumns = group.conditions.map(c => c.column);
+            const columnsToAdd = columnsToProcess.filter(col => !existingColumns.includes(col));
+
+            if (columnsToAdd.length === 0) return group;
+
+            const newConditions: TargetCondition[] = columnsToAdd.map((column, index) => ({
+                id: `${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
+                column,
+                type: 'is_empty',
+                values: [],
+            }));
+
+            return {
+                ...group,
+                conditions: [...group.conditions, ...newConditions]
+            };
+        }));
+
         // 편집 가능 필드에도 자동 추가
-        if (!editableFields.includes(column)) {
-            setEditableFields([...editableFields, column]);
-        }
+        setEditableFields(prev => {
+            const next = [...prev];
+            columnsToProcess.forEach(column => {
+                if (!next.includes(column)) {
+                    next.push(column);
+                }
+            });
+            return next;
+        });
+
         setShowColumnPicker(false);
     };
 
     // 조건 업데이트
-    const updateCondition = (id: string, updates: Partial<TargetCondition>) => {
-        setTargetConditions(prev =>
-            prev.map(c => (c.id === id ? { ...c, ...updates } : c))
-        );
+    const updateCondition = (conditionId: string, updates: Partial<TargetCondition>) => {
+        setTargetGroups(prev => prev.map(group => ({
+            ...group,
+            conditions: group.conditions.map(c => (c.id === conditionId ? { ...c, ...updates } : c))
+        })));
     };
 
     // 조건 제거
-    const removeCondition = (id: string) => {
-        setTargetConditions(prev => prev.filter(c => c.id !== id));
+    const removeCondition = (conditionId: string) => {
+        setTargetGroups(prev => prev.map(group => ({
+            ...group,
+            conditions: group.conditions.filter(c => c.id !== conditionId)
+        })));
     };
 
-    // 값 선택 토글
+    // 값 선택 토글 (리스트 전용)
     const toggleConditionValue = (conditionId: string, value: string) => {
-        setTargetConditions(prev =>
-            prev.map(c => {
+        setTargetGroups(prev => prev.map(group => ({
+            ...group,
+            conditions: group.conditions.map(c => {
                 if (c.id === conditionId) {
                     const values = c.values.includes(value)
                         ? c.values.filter(v => v !== value)
@@ -152,7 +257,20 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                 }
                 return c;
             })
-        );
+        })));
+    };
+
+    // 값 강제 추가 (검색/직접입력 전용)
+    const addConditionValue = (conditionId: string, value: string) => {
+        setTargetGroups(prev => prev.map(group => ({
+            ...group,
+            conditions: group.conditions.map(c => {
+                if (c.id === conditionId && !c.values.includes(value)) {
+                    return { ...c, values: [...c.values, value] };
+                }
+                return c;
+            })
+        })));
     };
 
     // 편집 필드 토글
@@ -165,11 +283,82 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
     };
 
     // 적용
+    const getMatchCount = (cond: TargetCondition) => {
+        if (!assets || assets.length === 0) return 0;
+
+        return assets.filter(asset => {
+            const val = (asset.values[cond.column] || '').toLowerCase();
+            switch (cond.type) {
+                case 'is_empty':
+                    return !val || val === '';
+                case 'is_not_empty':
+                    return val && val !== '';
+                case 'contains':
+                    if (cond.values && cond.values.length > 0) {
+                        return cond.values.some(v => val.includes(v.toLowerCase()));
+                    }
+                    return true;
+                case 'not_contains':
+                    if (cond.values && cond.values.length > 0) {
+                        return !cond.values.some(v => val.includes(v.toLowerCase()));
+                    }
+                    return true;
+                case 'equals':
+                    if (cond.values && cond.values.length > 0) {
+                        return cond.values.some(v => val === v.toLowerCase());
+                    }
+                    return true;
+                default:
+                    return true;
+            }
+        }).length;
+    };
+
+    const getGroupMatchCount = (group: TargetGroup) => {
+        if (!assets || assets.length === 0) return 0;
+        if (!group.conditions || group.conditions.length === 0) return assets.length;
+
+        return assets.filter(asset => {
+            const conditionMatches = group.conditions.map(cond => {
+                const val = (asset.values[cond.column] || '').toLowerCase();
+                switch (cond.type) {
+                    case 'is_empty':
+                        return !val || val === '';
+                    case 'is_not_empty':
+                        return val && val !== '';
+                    case 'contains':
+                        if (cond.values && cond.values.length > 0) {
+                            return cond.values.some(v => val.includes(v.toLowerCase()));
+                        }
+                        return true;
+                    case 'not_contains':
+                        if (cond.values && cond.values.length > 0) {
+                            return !cond.values.some(v => val.includes(v.toLowerCase()));
+                        }
+                        return true;
+                    case 'equals':
+                        if (cond.values && cond.values.length > 0) {
+                            return cond.values.some(v => val === v.toLowerCase());
+                        }
+                        return true;
+                    default:
+                        return true;
+                }
+            });
+
+            return group.operator === 'or'
+                ? conditionMatches.some(m => m)
+                : conditionMatches.every(m => m);
+        }).length;
+    };
+
     const handleApply = () => {
         onApply({
             locationHierarchy,
             sortColumn,
-            targetConditions,
+            sortDirection,
+            targetGroups,
+            globalLogicalOperator,
             editableFields,
         });
         onClose();
@@ -291,15 +480,35 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                             </Text>
 
                             {sortColumn ? (
-                                <View style={styles.sortSelected}>
-                                    <View style={styles.sortInfo}>
-                                        <ArrowUpDown size={20} color="#6366f1" />
-                                        <Text style={styles.sortColumnText}>{sortColumn}</Text>
-                                        <Text style={styles.sortDesc}>오름차순 정렬</Text>
+                                <View style={styles.sortContainer}>
+                                    <View style={styles.sortSelected}>
+                                        <View style={styles.sortInfo}>
+                                            <ArrowUpDown size={20} color="#6366f1" />
+                                            <Text style={styles.sortColumnText}>{sortColumn}</Text>
+                                        </View>
+                                        <TouchableOpacity onPress={() => setSortColumn('')}>
+                                            <X size={20} color="#ef4444" />
+                                        </TouchableOpacity>
                                     </View>
-                                    <TouchableOpacity onPress={() => setSortColumn('')}>
-                                        <X size={20} color="#ef4444" />
-                                    </TouchableOpacity>
+
+                                    <View style={styles.sortDirectionRow}>
+                                        <TouchableOpacity
+                                            style={[styles.directionButton, sortDirection === 'asc' && styles.directionButtonActive]}
+                                            onPress={() => setSortDirection('asc')}
+                                        >
+                                            <Text style={[styles.directionButtonText, sortDirection === 'asc' && styles.directionButtonTextActive]}>
+                                                오름차순 (1→10)
+                                            </Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity
+                                            style={[styles.directionButton, sortDirection === 'desc' && styles.directionButtonActive]}
+                                            onPress={() => setSortDirection('desc')}
+                                        >
+                                            <Text style={[styles.directionButtonText, sortDirection === 'desc' && styles.directionButtonTextActive]}>
+                                                내림차순 (10→1)
+                                            </Text>
+                                        </TouchableOpacity>
+                                    </View>
                                 </View>
                             ) : (
                                 <TouchableOpacity
@@ -318,88 +527,166 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                     {/* Step 3: 작업 대상 조건 */}
                     {step === 'target' && (
                         <View>
-                            <Text style={styles.sectionTitle}>작업 대상 조건</Text>
-                            <Text style={styles.sectionDesc}>
-                                어떤 항목을 작업 대상으로 할지 조건을 설정하세요.
-                            </Text>
+                            <View style={styles.sectionHeaderRow}>
+                                <View>
+                                    <Text style={styles.sectionTitle}>작업 대상 조건</Text>
+                                    <Text style={styles.sectionDesc}>
+                                        어떤 항목을 작업 대상으로 할지 조건을 설정하세요.
+                                    </Text>
+                                </View>
+                            </View>
 
-                            {targetConditions.map(cond => (
-                                <View key={cond.id} style={styles.conditionCard}>
-                                    <View style={styles.conditionHeader}>
-                                        <Text style={styles.conditionColumn}>{cond.column}</Text>
-                                        <TouchableOpacity onPress={() => removeCondition(cond.id)}>
-                                            <X size={18} color="#ef4444" />
-                                        </TouchableOpacity>
-                                    </View>
+                            <View style={styles.globalLogicContainer}>
+                                <Text style={styles.globalLogicLabel}>그룹 간 논리 관계:</Text>
+                                <View style={styles.logicToggleContainer}>
+                                    <TouchableOpacity
+                                        style={[styles.logicButton, globalLogicalOperator === 'and' && styles.logicButtonActive]}
+                                        onPress={() => setGlobalLogicalOperator('and')}
+                                    >
+                                        <View style={[styles.radio, globalLogicalOperator === 'and' && styles.radioChecked]}>
+                                            {globalLogicalOperator === 'and' && <View style={styles.radioInner} />}
+                                        </View>
+                                        <Text style={[styles.logicButtonText, globalLogicalOperator === 'and' && styles.logicButtonTextActive]}>
+                                            모든 그룹 일치 (AND)
+                                        </Text>
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
+                                        style={[styles.logicButton, globalLogicalOperator === 'or' && styles.logicButtonActive]}
+                                        onPress={() => setGlobalLogicalOperator('or')}
+                                    >
+                                        <View style={[styles.radio, globalLogicalOperator === 'or' && styles.radioChecked]}>
+                                            {globalLogicalOperator === 'or' && <View style={styles.radioInner} />}
+                                        </View>
+                                        <Text style={[styles.logicButtonText, globalLogicalOperator === 'or' && styles.logicButtonTextActive]}>
+                                            하나의 그룹이라도 일치 (OR)
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </View>
 
-                                    <View style={styles.conditionTypes}>
-                                        {Object.entries(conditionTypeLabels).map(([type, label]) => (
-                                            <TouchableOpacity
-                                                key={type}
-                                                style={[
-                                                    styles.conditionType,
-                                                    cond.type === type && styles.conditionTypeActive,
-                                                ]}
-                                                onPress={() => updateCondition(cond.id, { type: type as any })}
-                                            >
-                                                <Text
-                                                    style={[
-                                                        styles.conditionTypeText,
-                                                        cond.type === type && styles.conditionTypeTextActive,
-                                                    ]}
+                            {targetGroups.map((group, gIndex) => (
+                                <View key={group.id} style={styles.groupCard}>
+                                    <View style={styles.groupHeader}>
+                                        <View style={styles.groupHeaderLeft}>
+                                            <Text style={styles.groupTitle}>그룹 {gIndex + 1}</Text>
+                                            <View style={styles.groupMatchCountBadge}>
+                                                <Text style={styles.groupMatchCountText}>{getGroupMatchCount(group)}</Text>
+                                            </View>
+                                            <View style={styles.logicToggleSmall}>
+                                                <TouchableOpacity
+                                                    style={[styles.logicButtonSmall, group.operator === 'and' && styles.logicButtonSmallActive]}
+                                                    onPress={() => updateGroupOperator(group.id, 'and')}
                                                 >
-                                                    {label}
-                                                </Text>
+                                                    <Text style={[styles.logicTextSmall, group.operator === 'and' && styles.logicTextSmallActive]}>AND</Text>
+                                                </TouchableOpacity>
+                                                <TouchableOpacity
+                                                    style={[styles.logicButtonSmall, group.operator === 'or' && styles.logicButtonSmallActive]}
+                                                    onPress={() => updateGroupOperator(group.id, 'or')}
+                                                >
+                                                    <Text style={[styles.logicTextSmall, group.operator === 'or' && styles.logicTextSmallActive]}>OR</Text>
+                                                </TouchableOpacity>
+                                            </View>
+                                        </View>
+                                        {targetGroups.length > 1 && (
+                                            <TouchableOpacity onPress={() => removeGroup(group.id)}>
+                                                <X size={16} color="#ef4444" />
                                             </TouchableOpacity>
-                                        ))}
+                                        )}
                                     </View>
 
-                                    {/* 값 선택 (다중 선택 지원) */}
-                                    {(cond.type === 'contains' || cond.type === 'not_contains' || cond.type === 'equals') && (
-                                        <View style={styles.valueSection}>
-                                            <TouchableOpacity
-                                                style={styles.valuePickerButton}
-                                                onPress={() => {
-                                                    setActiveConditionId(cond.id);
-                                                    setValueSearchText('');
-                                                    setShowValuePicker(true);
-                                                }}
-                                            >
-                                                <Text style={styles.valuePickerButtonText}>
-                                                    {cond.values.length > 0
-                                                        ? `${cond.values.length}개 선택됨`
-                                                        : '값 선택...'}
-                                                </Text>
-                                                <ChevronDown size={18} color="#6b7280" />
-                                            </TouchableOpacity>
+                                    {group.conditions.map(cond => (
+                                        <View key={cond.id} style={styles.conditionCard}>
+                                            <View style={styles.conditionHeader}>
+                                                <View style={styles.conditionTitleRow}>
+                                                    <Text style={styles.conditionColumn}>{cond.column}</Text>
+                                                    <View style={styles.matchCountBadge}>
+                                                        <Text style={styles.matchCountText}>{getMatchCount(cond)}</Text>
+                                                    </View>
+                                                </View>
+                                                <TouchableOpacity onPress={() => removeCondition(cond.id)}>
+                                                    <X size={18} color="#ef4444" />
+                                                </TouchableOpacity>
+                                            </View>
 
-                                            {cond.values.length > 0 && (
-                                                <View style={styles.selectedValues}>
-                                                    {cond.values.map(val => (
-                                                        <View key={val} style={styles.selectedValueChip}>
-                                                            <Text style={styles.selectedValueText}>{val}</Text>
-                                                            <TouchableOpacity
-                                                                onPress={() => toggleConditionValue(cond.id, val)}
-                                                            >
-                                                                <X size={14} color="#6366f1" />
-                                                            </TouchableOpacity>
+                                            <View style={styles.conditionTypes}>
+                                                {Object.entries(conditionTypeLabels).map(([type, label]) => (
+                                                    <TouchableOpacity
+                                                        key={type}
+                                                        style={[
+                                                            styles.conditionType,
+                                                            cond.type === type && styles.conditionTypeActive,
+                                                        ]}
+                                                        onPress={() => updateCondition(cond.id, { type: type as any })}
+                                                    >
+                                                        <Text
+                                                            style={[
+                                                                styles.conditionTypeText,
+                                                                cond.type === type && styles.conditionTypeTextActive,
+                                                            ]}
+                                                        >
+                                                            {label}
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                ))}
+                                            </View>
+
+                                            {/* 값 선택 (다중 선택 지원) */}
+                                            {(cond.type === 'contains' || cond.type === 'not_contains' || cond.type === 'equals') && (
+                                                <View style={styles.valueSection}>
+                                                    <TouchableOpacity
+                                                        style={styles.valuePickerButton}
+                                                        onPress={() => {
+                                                            setActiveConditionId(cond.id);
+                                                            setValueSearchText('');
+                                                            setShowValuePicker(true);
+                                                        }}
+                                                    >
+                                                        <Text style={styles.valuePickerButtonText}>
+                                                            {cond.values.length > 0
+                                                                ? `${cond.values.length}개 선택됨`
+                                                                : '값 선택...'}
+                                                        </Text>
+                                                        <ChevronDown size={18} color="#6b7280" />
+                                                    </TouchableOpacity>
+
+                                                    {cond.values.length > 0 && (
+                                                        <View style={styles.selectedValues}>
+                                                            {cond.values.map(val => (
+                                                                <View key={val} style={styles.selectedValueChip}>
+                                                                    <Text style={styles.selectedValueText}>{val}</Text>
+                                                                    <TouchableOpacity
+                                                                        onPress={() => toggleConditionValue(cond.id, val)}
+                                                                    >
+                                                                        <X size={14} color="#6366f1" />
+                                                                    </TouchableOpacity>
+                                                                </View>
+                                                            ))}
                                                         </View>
-                                                    ))}
+                                                    )}
                                                 </View>
                                             )}
                                         </View>
-                                    )}
+                                    ))}
+
+                                    <TouchableOpacity
+                                        style={styles.addSimpleButton}
+                                        onPress={() => {
+                                            setActiveGroupId(group.id);
+                                            setPickerMode('target');
+                                            setSelectedTargetColumns(group.conditions.map(c => c.column));
+                                            setShowColumnPicker(true);
+                                        }}
+                                    >
+                                        <Text style={styles.addSimpleButtonText}>+ 조건 추가</Text>
+                                    </TouchableOpacity>
                                 </View>
                             ))}
 
                             <TouchableOpacity
-                                style={styles.addButton}
-                                onPress={() => {
-                                    setPickerMode('target');
-                                    setShowColumnPicker(true);
-                                }}
+                                style={styles.addGroupButton}
+                                onPress={addGroup}
                             >
-                                <Text style={styles.addButtonText}>+ 조건 추가</Text>
+                                <Text style={styles.addGroupButtonText}>+ 새로운 그룹 추가</Text>
                             </TouchableOpacity>
                         </View>
                     )}
@@ -506,12 +793,45 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                                 )}
                             </View>
 
-                            {/* target 모드에서 선택된 컬럼 표시 */}
-                            {pickerMode === 'target' && selectedTargetColumns.length > 0 && (
+                            {/* target 모드에서 선택된 컬럼 표시 및 전체 선택 */}
+                            {pickerMode === 'target' && (
                                 <View style={styles.selectedColumnsBar}>
-                                    <Text style={styles.selectedColumnsText}>
-                                        {selectedTargetColumns.length}개 선택됨
-                                    </Text>
+                                    <View style={styles.selectedColumnsLeft}>
+                                        <Text style={styles.selectedColumnsText}>
+                                            {selectedTargetColumns.length}개 선택됨
+                                        </Text>
+                                    </View>
+                                    <TouchableOpacity
+                                        onPress={() => {
+                                            const filtered = schema.filter(col => {
+                                                if (columnSearchText) {
+                                                    return col.toLowerCase().includes(columnSearchText.toLowerCase());
+                                                }
+                                                return true;
+                                            });
+
+                                            // 이미 검색된 결과가 모두 선택되어 있는지 확인
+                                            const allSelected = filtered.every(col => selectedTargetColumns.includes(col));
+
+                                            if (allSelected) {
+                                                // 모두 선택 해제
+                                                setSelectedTargetColumns(prev => prev.filter(col => !filtered.includes(col)));
+                                            } else {
+                                                // 검색된 것 모두 선택 (기존 선택 유지)
+                                                setSelectedTargetColumns(prev => {
+                                                    const next = [...prev];
+                                                    filtered.forEach(col => {
+                                                        if (!next.includes(col)) next.push(col);
+                                                    });
+                                                    return next;
+                                                });
+                                            }
+                                        }}
+                                        style={styles.selectAllButton}
+                                    >
+                                        <Check size={14} color="#6366f1" />
+                                        <Text style={styles.selectAllText}>전체 선택/해제</Text>
+                                    </TouchableOpacity>
                                 </View>
                             )}
 
@@ -587,10 +907,11 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                                 <TouchableOpacity
                                     style={[styles.doneButton, selectedTargetColumns.length === 0 && styles.doneButtonDisabled]}
                                     onPress={() => {
-                                        selectedTargetColumns.forEach(col => addTargetCondition(col));
+                                        if (activeGroupId) {
+                                            addConditionsToGroup(activeGroupId, selectedTargetColumns);
+                                        }
                                         setSelectedTargetColumns([]);
                                         setColumnSearchText('');
-                                        setShowColumnPicker(false);
                                     }}
                                     disabled={selectedTargetColumns.length === 0}
                                 >
@@ -630,7 +951,7 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                                         style={styles.addCustomValue}
                                         onPress={() => {
                                             if (activeConditionId && valueSearchText.trim()) {
-                                                toggleConditionValue(activeConditionId, valueSearchText.trim());
+                                                addConditionValue(activeConditionId, valueSearchText.trim());
                                                 setValueSearchText('');
                                             }
                                         }}
@@ -642,11 +963,21 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
 
                             <ScrollView style={styles.pickerList}>
                                 {activeConditionId && (() => {
-                                    const cond = targetConditions.find(c => c.id === activeConditionId);
+                                    // 중첩된 그룹 내에서 조건을 찾음
+                                    let cond = null;
+                                    for (const group of targetGroups) {
+                                        cond = group.conditions.find(c => c.id === activeConditionId);
+                                        if (cond) break;
+                                    }
+
                                     if (!cond) return null;
 
-                                    const values = columnValues[cond.column] || [];
-                                    const filtered = values.filter(v =>
+                                    const dbValues = columnValues[cond.column] || [];
+                                    const selectedValues = cond.values;
+                                    // DB값과 이미 선택된 값(커스텀 포함)의 합집합
+                                    const allPossibleValues = Array.from(new Set([...dbValues, ...selectedValues])).sort();
+
+                                    const filtered = allPossibleValues.filter(v =>
                                         v.toLowerCase().includes(valueSearchText.toLowerCase())
                                     );
 
@@ -794,6 +1125,40 @@ const styles = StyleSheet.create({
         padding: 16,
         borderRadius: 12,
     },
+    sortContainer: {
+        backgroundColor: '#f9fafb',
+        padding: 12,
+        borderRadius: 16,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+    },
+    sortDirectionRow: {
+        flexDirection: 'row',
+        gap: 8,
+        marginTop: 10,
+    },
+    directionButton: {
+        flex: 1,
+        backgroundColor: '#ffffff',
+        paddingVertical: 10,
+        borderRadius: 10,
+        alignItems: 'center',
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+    },
+    directionButtonActive: {
+        backgroundColor: '#eef2ff',
+        borderColor: '#6366f1',
+    },
+    directionButtonText: {
+        fontSize: 14,
+        color: '#6b7280',
+        fontWeight: '500',
+    },
+    directionButtonTextActive: {
+        color: '#6366f1',
+        fontWeight: '600',
+    },
     sortInfo: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -819,6 +1184,24 @@ const styles = StyleSheet.create({
         justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: 12,
+    },
+    conditionTitleRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    matchCountBadge: {
+        backgroundColor: '#eef2ff',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e0e7ff',
+    },
+    matchCountText: {
+        fontSize: 12,
+        fontWeight: 'bold',
+        color: '#6366f1',
     },
     conditionColumn: {
         fontSize: 16,
@@ -1012,19 +1395,197 @@ const styles = StyleSheet.create({
         borderColor: '#6366f1',
     },
     selectedColumnsBar: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
         backgroundColor: '#eef2ff',
         paddingHorizontal: 16,
         paddingVertical: 10,
         borderBottomWidth: 1,
         borderBottomColor: '#e5e7eb',
     },
+    selectedColumnsLeft: {
+        flex: 1,
+    },
     selectedColumnsText: {
         fontSize: 14,
         fontWeight: '500',
         color: '#6366f1',
     },
+    selectAllButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#ffffff',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 6,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        gap: 6,
+    },
+    selectAllText: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#6366f1',
+    },
+    logicToggleContainer: {
+        flexDirection: 'row',
+        backgroundColor: '#f3f4f6',
+        borderRadius: 12,
+        padding: 4,
+        marginBottom: 16,
+        gap: 4,
+    },
+    logicButton: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 10,
+        borderRadius: 8,
+        gap: 8,
+    },
+    logicButtonActive: {
+        backgroundColor: '#ffffff',
+        elevation: 2,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+    },
+    logicButtonText: {
+        fontSize: 13,
+        color: '#6b7280',
+        fontWeight: '500',
+    },
+    logicButtonTextActive: {
+        color: '#6366f1',
+        fontWeight: 'bold',
+    },
+    radio: {
+        width: 16,
+        height: 16,
+        borderRadius: 8,
+        borderWidth: 1.5,
+        borderColor: '#d1d5db',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    radioChecked: {
+        borderColor: '#6366f1',
+    },
+    radioInner: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
+        backgroundColor: '#6366f1',
+    },
     doneButtonDisabled: {
         backgroundColor: '#9ca3af',
+    },
+    groupCard: {
+        backgroundColor: '#f8fafc',
+        borderRadius: 16,
+        padding: 12,
+        marginBottom: 16,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    groupHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
+    },
+    groupHeaderLeft: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 10,
+    },
+    groupMatchCountBadge: {
+        backgroundColor: '#475569',
+        paddingHorizontal: 8,
+        paddingVertical: 2,
+        borderRadius: 10,
+    },
+    groupMatchCountText: {
+        fontSize: 11,
+        fontWeight: 'bold',
+        color: '#ffffff',
+    },
+    groupTitle: {
+        fontSize: 14,
+        fontWeight: 'bold',
+        color: '#475569',
+    },
+    logicToggleSmall: {
+        flexDirection: 'row',
+        backgroundColor: '#e2e8f0',
+        borderRadius: 8,
+        padding: 2,
+    },
+    logicButtonSmall: {
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 6,
+    },
+    logicButtonSmallActive: {
+        backgroundColor: '#ffffff',
+    },
+    logicTextSmall: {
+        fontSize: 11,
+        color: '#64748b',
+        fontWeight: '600',
+    },
+    logicTextSmallActive: {
+        color: '#6366f1',
+    },
+    addSimpleButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 8,
+        borderWidth: 1,
+        borderStyle: 'dashed',
+        borderColor: '#cbd5e1',
+        borderRadius: 8,
+        marginTop: 8,
+    },
+    addSimpleButtonText: {
+        fontSize: 13,
+        color: '#64748b',
+        fontWeight: '500',
+    },
+    addGroupButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        paddingVertical: 12,
+        backgroundColor: '#f1f5f9',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        marginTop: 8,
+    },
+    addGroupButtonText: {
+        fontSize: 14,
+        color: '#475569',
+        fontWeight: 'bold',
+    },
+    globalLogicContainer: {
+        marginBottom: 16,
+    },
+    globalLogicLabel: {
+        fontSize: 12,
+        fontWeight: '600',
+        color: '#64748b',
+        marginBottom: 8,
+    },
+    sectionHeaderRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
     },
     searchInputContainer: {
         flexDirection: 'row',

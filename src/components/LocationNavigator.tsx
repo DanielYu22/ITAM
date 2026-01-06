@@ -13,6 +13,8 @@ interface LocationNavigatorProps {
     assets: Asset[];
     locationHierarchy: string[]; // ['건물', '층', '연구실']
     sortColumn?: string; // '동선'
+    initialLevel?: number;
+    initialSelectedValues?: Record<string, string>;
     onSelectLocation: (filters: Record<string, string>, finalAssets: Asset[]) => void;
 }
 
@@ -20,11 +22,13 @@ export const LocationNavigator: React.FC<LocationNavigatorProps> = ({
     assets,
     locationHierarchy,
     sortColumn,
+    initialLevel = 0,
+    initialSelectedValues = {},
     onSelectLocation,
 }) => {
     // 현재 선택된 값들 (각 계층별)
-    const [selectedValues, setSelectedValues] = useState<Record<string, string>>({});
-    const [currentLevel, setCurrentLevel] = useState(0);
+    const [selectedValues, setSelectedValues] = useState<Record<string, string>>(initialSelectedValues);
+    const [currentLevel, setCurrentLevel] = useState(initialLevel);
 
     // 계층 아이콘
     const levelIcons = [Building2, Layers, DoorOpen, MapPin];
@@ -51,8 +55,46 @@ export const LocationNavigator: React.FC<LocationNavigatorProps> = ({
         }
 
         const col = locationHierarchy[currentLevel];
-        const valueSet = new Set<string>();
 
+        // 정렬 컬럼(동선)이 있으면 해당 컬럼 기준으로 자산을 먼저 정렬한 후 중복 제거
+        if (sortColumn) {
+            const sortedAssets = [...filteredAssets].sort((a, b) => {
+                const valA = a.values[sortColumn];
+                const valB = b.values[sortColumn];
+
+                // 둘 다 값이 있는 경우 숫자 비교
+                if (valA && valB) {
+                    const numA = parseFloat(valA);
+                    const numB = parseFloat(valB);
+                    if (!isNaN(numA) && !isNaN(numB)) {
+                        return numA - numB;
+                    }
+                }
+
+                // 값이 없는 경우 뒤로 보냄
+                if (!valA && valB) return 1;
+                if (valA && !valB) return -1;
+
+                // 둘 다 없거나 숫자가 아닌 경우 문자열 비교
+                return (valA || '').localeCompare(valB || '');
+            });
+
+            const uniqueValues: string[] = [];
+            const valueSet = new Set<string>();
+
+            sortedAssets.forEach(asset => {
+                const val = asset.values[col];
+                if (val && val.trim() && !valueSet.has(val)) {
+                    valueSet.add(val);
+                    uniqueValues.push(val);
+                }
+            });
+
+            return uniqueValues;
+        }
+
+        // 정렬 컬럼이 없는 경우 기존처럼 알파벳 순 정렬
+        const valueSet = new Set<string>();
         filteredAssets.forEach(asset => {
             const val = asset.values[col];
             if (val && val.trim()) {
@@ -61,7 +103,7 @@ export const LocationNavigator: React.FC<LocationNavigatorProps> = ({
         });
 
         return Array.from(valueSet).sort();
-    }, [filteredAssets, locationHierarchy, currentLevel]);
+    }, [filteredAssets, locationHierarchy, currentLevel, sortColumn]);
 
     // 최종 자산 목록 (정렬 적용)
     const finalAssets = useMemo(() => {

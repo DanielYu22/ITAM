@@ -1,5 +1,5 @@
 // Gemini API Client for AI-powered filter generation
-import { API_BASE_URL } from '../config';
+
 import { FilterCondition } from './utils';
 
 export interface GeminiConfig {
@@ -19,6 +19,7 @@ export class GeminiClient {
         schemaTypes: Record<string, string>
     ): Promise<{ filter: FilterCondition | null; explanation: string }> {
         try {
+            // Build context about the database schema
             const schemaContext = schema.map(field => {
                 const type = schemaTypes[field] || 'unknown';
                 return `- ${field} (${type})`;
@@ -46,9 +47,20 @@ For complex filters with multiple conditions, use:
   "conditions": [array of filter conditions]
 }
 
-Respond with JSON only, no markdown code blocks. If the query doesn't make sense for filtering, return null.`;
+Respond with JSON only, no markdown code blocks. If the query doesn't make sense for filtering, return null.
 
-            const response = await fetch(`${API_BASE_URL}/api/gemini/v1beta/models/gemini-2.0-flash:generateContent`, {
+Example:
+User: "용인에 있는 12월 알약 점검 대상 장비"
+Response: {
+  "id": "root",
+  "logic": "AND",
+  "conditions": [
+    {"id": "c1", "field": "설치 장소(건물)", "operator": "contains", "value": "용인"},
+    {"id": "c2", "field": "알약 점검", "operator": "contains", "value": "12월"}
+  ]
+}`;
+
+            const response = await fetch('/api/gemini/v1beta/models/gemini-2.0-flash:generateContent', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -78,7 +90,9 @@ Respond with JSON only, no markdown code blocks. If the query doesn't make sense
 
             console.log('[Gemini] Response:', text);
 
+            // Try to parse JSON from response
             try {
+                // Remove any markdown code blocks if present
                 const jsonMatch = text.match(/\{[\s\S]*\}/);
                 if (jsonMatch) {
                     const filter = JSON.parse(jsonMatch[0]);
@@ -108,11 +122,22 @@ Extract the filter conditions from the image and convert them to this JSON forma
 
 IMPORTANT: Use ONLY these exact operators:
 - "equals" for exact match
-- "not_equals" for not equal
+- "not_equals" for not equal (convert "is not" to this)
 - "contains" for contains text
 - "does_not_contain" for does not contain
 - "is_empty" for empty check
 - "is_not_empty" for not empty check
+
+For multi-select or select fields with multiple values, create separate conditions joined by OR:
+When you see "is not: A, B, C" convert to:
+{
+  "logic": "AND",
+  "conditions": [
+    {"field": "field_name", "operator": "does_not_contain", "value": "A"},
+    {"field": "field_name", "operator": "does_not_contain", "value": "B"},
+    {"field": "field_name", "operator": "does_not_contain", "value": "C"}
+  ]
+}
 
 Output structure:
 {
@@ -125,9 +150,10 @@ Output structure:
 
 Available fields in this database: ${schemaContext}
 
-Respond with JSON only. Match field names exactly to the available fields listed above.`;
+Respond with JSON only. Match field names exactly to the available fields listed above.
+NEVER use operators like "is not", "is", "is in", "is not in" - convert them to valid operators.`;
 
-            const response = await fetch(`${API_BASE_URL}/api/gemini/v1beta/models/gemini-2.0-flash:generateContent`, {
+            const response = await fetch('/api/gemini/v1beta/models/gemini-2.0-flash:generateContent', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
@@ -160,6 +186,8 @@ Respond with JSON only. Match field names exactly to the available fields listed
 
             const data = await response.json();
             const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+            console.log('[Gemini Vision] Response:', text);
 
             try {
                 const jsonMatch = text.match(/\{[\s\S]*\}/);
