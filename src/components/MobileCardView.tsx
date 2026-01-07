@@ -148,42 +148,44 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     const renderAssetCard = ({ item: asset }: { item: Asset }) => {
         return (
             <View style={styles.cardContainer}>
-                <View style={styles.card}>
-                    <View style={styles.cardHeader}>
-                        <Text style={styles.cardTitle}>
-                            {asset.values[titleField] || 'Untitled'}
-                        </Text>
-                    </View>
+                <View style={styles.cardWrapper}>
+                    <View style={styles.card}>
+                        <View style={styles.cardHeader}>
+                            <Text style={styles.cardTitle}>
+                                {asset.values[titleField] || 'Untitled'}
+                            </Text>
+                        </View>
 
-                    <ScrollView
-                        style={styles.cardBody}
-                        showsVerticalScrollIndicator={false}
-                        contentContainerStyle={styles.cardBodyContent}
-                        nestedScrollEnabled={true}
-                    >
-                        {(editableFields.length > 0 ? editableFields : schema)
-                            .filter(field => field !== titleField)
-                            .map(field => (
-                                <TouchableOpacity
-                                    key={field}
-                                    style={styles.fieldRow}
-                                    onPress={() => handleEdit(asset, field)}
-                                    activeOpacity={0.7}
-                                >
-                                    <View style={styles.fieldLabelRow}>
-                                        <Text style={styles.fieldLabel}>{field}</Text>
-                                        {editableFields.includes(field) && (
-                                            <Edit2 size={12} color="#6366f1" />
-                                        )}
-                                    </View>
-                                    <View style={styles.fieldValueContainer}>
-                                        <Text style={styles.fieldValue}>
-                                            {asset.values[field] || '-'}
-                                        </Text>
-                                    </View>
-                                </TouchableOpacity>
-                            ))}
-                    </ScrollView>
+                        <ScrollView
+                            style={styles.cardBody}
+                            showsVerticalScrollIndicator={false}
+                            contentContainerStyle={styles.cardBodyContent}
+                            nestedScrollEnabled={true}
+                        >
+                            {(editableFields.length > 0 ? editableFields : schema)
+                                .filter(field => field !== titleField)
+                                .map(field => (
+                                    <TouchableOpacity
+                                        key={field}
+                                        style={styles.fieldRow}
+                                        onPress={() => handleEdit(asset, field)}
+                                        activeOpacity={0.7}
+                                    >
+                                        <View style={styles.fieldLabelRow}>
+                                            <Text style={styles.fieldLabel}>{field}</Text>
+                                            {editableFields.includes(field) && (
+                                                <Edit2 size={12} color="#6366f1" />
+                                            )}
+                                        </View>
+                                        <View style={styles.fieldValueContainer}>
+                                            <Text style={styles.fieldValue}>
+                                                {asset.values[field] || '-'}
+                                            </Text>
+                                        </View>
+                                    </TouchableOpacity>
+                                ))}
+                        </ScrollView>
+                    </View>
                 </View>
             </View>
         );
@@ -230,6 +232,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                 onScroll={handleScroll}
                 scrollEventThrottle={16}
                 style={styles.flatList}
+                contentContainerStyle={{ height: '100%' }}
                 getItemLayout={(_, index) => ({
                     length: SCREEN_WIDTH,
                     offset: SCREEN_WIDTH * index,
@@ -419,7 +422,11 @@ const styles = StyleSheet.create({
     },
     cardContainer: {
         width: SCREEN_WIDTH,
-        height: '100%', // Reverted to fixed height to constrain to viewport
+        height: '100%',
+        // padding removed to rely on wrapper
+    },
+    cardWrapper: {
+        flex: 1,
         padding: 16,
         paddingBottom: 0,
     },
