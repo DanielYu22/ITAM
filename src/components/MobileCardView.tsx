@@ -231,7 +231,6 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                 onScroll={handleScroll}
                 scrollEventThrottle={16}
                 style={styles.flatList}
-                contentContainerStyle={{ height: '100%' }}
                 getItemLayout={(_, index) => ({
                     length: SCREEN_WIDTH,
                     offset: SCREEN_WIDTH * index,
@@ -438,7 +437,7 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 12,
         elevation: 5,
-        overflow: 'hidden',
+        // overflow: 'hidden', // Removed to prevent clipping on web
     },
     cardHeader: {
         padding: 20,
@@ -456,6 +455,7 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     cardBodyContent: {
+        flexGrow: 1, // Ensure content fills space
         padding: 20,
         paddingBottom: 20, // Reset to normal padding, using spacer instead
     },
