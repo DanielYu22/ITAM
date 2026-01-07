@@ -24,7 +24,8 @@ import {
   Database,
   Layout,
   PlusCircle,
-  AlertCircle
+  AlertCircle,
+  Download
 } from 'lucide-react-native';
 import { NotionClient, Asset, NotionProperty } from './src/lib/notion';
 import { NOTION_API_KEY, NOTION_DATABASE_ID, API_BASE_URL } from './src/config';
@@ -33,6 +34,7 @@ import { evaluateFilter, FilterCondition, DEFAULT_FILTER } from './src/lib/utils
 import { FieldWorkFilter, FilterConfig } from './src/components/FieldWorkFilter';
 import { LocationNavigator } from './src/components/LocationNavigator';
 import { HomeScreen, FilterTemplate } from './src/components/HomeScreen';
+import { ExportPreviewModal } from './src/components/ExportPreviewModal';
 
 export default function App() {
   // Settings state for configuration - check these first
@@ -62,6 +64,7 @@ export default function App() {
   const [filterTemplates, setFilterTemplates] = useState<FilterTemplate[]>([]);
   const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
   const [templateName, setTemplateName] = useState('');
+  const [showExportModal, setShowExportModal] = useState(false);
 
   // Notion Client
   const [notionClient, setNotionClient] = useState<NotionClient | null>(null);
@@ -561,6 +564,12 @@ export default function App() {
               </View>
               <View style={styles.headerRight}>
                 <TouchableOpacity
+                  style={styles.headerButton}
+                  onPress={() => setShowExportModal(true)}
+                >
+                  <Download size={20} color="#6366f1" />
+                </TouchableOpacity>
+                <TouchableOpacity
                   style={[styles.headerButton, fieldWorkConfig && styles.headerButtonActive]}
                   onPress={() => setShowFieldWorkFilter(true)}
                 >
@@ -630,6 +639,13 @@ export default function App() {
               schemaProperties={schemaProperties}
               assets={assets}
               currentConfig={fieldWorkConfig || undefined}
+            />
+
+            <ExportPreviewModal
+              visible={showExportModal}
+              onClose={() => setShowExportModal(false)}
+              assets={workFilteredAssets}
+              schema={schema}
             />
           </>
         )}
