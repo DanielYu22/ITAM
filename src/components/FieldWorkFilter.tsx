@@ -395,7 +395,7 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                             style={[styles.stepTab, step === 'hierarchy' && styles.stepTabActive]}
                             onPress={() => setStep('hierarchy')}
                         >
-                            <MapPin size={16} color={step === 'hierarchy' ? '#6366f1' : '#9ca3af'} />
+                            <MapPin size={16} color={step === 'hierarchy' ? '#ffffff' : '#6b7280'} />
                             <Text style={[styles.stepText, step === 'hierarchy' && styles.stepTextActive]}>
                                 위치 계층
                             </Text>
@@ -404,7 +404,7 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                             style={[styles.stepTab, step === 'sort' && styles.stepTabActive]}
                             onPress={() => setStep('sort')}
                         >
-                            <ArrowUpDown size={16} color={step === 'sort' ? '#6366f1' : '#9ca3af'} />
+                            <ArrowUpDown size={16} color={step === 'sort' ? '#ffffff' : '#6b7280'} />
                             <Text style={[styles.stepText, step === 'sort' && styles.stepTextActive]}>
                                 정렬
                             </Text>
@@ -413,7 +413,7 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                             style={[styles.stepTab, step === 'target' && styles.stepTabActive]}
                             onPress={() => setStep('target')}
                         >
-                            <Target size={16} color={step === 'target' ? '#6366f1' : '#9ca3af'} />
+                            <Target size={16} color={step === 'target' ? '#ffffff' : '#6b7280'} />
                             <Text style={[styles.stepText, step === 'target' && styles.stepTextActive]}>
                                 작업 대상
                             </Text>
@@ -422,7 +422,7 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                             style={[styles.stepTab, step === 'editable' && styles.stepTabActive]}
                             onPress={() => setStep('editable')}
                         >
-                            <Edit3 size={16} color={step === 'editable' ? '#6366f1' : '#9ca3af'} />
+                            <Edit3 size={16} color={step === 'editable' ? '#ffffff' : '#6b7280'} />
                             <Text style={[styles.stepText, step === 'editable' && styles.stepTextActive]}>
                                 편집 필드
                             </Text>
@@ -1043,33 +1043,37 @@ const styles = StyleSheet.create({
         color: '#6366f1',
     },
     stepsScroll: {
-        backgroundColor: '#ffffff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#e5e7eb',
+        backgroundColor: '#f8fafc',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
     },
     steps: {
         flexDirection: 'row',
-        paddingHorizontal: 8,
+        gap: 8,
     },
     stepTab: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 12,
-        paddingHorizontal: 16,
+        paddingVertical: 8,
+        paddingHorizontal: 14,
         gap: 6,
-        borderBottomWidth: 2,
-        borderBottomColor: 'transparent',
+        borderRadius: 20,
+        backgroundColor: '#ffffff',
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
     },
     stepTabActive: {
-        borderBottomColor: '#6366f1',
+        backgroundColor: '#6366f1',
+        borderColor: '#6366f1',
     },
     stepText: {
-        fontSize: 14,
-        color: '#9ca3af',
+        fontSize: 13,
+        color: '#6b7280',
+        fontWeight: '500',
     },
     stepTextActive: {
-        color: '#6366f1',
+        color: '#ffffff',
         fontWeight: '600',
     },
     content: {
