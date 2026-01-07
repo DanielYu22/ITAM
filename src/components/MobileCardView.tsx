@@ -20,7 +20,10 @@ import {
 import { Edit2, X, Check, Search, Plus, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react-native';
 import { Asset, NotionProperty } from '../lib/notion';
 
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
+const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
+// Explicit height calculation for web compatibility
+// Header ~60px, Pagination ~60px, Padding ~32px = 152px total chrome
+const CARD_HEIGHT = SCREEN_HEIGHT - 152;
 
 interface MobileCardViewProps {
     assets: Asset[];
@@ -420,8 +423,7 @@ const styles = StyleSheet.create({
     },
     cardContainer: {
         width: SCREEN_WIDTH,
-        height: '100%',
-        // padding removed to rely on wrapper
+        height: CARD_HEIGHT, // Explicit pixel height for web scroll support
     },
     cardWrapper: {
         flex: 1,
