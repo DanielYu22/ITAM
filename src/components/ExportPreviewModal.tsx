@@ -27,6 +27,12 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     const [copied, setCopied] = useState(false);
     const [downloaded, setDownloaded] = useState(false);
 
+    // 'Name' 컬럼이 없으면 맨 앞에 추가
+    const fullSchema = useMemo(() => {
+        if (schema.includes('Name')) return schema;
+        return ['Name', ...schema];
+    }, [schema]);
+
     // 미리보기용 데이터 (최대 10행)
     const previewData = useMemo(() => assets.slice(0, 10), [assets]);
 
@@ -39,9 +45,9 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
             return val;
         };
 
-        const header = schema.map(escapeCSV).join(',');
+        const header = fullSchema.map(escapeCSV).join(',');
         const rows = assets.map(asset =>
-            schema.map(col => escapeCSV(asset.values[col] || '')).join(',')
+            fullSchema.map(col => escapeCSV(asset.values[col] || '')).join(',')
         );
 
         return [header, ...rows].join('\n');
@@ -49,17 +55,17 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
 
     // TSV 문자열 생성 (Tab 구분 - Excel 붙여넣기용)
     const generateTSV = (): string => {
-        const escapeTSV = (val: string) => {
-            // Tab, 줄바꿈은 공백으로 치환
-            return val.replace(/[\t\r\n]/g, ' ');
+        const escapeTSV = (val: string): string => {
+            // Tab, 줄바꿈 문자를 공백으로 치환
+            return String(val || '').replace(/[\t\r\n]/g, ' ');
         };
 
-        const header = schema.map(escapeTSV).join('\t');
-        const rows = assets.map(asset =>
-            schema.map(col => escapeTSV(asset.values[col] || '')).join('\t')
-        );
+        const headerRow = fullSchema.map(col => escapeTSV(col)).join('\t');
+        const dataRows = assets.map(asset => {
+            return fullSchema.map(col => escapeTSV(asset.values[col] || '')).join('\t');
+        });
 
-        return [header, ...rows].join('\n');
+        return headerRow + '\n' + dataRows.join('\n');
     };
 
     // 클립보드로 복사 (TSV - Excel 호환)
@@ -140,7 +146,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                     {/* Summary */}
                     <View style={styles.summary}>
                         <Text style={styles.summaryText}>
-                            <Text style={styles.summaryHighlight}>{assets.length}개</Text> 항목 • {schema.length}개 컬럼
+                            <Text style={styles.summaryHighlight}>{assets.length}개</Text> 항목 • {fullSchema.length}개 컬럼
                         </Text>
                     </View>
 
@@ -151,30 +157,29 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                             <View>
                                 {/* Header Row */}
                                 <View style={styles.tableRow}>
-                                    {schema.slice(0, 6).map((col, i) => (
+                                    {fullSchema.slice(0, 6).map((col, i) => (
                                         <View key={col} style={[styles.tableCell, styles.tableHeaderCell]}>
                                             <Text style={styles.tableHeaderText} numberOfLines={1}>
                                                 {col}
                                             </Text>
                                         </View>
                                     ))}
-                                    {schema.length > 6 && (
+                                    {fullSchema.length > 6 && (
                                         <View style={[styles.tableCell, styles.tableHeaderCell]}>
-                                            <Text style={styles.tableHeaderText}>+{schema.length - 6}</Text>
+                                            <Text style={styles.tableHeaderText}>+{fullSchema.length - 6}</Text>
                                         </View>
                                     )}
                                 </View>
-                                {/* Data Rows */}
                                 {previewData.map((asset, rowIndex) => (
                                     <View key={asset.id} style={styles.tableRow}>
-                                        {schema.slice(0, 6).map((col, i) => (
+                                        {fullSchema.slice(0, 6).map((col, i) => (
                                             <View key={col} style={styles.tableCell}>
                                                 <Text style={styles.tableCellText} numberOfLines={1}>
                                                     {asset.values[col] || '-'}
                                                 </Text>
                                             </View>
                                         ))}
-                                        {schema.length > 6 && (
+                                        {fullSchema.length > 6 && (
                                             <View style={styles.tableCell}>
                                                 <Text style={styles.tableCellText}>...</Text>
                                             </View>
