@@ -1079,7 +1079,6 @@ const styles = StyleSheet.create({
         fontWeight: '600',
     },
     content: {
-        flex: 1,
         padding: 16,
     },
     sectionTitle: {
