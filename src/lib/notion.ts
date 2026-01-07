@@ -316,9 +316,14 @@ export class NotionClient {
             const searchData = await searchResponse.json();
             const existingPage = searchData.results?.[0];
 
+            const chunks = [];
+            for (let i = 0; i < settingsJson.length; i += 2000) {
+                chunks.push({ text: { content: settingsJson.slice(i, i + 2000) } });
+            }
+
             const properties: any = {
                 [titlePropName]: { title: [{ text: { content: this.SETTINGS_MARKER + new Date().toISOString().slice(0, 10) } }] },
-                [textPropName]: { rich_text: [{ text: { content: settingsJson.slice(0, 2000) } }] }
+                [textPropName]: { rich_text: chunks }
             };
 
             if (existingPage) {

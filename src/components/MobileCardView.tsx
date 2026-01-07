@@ -160,7 +160,6 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                             style={styles.cardBody}
                             showsVerticalScrollIndicator={false}
                             contentContainerStyle={styles.cardBodyContent}
-                            nestedScrollEnabled={true}
                         >
                             {(editableFields.length > 0 ? editableFields : schema)
                                 .filter(field => field !== titleField)
@@ -458,7 +457,7 @@ const styles = StyleSheet.create({
     },
     cardBodyContent: {
         padding: 20,
-        paddingBottom: 100, // Increased padding to ensure last items are scrollable
+        paddingBottom: 200, // Significantly increased padding to assist scroll
     },
     fieldRow: {
         marginBottom: 16,
