@@ -159,6 +159,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                         style={styles.cardBody}
                         showsVerticalScrollIndicator={false}
                         contentContainerStyle={styles.cardBodyContent}
+                        nestedScrollEnabled={true}
                     >
                         {(editableFields.length > 0 ? editableFields : schema)
                             .filter(field => field !== titleField)
@@ -418,7 +419,7 @@ const styles = StyleSheet.create({
     },
     cardContainer: {
         width: SCREEN_WIDTH,
-        flex: 1, // Changed from height: '100%' for better flexibility
+        height: '100%', // Reverted to fixed height to constrain to viewport
         padding: 16,
         paddingBottom: 0,
     },
