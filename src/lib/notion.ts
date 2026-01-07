@@ -286,7 +286,9 @@ export class NotionClient {
             if (!settingsJson || !settingsJson.startsWith('{')) return null;
             return JSON.parse(settingsJson);
         } catch (error) {
-            console.error('[Notion Settings] Load error:', error);
+            console.warn('[Notion Settings] Load error (corrupted data detected). Resetting settings to defaults...', error);
+            // Auto-repair: overwrite bad data with empty settings to fix future loads
+            this.saveSettings({}).catch(e => console.error('[Notion Settings] Auto-repair failed:', e));
             return null;
         }
     }
