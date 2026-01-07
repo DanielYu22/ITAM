@@ -457,7 +457,7 @@ const styles = StyleSheet.create({
     },
     cardBodyContent: {
         padding: 20,
-        paddingBottom: 200, // Significantly increased padding to assist scroll
+        paddingBottom: 20, // Reset to normal padding, using spacer instead
     },
     fieldRow: {
         marginBottom: 16,
