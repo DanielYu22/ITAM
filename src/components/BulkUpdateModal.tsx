@@ -367,20 +367,19 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                             {/* 덮어쓰기 미리보기 */}
                             {stats.overwrites > 0 && allowOverwrite && (
                                 <View style={styles.previewSection}>
-                                    <Text style={styles.previewTitle}>⚠️ 덮어쓰기 대상</Text>
-                                    {matchResults.filter(r => r.type === 'overwrite').slice(0, 5).map((r, i) => (
-                                        <View key={i} style={styles.previewItem}>
-                                            <Text style={styles.previewLookup}>{r.lookupValue}</Text>
-                                            <View style={styles.previewChange}>
-                                                <Text style={styles.previewOld}>{r.oldValue}</Text>
-                                                <ChevronRight size={16} color="#9ca3af" />
-                                                <Text style={styles.previewNew}>{r.newValue}</Text>
+                                    <Text style={styles.previewTitle}>⚠️ 덮어쓰기 대상 ({stats.overwrites}건)</Text>
+                                    <ScrollView style={styles.previewScrollList} nestedScrollEnabled>
+                                        {matchResults.filter(r => r.type === 'overwrite').map((r, i) => (
+                                            <View key={i} style={styles.previewItem}>
+                                                <Text style={styles.previewLookup}>{r.lookupValue}</Text>
+                                                <View style={styles.previewChange}>
+                                                    <Text style={styles.previewOld} numberOfLines={1}>{r.oldValue}</Text>
+                                                    <ChevronRight size={16} color="#9ca3af" />
+                                                    <Text style={styles.previewNew} numberOfLines={1}>{r.newValue}</Text>
+                                                </View>
                                             </View>
-                                        </View>
-                                    ))}
-                                    {stats.overwrites > 5 && (
-                                        <Text style={styles.previewMore}>... 외 {stats.overwrites - 5}건</Text>
-                                    )}
+                                        ))}
+                                    </ScrollView>
                                 </View>
                             )}
 
@@ -687,6 +686,9 @@ const styles = StyleSheet.create({
         fontWeight: '600',
         color: '#92400e',
         marginBottom: 8,
+    },
+    previewScrollList: {
+        maxHeight: 300,
     },
     previewItem: {
         backgroundColor: '#fff',
