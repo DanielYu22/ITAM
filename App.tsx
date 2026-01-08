@@ -119,6 +119,51 @@ export default function App() {
     }
   }, [notionClient]);
 
+  // 스키마 기반 필터 설정 정리 - 존재하지 않는 컬럼 제거
+  const cleanFilterConfig = useCallback((config: FilterConfig | null, currentSchema: string[]): FilterConfig | null => {
+    if (!config || currentSchema.length === 0) return config;
+
+    const schemaSet = new Set(currentSchema);
+
+    return {
+      ...config,
+      locationHierarchy: config.locationHierarchy?.filter(col => schemaSet.has(col)) || [],
+      sortColumn: schemaSet.has(config.sortColumn || '') ? config.sortColumn : '',
+      editableFields: config.editableFields?.filter(col => schemaSet.has(col)) || [],
+      targetGroups: config.targetGroups?.map(group => ({
+        ...group,
+        conditions: group.conditions?.filter(cond => schemaSet.has(cond.column)) || []
+      })).filter(group => group.conditions.length > 0 || config.targetGroups?.length === 1) || [],
+    };
+  }, []);
+
+  // 스키마 변경 시 필터 설정 자동 정리
+  useEffect(() => {
+    if (schema.length > 0 && fieldWorkConfig) {
+      const cleanedConfig = cleanFilterConfig(fieldWorkConfig, schema);
+      if (cleanedConfig && JSON.stringify(cleanedConfig) !== JSON.stringify(fieldWorkConfig)) {
+        console.log('[App] Cleaning filter config - removed invalid columns');
+        setFieldWorkConfig(cleanedConfig);
+      }
+    }
+  }, [schema, fieldWorkConfig, cleanFilterConfig]);
+
+  // Page Visibility 기반 자동 새로고침
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && notionClient && !loading) {
+        console.log('[App] Page became visible - refreshing data...');
+        loadData();
+      }
+    };
+
+    // 웹에서만 동작 (모바일에서는 AppState 사용)
+    if (typeof document !== 'undefined') {
+      document.addEventListener('visibilitychange', handleVisibilityChange);
+      return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+    }
+  }, [notionClient, loading, loadData]);
+
   // Initial load
   useEffect(() => {
     if (notionClient) {
