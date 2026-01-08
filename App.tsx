@@ -684,6 +684,12 @@ export default function App() {
                         ? { ...a, values: { ...a.values, [field]: value } }
                         : a
                     ));
+                    // locationSelectedAssets도 함께 업데이트
+                    setLocationSelectedAssets(prev => prev.map(a =>
+                      a.id === assetId
+                        ? { ...a, values: { ...a.values, [field]: value } }
+                        : a
+                    ));
                   }}
                 />
               )}
