@@ -189,19 +189,15 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
         setTargetGroups(prev => prev.map(g => g.id === id ? { ...g, operator } : g));
     };
 
-    // 조건 추가 (특정 그룹에)
+    // 조건 추가 (특정 그룹에) - 같은 컬럼도 중복 추가 가능
     const addConditionsToGroup = (groupId: string, columns: string | string[]) => {
         const columnsToProcess = Array.isArray(columns) ? columns : [columns];
 
         setTargetGroups(prev => prev.map(group => {
             if (group.id !== groupId) return group;
 
-            const existingColumns = group.conditions.map(c => c.column);
-            const columnsToAdd = columnsToProcess.filter(col => !existingColumns.includes(col));
-
-            if (columnsToAdd.length === 0) return group;
-
-            const newConditions: TargetCondition[] = columnsToAdd.map((column, index) => ({
+            // 같은 컬럼도 중복으로 추가할 수 있도록 필터링 로직 제거
+            const newConditions: TargetCondition[] = columnsToProcess.map((column, index) => ({
                 id: `${Date.now()}-${index}-${Math.random().toString(36).substr(2, 9)}`,
                 column,
                 type: 'is_empty',
