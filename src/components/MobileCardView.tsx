@@ -252,6 +252,11 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
         // 이 항목이 매칭된 필터 조건들
         const matchedConditions = getMatchedConditions(asset, filterConfig);
 
+        // 필드별 매칭 조건 찾기
+        const getFieldCondition = (fieldName: string): TargetCondition | null => {
+            return matchedConditions.find(c => c.column === fieldName) || null;
+        };
+
         return (
             <View style={styles.cardContainer}>
                 <View style={styles.cardWrapper}>
@@ -260,25 +265,6 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                             <Text style={styles.cardTitle}>
                                 {asset.values[titleField] || 'Untitled'}
                             </Text>
-
-                            {/* 필터 조건 배지 */}
-                            {matchedConditions.length > 0 && (
-                                <View style={styles.conditionBadges}>
-                                    {matchedConditions.slice(0, 3).map((cond, i) => (
-                                        <View key={i} style={styles.conditionBadge}>
-                                            <AlertCircle size={12} color="#b45309" />
-                                            <Text style={styles.conditionBadgeText}>
-                                                {getConditionText(cond)}
-                                            </Text>
-                                        </View>
-                                    ))}
-                                    {matchedConditions.length > 3 && (
-                                        <Text style={styles.conditionMore}>
-                                            +{matchedConditions.length - 3}
-                                        </Text>
-                                    )}
-                                </View>
-                            )}
                         </View>
 
                         <ScrollView
@@ -287,27 +273,54 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                             contentContainerStyle={styles.cardBodyContent}
                         >
                             {(editableFields.length > 0 ? editableFields : schema)
-                                .filter(field => field !== titleField)
-                                .map(field => (
-                                    <TouchableOpacity
-                                        key={field}
-                                        style={styles.fieldRow}
-                                        onPress={() => handleEdit(asset, field)}
-                                        activeOpacity={0.7}
-                                    >
-                                        <View style={styles.fieldLabelRow}>
-                                            <Text style={styles.fieldLabel}>{field}</Text>
-                                            {editableFields.includes(field) && (
-                                                <Edit2 size={12} color="#6366f1" />
-                                            )}
-                                        </View>
-                                        <View style={styles.fieldValueContainer}>
-                                            <Text style={styles.fieldValue}>
-                                                {asset.values[field] || '-'}
-                                            </Text>
-                                        </View>
-                                    </TouchableOpacity>
-                                ))}
+                                .filter((field: string) => field !== titleField)
+                                .map((field: string) => {
+                                    const fieldCondition = getFieldCondition(field);
+                                    const isHighlighted = !!fieldCondition;
+
+                                    return (
+                                        <TouchableOpacity
+                                            key={field}
+                                            style={[
+                                                styles.fieldRow,
+                                                isHighlighted && styles.fieldRowHighlighted
+                                            ]}
+                                            onPress={() => handleEdit(asset, field)}
+                                            activeOpacity={0.7}
+                                        >
+                                            <View style={styles.fieldLabelRow}>
+                                                <View style={styles.fieldLabelContainer}>
+                                                    <Text style={[
+                                                        styles.fieldLabel,
+                                                        isHighlighted && styles.fieldLabelHighlighted
+                                                    ]}>{field}</Text>
+                                                    {isHighlighted && (
+                                                        <View style={styles.fieldConditionBadge}>
+                                                            <AlertCircle size={10} color="#b45309" />
+                                                            <Text style={styles.fieldConditionText}>
+                                                                {fieldCondition.type === 'is_empty' ? '미입력' :
+                                                                    fieldCondition.type === 'contains' ? `포함: ${fieldCondition.values.join(', ')}` :
+                                                                        fieldCondition.type === 'equals' ? `= ${fieldCondition.values.join(', ')}` :
+                                                                            '조건 매칭'}
+                                                            </Text>
+                                                        </View>
+                                                    )}
+                                                </View>
+                                                {editableFields.includes(field) && (
+                                                    <Edit2 size={12} color={isHighlighted ? "#b45309" : "#6366f1"} />
+                                                )}
+                                            </View>
+                                            <View style={styles.fieldValueContainer}>
+                                                <Text style={[
+                                                    styles.fieldValue,
+                                                    isHighlighted && styles.fieldValueHighlighted
+                                                ]}>
+                                                    {asset.values[field] || '-'}
+                                                </Text>
+                                            </View>
+                                        </TouchableOpacity>
+                                    );
+                                })}
                         </ScrollView>
                     </View>
                 </View>
@@ -348,6 +361,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
             <FlatList
                 ref={flatListRef}
                 data={assets}
+                extraData={assets}
                 renderItem={renderAssetCard}
                 keyExtractor={item => item.id}
                 horizontal
@@ -617,11 +631,23 @@ const styles = StyleSheet.create({
         borderWidth: 1,
         borderColor: '#f1f5f9',
     },
+    fieldRowHighlighted: {
+        backgroundColor: '#fef3c7',
+        borderColor: '#fcd34d',
+        borderWidth: 2,
+    },
     fieldLabelRow: {
         flexDirection: 'row',
         justifyContent: 'space-between',
         alignItems: 'center',
         marginBottom: 8,
+    },
+    fieldLabelContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        flex: 1,
+        gap: 6,
     },
     fieldLabel: {
         fontSize: 13,
@@ -630,9 +656,29 @@ const styles = StyleSheet.create({
         textTransform: 'uppercase',
         letterSpacing: 0.5,
     },
+    fieldLabelHighlighted: {
+        color: '#b45309',
+    },
+    fieldConditionBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fde68a',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 8,
+        gap: 3,
+    },
+    fieldConditionText: {
+        fontSize: 10,
+        color: '#92400e',
+        fontWeight: '500',
+    },
     fieldValueContainer: {
         flexDirection: 'row',
         alignItems: 'center',
+    },
+    fieldValueHighlighted: {
+        color: '#92400e',
     },
     fieldValue: {
         fontSize: 16,
