@@ -17,8 +17,9 @@ import {
     NativeSyntheticEvent,
     NativeScrollEvent,
 } from 'react-native';
-import { Edit2, X, Check, Search, Plus, ChevronDown, ChevronRight, ChevronLeft } from 'lucide-react-native';
+import { Edit2, X, Check, Search, Plus, ChevronDown, ChevronRight, ChevronLeft, AlertCircle, CheckCircle } from 'lucide-react-native';
 import { Asset, NotionProperty } from '../lib/notion';
+import { FilterConfig, TargetCondition } from './FieldWorkFilter';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 // Explicit height calculation for web compatibility
@@ -31,7 +32,69 @@ interface MobileCardViewProps {
     schemaProperties: Record<string, NotionProperty>;
     onUpdateAsset: (assetId: string, field: string, value: string, type: string) => Promise<void>;
     editableFields?: string[];
+    filterConfig?: FilterConfig | null;
+    onLocalUpdate?: (assetId: string, field: string, value: string) => void;
 }
+
+// 필터 조건 평가 함수
+const evaluateCondition = (asset: Asset, cond: TargetCondition): boolean => {
+    const val = (asset.values[cond.column] || '').toLowerCase();
+    switch (cond.type) {
+        case 'is_empty':
+            return !val || val === '';
+        case 'is_not_empty':
+            return val !== '';
+        case 'contains':
+            if (cond.values && cond.values.length > 0) {
+                return cond.values.some(v => val.includes(v.toLowerCase()));
+            }
+            return true;
+        case 'not_contains':
+            if (cond.values && cond.values.length > 0) {
+                return !cond.values.some(v => val.includes(v.toLowerCase()));
+            }
+            return true;
+        case 'equals':
+            if (cond.values && cond.values.length > 0) {
+                return cond.values.some(v => val === v.toLowerCase());
+            }
+            return true;
+        default:
+            return true;
+    }
+};
+
+// 매칭된 조건들 찾기
+const getMatchedConditions = (asset: Asset, filterConfig: FilterConfig | null): TargetCondition[] => {
+    if (!filterConfig?.targetGroups) return [];
+    const matched: TargetCondition[] = [];
+    for (const group of filterConfig.targetGroups) {
+        for (const cond of group.conditions) {
+            if (evaluateCondition(asset, cond)) {
+                matched.push(cond);
+            }
+        }
+    }
+    return matched;
+};
+
+// 조건 설명 텍스트
+const getConditionText = (cond: TargetCondition): string => {
+    switch (cond.type) {
+        case 'is_empty':
+            return `${cond.column} 미입력`;
+        case 'is_not_empty':
+            return `${cond.column} 입력됨`;
+        case 'contains':
+            return `${cond.column} 포함: ${cond.values.join(', ')}`;
+        case 'not_contains':
+            return `${cond.column} 미포함: ${cond.values.join(', ')}`;
+        case 'equals':
+            return `${cond.column} = ${cond.values.join(', ')}`;
+        default:
+            return cond.column;
+    }
+};
 
 export const MobileCardView: React.FC<MobileCardViewProps> = ({
     assets,
@@ -39,6 +102,8 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     schemaProperties,
     onUpdateAsset,
     editableFields = [],
+    filterConfig = null,
+    onLocalUpdate,
 }) => {
     const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
     const [editModalVisible, setEditModalVisible] = useState(false);
@@ -93,16 +158,51 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
 
             await onUpdateAsset(selectedAsset.id, editingField, valueToSave, propType);
 
+            // 부모에게 로컬 업데이트 알림 (즉시 반영)
+            if (onLocalUpdate) {
+                onLocalUpdate(selectedAsset.id, editingField, valueToSave);
+            }
+
             // 현재 선택된 자산 데이터 업데이트 (UI 반영용)
-            if (selectedAsset) {
-                const updatedAsset = {
-                    ...selectedAsset,
-                    values: {
-                        ...selectedAsset.values,
-                        [editingField]: valueToSave
+            const updatedAsset = {
+                ...selectedAsset,
+                values: {
+                    ...selectedAsset.values,
+                    [editingField]: valueToSave
+                }
+            };
+            setSelectedAsset(updatedAsset);
+
+            // 필터 조건이 해결되었는지 확인
+            if (filterConfig) {
+                const beforeConditions = getMatchedConditions(selectedAsset, filterConfig);
+                const afterConditions = getMatchedConditions(updatedAsset, filterConfig);
+
+                // 이전에 매칭되던 조건이 해결됨
+                if (beforeConditions.length > afterConditions.length) {
+                    const resolvedCount = beforeConditions.length - afterConditions.length;
+
+                    if (afterConditions.length === 0) {
+                        // 모든 조건 해결됨 - 완료 표시
+                        Alert.alert('✅ 완료!', '모든 조건이 충족되었습니다. 다음 항목으로 이동합니다.', [
+                            {
+                                text: '확인',
+                                onPress: () => {
+                                    // 다음 카드로 자동 이동
+                                    if (currentIndex < assets.length - 1) {
+                                        flatListRef.current?.scrollToIndex({
+                                            index: currentIndex + 1,
+                                            animated: true
+                                        });
+                                    }
+                                }
+                            }
+                        ]);
+                    } else {
+                        // 일부 조건 해결됨
+                        Alert.alert('👍 진행 중', `${resolvedCount}개 조건 해결! 남은 조건: ${afterConditions.length}개`);
                     }
-                };
-                setSelectedAsset(updatedAsset);
+                }
             }
 
             setEditModalVisible(false);
@@ -149,6 +249,9 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     };
 
     const renderAssetCard = ({ item: asset }: { item: Asset }) => {
+        // 이 항목이 매칭된 필터 조건들
+        const matchedConditions = getMatchedConditions(asset, filterConfig);
+
         return (
             <View style={styles.cardContainer}>
                 <View style={styles.cardWrapper}>
@@ -157,6 +260,25 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                             <Text style={styles.cardTitle}>
                                 {asset.values[titleField] || 'Untitled'}
                             </Text>
+
+                            {/* 필터 조건 배지 */}
+                            {matchedConditions.length > 0 && (
+                                <View style={styles.conditionBadges}>
+                                    {matchedConditions.slice(0, 3).map((cond, i) => (
+                                        <View key={i} style={styles.conditionBadge}>
+                                            <AlertCircle size={12} color="#b45309" />
+                                            <Text style={styles.conditionBadgeText}>
+                                                {getConditionText(cond)}
+                                            </Text>
+                                        </View>
+                                    ))}
+                                    {matchedConditions.length > 3 && (
+                                        <Text style={styles.conditionMore}>
+                                            +{matchedConditions.length - 3}
+                                        </Text>
+                                    )}
+                                </View>
+                            )}
                         </View>
 
                         <ScrollView
@@ -452,6 +574,32 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: '#1e293b',
         textAlign: 'center',
+    },
+    conditionBadges: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'center',
+        marginTop: 12,
+        gap: 6,
+    },
+    conditionBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fef3c7',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+        gap: 4,
+    },
+    conditionBadgeText: {
+        fontSize: 11,
+        color: '#b45309',
+        fontWeight: '500',
+    },
+    conditionMore: {
+        fontSize: 11,
+        color: '#9ca3af',
+        marginLeft: 4,
     },
     cardBody: {
         flex: 1,

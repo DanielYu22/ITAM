@@ -676,6 +676,15 @@ export default function App() {
                   schemaProperties={schemaProperties}
                   onUpdateAsset={handleUpdateAsset}
                   editableFields={fieldWorkConfig?.editableFields}
+                  filterConfig={fieldWorkConfig}
+                  onLocalUpdate={(assetId, field, value) => {
+                    // 로컬 상태 즉시 업데이트 (Optimistic Update)
+                    setAssets(prev => prev.map(a =>
+                      a.id === assetId
+                        ? { ...a, values: { ...a.values, [field]: value } }
+                        : a
+                    ));
+                  }}
                 />
               )}
             </View>
