@@ -25,7 +25,8 @@ import {
   Layout,
   PlusCircle,
   AlertCircle,
-  Download
+  Download,
+  Upload
 } from 'lucide-react-native';
 import { NotionClient, Asset, NotionProperty } from './src/lib/notion';
 import { NOTION_API_KEY, NOTION_DATABASE_ID, API_BASE_URL } from './src/config';
@@ -35,6 +36,7 @@ import { FieldWorkFilter, FilterConfig } from './src/components/FieldWorkFilter'
 import { LocationNavigator } from './src/components/LocationNavigator';
 import { HomeScreen, FilterTemplate } from './src/components/HomeScreen';
 import { ExportPreviewModal } from './src/components/ExportPreviewModal';
+import { BulkUpdateModal } from './src/components/BulkUpdateModal';
 
 export default function App() {
   // Settings state for configuration - check these first
@@ -65,6 +67,7 @@ export default function App() {
   const [showSaveTemplateModal, setShowSaveTemplateModal] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [showExportModal, setShowExportModal] = useState(false);
+  const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false);
 
   // Notion Client
   const [notionClient, setNotionClient] = useState<NotionClient | null>(null);
@@ -610,6 +613,12 @@ export default function App() {
               <View style={styles.headerRight}>
                 <TouchableOpacity
                   style={styles.headerButton}
+                  onPress={() => setShowBulkUpdateModal(true)}
+                >
+                  <Upload size={20} color="#6366f1" />
+                </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.headerButton}
                   onPress={() => setShowExportModal(true)}
                 >
                   <Download size={20} color="#6366f1" />
@@ -691,6 +700,18 @@ export default function App() {
               onClose={() => setShowExportModal(false)}
               assets={workFilteredAssets}
               schema={schema}
+            />
+
+            <BulkUpdateModal
+              visible={showBulkUpdateModal}
+              onClose={() => {
+                setShowBulkUpdateModal(false);
+                loadData(); // Refresh after bulk update
+              }}
+              assets={assets}
+              schema={schema}
+              schemaProperties={schemaProperties}
+              onUpdate={handleUpdateAsset}
             />
           </>
         )}
