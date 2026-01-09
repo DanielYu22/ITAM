@@ -20,6 +20,7 @@ interface BulkUpdateModalProps {
     schema: string[];
     schemaProperties: Record<string, NotionProperty>;
     onUpdate: (id: string, field: string, value: string, type: string) => Promise<void>;
+    onCreatePage?: (values: Record<string, string>) => Promise<string | null>;
 }
 
 // 다중 컬럼용 파싱된 행
@@ -58,6 +59,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
     schema,
     schemaProperties,
     onUpdate,
+    onCreatePage,
 }) => {
     // Steps: 1=룩업 선택, 2=데이터 붙여넣기(헤더 포함), 3=미리보기, 4=실행중/완료
     const [step, setStep] = useState(1);
@@ -203,7 +205,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         };
     }, [matchResults]);
 
-    // 실행 (다중 컬럼)
+    // 실행 (다중 컬럼 + 신규 생성)
     const executeUpdates = useCallback(async () => {
         const matchedToProcess = matchResults.filter(r => r.type === 'matched');
 
@@ -230,19 +232,25 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
             });
         });
 
-        if (updates.length === 0) {
+        // 신규 항목 생성 데이터
+        const newItemsToCreate = allowNew && onCreatePage ? newItemsData : [];
+        const totalOperations = updates.length + newItemsToCreate.length;
+
+        if (totalOperations === 0) {
             Alert.alert('알림', '업데이트할 항목이 없습니다.');
             return;
         }
 
         setIsProcessing(true);
-        setTotalCount(updates.length);
+        setTotalCount(totalOperations);
         setProcessedCount(0);
         setResults({ success: 0, failed: 0 });
 
         let success = 0;
         let failed = 0;
+        let processedSoFar = 0;
 
+        // 기존 항목 업데이트
         for (let i = 0; i < updates.length; i++) {
             const { assetId, column, value, propType } = updates[i];
             try {
@@ -252,13 +260,34 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                 console.error('Update failed:', error);
                 failed++;
             }
-            setProcessedCount(i + 1);
+            processedSoFar++;
+            setProcessedCount(processedSoFar);
+        }
+
+        // 신규 항목 생성
+        for (let i = 0; i < newItemsToCreate.length; i++) {
+            const newItem = newItemsToCreate[i];
+            try {
+                // 모든 컬럼 값 합치기: lookupColumn + inputColumns + otherColumns
+                const allValues: Record<string, string> = {
+                    [lookupColumn]: newItem.lookupValue,
+                    ...newItem.inputColumns,
+                    ...newItem.otherColumns,
+                };
+                await onCreatePage!(allValues);
+                success++;
+            } catch (error) {
+                console.error('Create failed:', error);
+                failed++;
+            }
+            processedSoFar++;
+            setProcessedCount(processedSoFar);
         }
 
         setResults({ success, failed });
         setIsProcessing(false);
         setStep(4);
-    }, [matchResults, allowOverwrite, detectedColumns, schemaProperties, onUpdate]);
+    }, [matchResults, allowOverwrite, allowNew, detectedColumns, schemaProperties, onUpdate, onCreatePage, newItemsData, lookupColumn]);
 
     // Step 4 진입 시 신규 항목 데이터 초기화
     useEffect(() => {
@@ -493,10 +522,13 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
 
                             {/* 신규 항목 (편집 가능) */}
                             {stats.newCount > 0 && (
-                                <View style={[styles.previewSection, { borderColor: '#fbbf24', borderWidth: 1 }]}>
+                                <View style={[styles.previewSection, { borderColor: allowNew ? '#22c55e' : '#fbbf24', borderWidth: 1 }]}>
                                     <Text style={styles.previewTitle}>🆕 신규 항목 ({stats.newCount}건)</Text>
                                     <Text style={[styles.previewNote, { marginBottom: 8 }]}>
-                                        신규 생성은 현재 미지원. 참고용으로 표시됩니다.
+                                        {allowNew
+                                            ? '위에서 "신규 허용"을 켜면 Notion에 새로 생성됩니다. 아래에서 기타 컬럼 값을 편집하세요.'
+                                            : '"신규 허용" 옵션을 켜면 새 항목을 생성할 수 있습니다.'
+                                        }
                                     </Text>
 
                                     <ScrollView style={styles.previewScrollList} nestedScrollEnabled>

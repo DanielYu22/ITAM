@@ -733,6 +733,10 @@ export default function App() {
           schema={schema}
           schemaProperties={schemaProperties}
           onUpdate={handleUpdateAsset}
+          onCreatePage={async (values) => {
+            if (!notionClient) return null;
+            return await notionClient.createPage(values, schemaProperties);
+          }}
         />
       </SafeAreaView>
     </SafeAreaProvider>

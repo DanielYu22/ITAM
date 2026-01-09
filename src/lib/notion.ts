@@ -244,6 +244,74 @@ export class NotionClient {
         }
     }
 
+    // 신규 페이지 생성
+    async createPage(values: Record<string, string>, schemaProperties: Record<string, NotionProperty>): Promise<string | null> {
+        try {
+            const targetUrl = `${API_BASE_URL}/api/notion/v1/pages`;
+            const properties: any = {};
+
+            for (const [propName, value] of Object.entries(values)) {
+                if (!value || value === '신규등록') continue; // 빈 값이나 기본값은 스킵
+
+                const propInfo = schemaProperties[propName];
+                const type = propInfo?.type || 'rich_text';
+
+                if (type === 'select') {
+                    properties[propName] = { select: { name: value } };
+                } else if (type === 'date') {
+                    properties[propName] = { date: { start: value } };
+                } else if (type === 'status') {
+                    properties[propName] = { status: { name: value } };
+                } else if (type === 'multi_select') {
+                    const names = value.split(',').map(v => v.trim()).filter(Boolean);
+                    properties[propName] = { multi_select: names.map(n => ({ name: n })) };
+                } else if (type === 'title') {
+                    properties[propName] = { title: [{ text: { content: value } }] };
+                } else if (type === 'rich_text') {
+                    properties[propName] = { rich_text: [{ text: { content: value } }] };
+                } else if (type === 'number') {
+                    properties[propName] = { number: parseFloat(value) || null };
+                } else if (type === 'checkbox') {
+                    properties[propName] = { checkbox: value.toLowerCase() === 'yes' || value === 'true' };
+                } else if (type === 'url') {
+                    properties[propName] = { url: value };
+                } else if (type === 'email') {
+                    properties[propName] = { email: value };
+                } else if (type === 'phone_number') {
+                    properties[propName] = { phone_number: value };
+                } else {
+                    properties[propName] = { rich_text: [{ text: { content: value } }] };
+                }
+            }
+
+            if (Object.keys(properties).length === 0) {
+                console.warn('[Notion] No properties to create');
+                return null;
+            }
+
+            const response = await fetch(targetUrl, {
+                method: 'POST',
+                headers: this.getHeaders(),
+                body: JSON.stringify({
+                    parent: { database_id: this.databaseId },
+                    properties
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`[Notion] Create page failed: ${response.status}`, errorText);
+                throw new Error(`Create failed: ${response.status}`);
+            }
+
+            const data = await response.json();
+            return data.id;
+        } catch (error) {
+            console.error("Notion Create Page Error:", error);
+            throw error;
+        }
+    }
+
     private readonly SETTINGS_MARKER = '🔧_NEXUS_SETTINGS_';
 
     async loadSettings(): Promise<{ templates?: any[], fieldConfig?: string } | null> {
