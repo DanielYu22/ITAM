@@ -719,20 +719,21 @@ export default function App() {
               assets={workFilteredAssets}
               schema={schema}
             />
-
-            <BulkUpdateModal
-              visible={showBulkUpdateModal}
-              onClose={() => {
-                setShowBulkUpdateModal(false);
-                loadData(); // Refresh after bulk update
-              }}
-              assets={assets}
-              schema={schema}
-              schemaProperties={schemaProperties}
-              onUpdate={handleUpdateAsset}
-            />
           </>
         )}
+
+        {/* 모달들 - 항상 마운트됨 */}
+        <BulkUpdateModal
+          visible={showBulkUpdateModal}
+          onClose={() => {
+            setShowBulkUpdateModal(false);
+            loadData(); // Refresh after bulk update
+          }}
+          assets={assets}
+          schema={schema}
+          schemaProperties={schemaProperties}
+          onUpdate={handleUpdateAsset}
+        />
       </SafeAreaView>
     </SafeAreaProvider>
   );
