@@ -378,275 +378,276 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                     </TouchableOpacity>
                                 ))}
                             </View>
+                        </View>
                     )}
 
-                            {/* Step 2: Excel 데이터 붙여넣기 (헤더 포함) */}
-                            {step === 2 && (
-                                <View>
-                                    <Text style={styles.stepTitle}>2. Excel 데이터 붙여넣기</Text>
-                                    <Text style={styles.stepDesc}>
-                                        헤더 행을 포함하여 데이터를 붙여넣으세요.{'\n'}
-                                        첫 번째 열: {lookupColumn} (기준 컬럼){'\n'}
-                                        나머지 열: 업데이트할 컬럼들 (헤더에서 자동 인식)
+                    {/* Step 2: Excel 데이터 붙여넣기 (헤더 포함) */}
+                    {step === 2 && (
+                        <View>
+                            <Text style={styles.stepTitle}>2. Excel 데이터 붙여넣기</Text>
+                            <Text style={styles.stepDesc}>
+                                헤더 행을 포함하여 데이터를 붙여넣으세요.{'\n'}
+                                첫 번째 열: {lookupColumn} (기준 컬럼){'\n'}
+                                나머지 열: 업데이트할 컬럼들 (헤더에서 자동 인식)
+                            </Text>
+
+                            <View style={styles.pasteArea}>
+                                <TextInput
+                                    style={styles.pasteInput}
+                                    placeholder={`${lookupColumn}\t컬럼A\t컬럼B\t...\n값1\t값A1\t값B1\t...\n값2\t값A2\t값B2\t...\n...`}
+                                    value={pastedData}
+                                    onChangeText={setPastedData}
+                                    multiline
+                                    numberOfLines={10}
+                                    placeholderTextColor="#9ca3af"
+                                />
+                            </View>
+
+                            {detectedColumns.length > 0 && (
+                                <View style={styles.parseResult}>
+                                    <Check size={18} color="#10b981" />
+                                    <Text style={styles.parseResultText}>
+                                        {detectedColumns.length}개 컬럼 감지: {detectedColumns.slice(0, 3).join(', ')}
+                                        {detectedColumns.length > 3 ? ` 외 ${detectedColumns.length - 3}개` : ''}
                                     </Text>
-
-                                    <View style={styles.pasteArea}>
-                                        <TextInput
-                                            style={styles.pasteInput}
-                                            placeholder={`${lookupColumn}\t컬럼A\t컬럼B\t...\n값1\t값A1\t값B1\t...\n값2\t값A2\t값B2\t...\n...`}
-                                            value={pastedData}
-                                            onChangeText={setPastedData}
-                                            multiline
-                                            numberOfLines={10}
-                                            placeholderTextColor="#9ca3af"
-                                        />
-                                    </View>
-
-                                    {detectedColumns.length > 0 && (
-                                        <View style={styles.parseResult}>
-                                            <Check size={18} color="#10b981" />
-                                            <Text style={styles.parseResultText}>
-                                                {detectedColumns.length}개 컬럼 감지: {detectedColumns.slice(0, 3).join(', ')}
-                                                {detectedColumns.length > 3 ? ` 외 ${detectedColumns.length - 3}개` : ''}
-                                            </Text>
-                                        </View>
-                                    )}
-
-                                    {parsedRows.length > 0 && (
-                                        <View style={[styles.parseResult, { backgroundColor: '#eff6ff' }]}>
-                                            <Check size={18} color="#3b82f6" />
-                                            <Text style={[styles.parseResultText, { color: '#1d4ed8' }]}>
-                                                {parsedRows.length}개 데이터 행 인식됨
-                                            </Text>
-                                        </View>
-                                    )}
                                 </View>
                             )}
 
-                            {/* Step 4: 미리보기 */}
-                            {step === 3 && (
-                                <View>
-                                    <Text style={styles.stepTitle}>3. 미리보기 및 확인</Text>
-
-                                    {/* 통계 */}
-                                    <View style={styles.statsContainer}>
-                                        <View style={styles.statItem}>
-                                            <Text style={styles.statValue}>{stats.matchedCount}</Text>
-                                            <Text style={styles.statLabel}>매칭됨</Text>
-                                        </View>
-                                        <View style={[styles.statItem, styles.statUpdate]}>
-                                            <Text style={styles.statValue}>{stats.totalUpdates}</Text>
-                                            <Text style={styles.statLabel}>업데이트</Text>
-                                        </View>
-                                        <View style={[styles.statItem, styles.statOverwrite]}>
-                                            <Text style={styles.statValue}>{stats.totalOverwrites}</Text>
-                                            <Text style={styles.statLabel}>덮어쓰기</Text>
-                                        </View>
-                                        <View style={[styles.statItem, styles.statNew]}>
-                                            <Text style={styles.statValue}>{stats.newCount}</Text>
-                                            <Text style={styles.statLabel}>신규</Text>
-                                        </View>
-                                    </View>
-
-                                    {/* 옵션 */}
-                                    <View style={styles.optionSection}>
-                                        <TouchableOpacity
-                                            style={styles.optionRow}
-                                            onPress={() => setAllowOverwrite(!allowOverwrite)}
-                                        >
-                                            <View style={[styles.checkbox, allowOverwrite && styles.checkboxChecked]}>
-                                                {allowOverwrite && <Check size={14} color="#fff" />}
-                                            </View>
-                                            <Text style={styles.optionText}>기존 값 덮어쓰기 허용 ({stats.totalOverwrites}건)</Text>
-                                        </TouchableOpacity>
-                                    </View>
-
-                                    {/* 변경사항 미리보기 */}
-                                    {stats.matchedCount > 0 && (
-                                        <View style={styles.previewSection}>
-                                            <Text style={styles.previewTitle}>📝 변경 내역 ({stats.matchedCount}건)</Text>
-                                            <ScrollView style={styles.previewScrollList} nestedScrollEnabled>
-                                                {matchResults.filter(r => r.type === 'matched').map((r, i) => (
-                                                    <View key={i} style={styles.previewItem}>
-                                                        <Text style={styles.previewLookup}>{r.lookupValue}</Text>
-                                                        {r.columnChanges.filter(c => c.changeType !== 'same').map((c, j) => (
-                                                            <View key={j} style={[
-                                                                styles.previewChange,
-                                                                c.changeType === 'overwrite' && styles.previewChangeOverwrite
-                                                            ]}>
-                                                                <Text style={styles.previewColumnName}>{c.column}:</Text>
-                                                                {c.oldValue ? (
-                                                                    <Text style={styles.previewOld} numberOfLines={1}>
-                                                                        <Text style={{ textDecorationLine: 'line-through' }}>{c.oldValue}</Text>
-                                                                    </Text>
-                                                                ) : null}
-                                                                <ChevronRight size={14} color="#9ca3af" />
-                                                                <Text style={styles.previewNew} numberOfLines={1}>{c.newValue}</Text>
-                                                            </View>
-                                                        ))}
-                                                    </View>
-                                                ))}
-                                            </ScrollView>
-                                        </View>
-                                    )}
-
-                                    {/* 신규 항목 (편집 가능) */}
-                                    {stats.newCount > 0 && (
-                                        <View style={[styles.previewSection, { borderColor: '#fbbf24', borderWidth: 1 }]}>
-                                            <Text style={styles.previewTitle}>🆕 신규 항목 ({stats.newCount}건)</Text>
-                                            <Text style={[styles.previewNote, { marginBottom: 8 }]}>
-                                                신규 생성은 현재 미지원. 참고용으로 표시됩니다.
-                                            </Text>
-
-                                            <ScrollView style={styles.previewScrollList} nestedScrollEnabled>
-                                                {newItemsData.map((item, i) => (
-                                                    <View key={i} style={[styles.previewItem, { backgroundColor: '#fefce8' }]}>
-                                                        <Text style={styles.previewLookup}>
-                                                            {lookupColumn}: {item.lookupValue}
-                                                        </Text>
-
-                                                        {/* 입력된 컬럼 (읽기 전용) */}
-                                                        {Object.entries(item.inputColumns).map(([col, val]) => (
-                                                            <View key={col} style={styles.newItemRow}>
-                                                                <Text style={styles.newItemLabel}>{col}:</Text>
-                                                                <Text style={styles.newItemValue}>{val}</Text>
-                                                                <Text style={styles.newItemBadge}>입력됨</Text>
-                                                            </View>
-                                                        ))}
-
-                                                        {/* 기타 컬럼 (편집 가능) */}
-                                                        {Object.entries(item.otherColumns).slice(0, 3).map(([col, val]) => (
-                                                            <View key={col} style={styles.newItemRow}>
-                                                                <Text style={styles.newItemLabel}>{col}:</Text>
-                                                                <TouchableOpacity
-                                                                    style={styles.newItemDropdown}
-                                                                    onPress={() => {
-                                                                        if (showDropdown?.key === item.lookupValue && showDropdown?.column === col) {
-                                                                            setShowDropdown(null);
-                                                                        } else {
-                                                                            setShowDropdown({ key: item.lookupValue, column: col });
-                                                                        }
-                                                                    }}
-                                                                >
-                                                                    <Text style={styles.newItemDropdownText} numberOfLines={1}>
-                                                                        {val}
-                                                                    </Text>
-                                                                    <ChevronDown size={14} color="#6b7280" />
-                                                                </TouchableOpacity>
-
-                                                                {/* 드롭다운 옵션 */}
-                                                                {showDropdown?.key === item.lookupValue && showDropdown?.column === col && (
-                                                                    <View style={styles.dropdownOptions}>
-                                                                        <TouchableOpacity
-                                                                            style={styles.dropdownOption}
-                                                                            onPress={() => {
-                                                                                updateNewItemField(item.lookupValue, col, '신규등록');
-                                                                                setShowDropdown(null);
-                                                                            }}
-                                                                        >
-                                                                            <Text style={styles.dropdownOptionText}>신규등록</Text>
-                                                                        </TouchableOpacity>
-                                                                        {existingValues[col]?.slice(0, 10).map((v, idx) => (
-                                                                            <TouchableOpacity
-                                                                                key={idx}
-                                                                                style={styles.dropdownOption}
-                                                                                onPress={() => {
-                                                                                    updateNewItemField(item.lookupValue, col, v);
-                                                                                    setShowDropdown(null);
-                                                                                }}
-                                                                            >
-                                                                                <Text style={styles.dropdownOptionText}>{v}</Text>
-                                                                            </TouchableOpacity>
-                                                                        ))}
-                                                                    </View>
-                                                                )}
-                                                            </View>
-                                                        ))}
-
-                                                        {Object.keys(item.otherColumns).length > 3 && (
-                                                            <Text style={styles.previewMore}>
-                                                                +{Object.keys(item.otherColumns).length - 3}개 더 보기...
-                                                            </Text>
-                                                        )}
-                                                    </View>
-                                                ))}
-                                            </ScrollView>
-                                        </View>
-                                    )}
-                                </View>
-                            )}
-
-                            {/* Step 5: 완료 */}
-                            {step === 4 && (
-                                <View style={styles.completeSection}>
-                                    {isProcessing ? (
-                                        <>
-                                            <RefreshCw size={48} color="#6366f1" />
-                                            <Text style={styles.processingText}>
-                                                처리 중... ({processedCount}/{totalCount})
-                                            </Text>
-                                        </>
-                                    ) : (
-                                        <>
-                                            <Check size={48} color="#10b981" />
-                                            <Text style={styles.completeTitle}>완료!</Text>
-                                            <Text style={styles.completeStats}>
-                                                성공: {results.success}건 / 실패: {results.failed}건
-                                            </Text>
-                                            <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
-                                                <Text style={styles.closeButtonText}>닫기</Text>
-                                            </TouchableOpacity>
-                                        </>
-                                    )}
-                                </View>
-                            )}
-                        </ScrollView>
-
-                {/* Footer Navigation */}
-                    {step < 4 && (
-                        <View style={styles.footer}>
-                            {step > 1 && (
-                                <TouchableOpacity
-                                    style={styles.backButton}
-                                    onPress={() => { setStep(step - 1); setSearchText(''); }}
-                                >
-                                    <ChevronLeft size={20} color="#6366f1" />
-                                    <Text style={styles.backButtonText}>이전</Text>
-                                </TouchableOpacity>
-                            )}
-
-                            <View style={{ flex: 1 }} />
-
-                            {step === 3 ? (
-                                <TouchableOpacity
-                                    style={[styles.nextButton, styles.executeButton]}
-                                    onPress={executeUpdates}
-                                    disabled={isProcessing}
-                                >
-                                    <Upload size={20} color="#fff" />
-                                    <Text style={styles.nextButtonText}>
-                                        {stats.totalUpdates + (allowOverwrite ? stats.totalOverwrites : 0)}건 업데이트 실행
+                            {parsedRows.length > 0 && (
+                                <View style={[styles.parseResult, { backgroundColor: '#eff6ff' }]}>
+                                    <Check size={18} color="#3b82f6" />
+                                    <Text style={[styles.parseResultText, { color: '#1d4ed8' }]}>
+                                        {parsedRows.length}개 데이터 행 인식됨
                                     </Text>
-                                </TouchableOpacity>
-                            ) : (
-                                <TouchableOpacity
-                                    style={[
-                                        styles.nextButton,
-                                        ((step === 1 && !lookupColumn) ||
-                                            (step === 2 && (detectedColumns.length === 0 || parsedRows.length === 0))) && styles.nextButtonDisabled
-                                    ]}
-                                    onPress={() => { setStep(step + 1); setSearchText(''); }}
-                                    disabled={
-                                        (step === 1 && !lookupColumn) ||
-                                        (step === 2 && (detectedColumns.length === 0 || parsedRows.length === 0))
-                                    }
-                                >
-                                    <Text style={styles.nextButtonText}>다음</Text>
-                                    <ChevronRight size={20} color="#fff" />
-                                </TouchableOpacity>
+                                </View>
                             )}
                         </View>
                     )}
+
+                    {/* Step 4: 미리보기 */}
+                    {step === 3 && (
+                        <View>
+                            <Text style={styles.stepTitle}>3. 미리보기 및 확인</Text>
+
+                            {/* 통계 */}
+                            <View style={styles.statsContainer}>
+                                <View style={styles.statItem}>
+                                    <Text style={styles.statValue}>{stats.matchedCount}</Text>
+                                    <Text style={styles.statLabel}>매칭됨</Text>
+                                </View>
+                                <View style={[styles.statItem, styles.statUpdate]}>
+                                    <Text style={styles.statValue}>{stats.totalUpdates}</Text>
+                                    <Text style={styles.statLabel}>업데이트</Text>
+                                </View>
+                                <View style={[styles.statItem, styles.statOverwrite]}>
+                                    <Text style={styles.statValue}>{stats.totalOverwrites}</Text>
+                                    <Text style={styles.statLabel}>덮어쓰기</Text>
+                                </View>
+                                <View style={[styles.statItem, styles.statNew]}>
+                                    <Text style={styles.statValue}>{stats.newCount}</Text>
+                                    <Text style={styles.statLabel}>신규</Text>
+                                </View>
+                            </View>
+
+                            {/* 옵션 */}
+                            <View style={styles.optionSection}>
+                                <TouchableOpacity
+                                    style={styles.optionRow}
+                                    onPress={() => setAllowOverwrite(!allowOverwrite)}
+                                >
+                                    <View style={[styles.checkbox, allowOverwrite && styles.checkboxChecked]}>
+                                        {allowOverwrite && <Check size={14} color="#fff" />}
+                                    </View>
+                                    <Text style={styles.optionText}>기존 값 덮어쓰기 허용 ({stats.totalOverwrites}건)</Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            {/* 변경사항 미리보기 */}
+                            {stats.matchedCount > 0 && (
+                                <View style={styles.previewSection}>
+                                    <Text style={styles.previewTitle}>📝 변경 내역 ({stats.matchedCount}건)</Text>
+                                    <ScrollView style={styles.previewScrollList} nestedScrollEnabled>
+                                        {matchResults.filter(r => r.type === 'matched').map((r, i) => (
+                                            <View key={i} style={styles.previewItem}>
+                                                <Text style={styles.previewLookup}>{r.lookupValue}</Text>
+                                                {r.columnChanges.filter(c => c.changeType !== 'same').map((c, j) => (
+                                                    <View key={j} style={[
+                                                        styles.previewChange,
+                                                        c.changeType === 'overwrite' && styles.previewChangeOverwrite
+                                                    ]}>
+                                                        <Text style={styles.previewColumnName}>{c.column}:</Text>
+                                                        {c.oldValue ? (
+                                                            <Text style={styles.previewOld} numberOfLines={1}>
+                                                                <Text style={{ textDecorationLine: 'line-through' }}>{c.oldValue}</Text>
+                                                            </Text>
+                                                        ) : null}
+                                                        <ChevronRight size={14} color="#9ca3af" />
+                                                        <Text style={styles.previewNew} numberOfLines={1}>{c.newValue}</Text>
+                                                    </View>
+                                                ))}
+                                            </View>
+                                        ))}
+                                    </ScrollView>
+                                </View>
+                            )}
+
+                            {/* 신규 항목 (편집 가능) */}
+                            {stats.newCount > 0 && (
+                                <View style={[styles.previewSection, { borderColor: '#fbbf24', borderWidth: 1 }]}>
+                                    <Text style={styles.previewTitle}>🆕 신규 항목 ({stats.newCount}건)</Text>
+                                    <Text style={[styles.previewNote, { marginBottom: 8 }]}>
+                                        신규 생성은 현재 미지원. 참고용으로 표시됩니다.
+                                    </Text>
+
+                                    <ScrollView style={styles.previewScrollList} nestedScrollEnabled>
+                                        {newItemsData.map((item, i) => (
+                                            <View key={i} style={[styles.previewItem, { backgroundColor: '#fefce8' }]}>
+                                                <Text style={styles.previewLookup}>
+                                                    {lookupColumn}: {item.lookupValue}
+                                                </Text>
+
+                                                {/* 입력된 컬럼 (읽기 전용) */}
+                                                {Object.entries(item.inputColumns).map(([col, val]) => (
+                                                    <View key={col} style={styles.newItemRow}>
+                                                        <Text style={styles.newItemLabel}>{col}:</Text>
+                                                        <Text style={styles.newItemValue}>{val}</Text>
+                                                        <Text style={styles.newItemBadge}>입력됨</Text>
+                                                    </View>
+                                                ))}
+
+                                                {/* 기타 컬럼 (편집 가능) */}
+                                                {Object.entries(item.otherColumns).slice(0, 3).map(([col, val]) => (
+                                                    <View key={col} style={styles.newItemRow}>
+                                                        <Text style={styles.newItemLabel}>{col}:</Text>
+                                                        <TouchableOpacity
+                                                            style={styles.newItemDropdown}
+                                                            onPress={() => {
+                                                                if (showDropdown?.key === item.lookupValue && showDropdown?.column === col) {
+                                                                    setShowDropdown(null);
+                                                                } else {
+                                                                    setShowDropdown({ key: item.lookupValue, column: col });
+                                                                }
+                                                            }}
+                                                        >
+                                                            <Text style={styles.newItemDropdownText} numberOfLines={1}>
+                                                                {val}
+                                                            </Text>
+                                                            <ChevronDown size={14} color="#6b7280" />
+                                                        </TouchableOpacity>
+
+                                                        {/* 드롭다운 옵션 */}
+                                                        {showDropdown?.key === item.lookupValue && showDropdown?.column === col && (
+                                                            <View style={styles.dropdownOptions}>
+                                                                <TouchableOpacity
+                                                                    style={styles.dropdownOption}
+                                                                    onPress={() => {
+                                                                        updateNewItemField(item.lookupValue, col, '신규등록');
+                                                                        setShowDropdown(null);
+                                                                    }}
+                                                                >
+                                                                    <Text style={styles.dropdownOptionText}>신규등록</Text>
+                                                                </TouchableOpacity>
+                                                                {existingValues[col]?.slice(0, 10).map((v, idx) => (
+                                                                    <TouchableOpacity
+                                                                        key={idx}
+                                                                        style={styles.dropdownOption}
+                                                                        onPress={() => {
+                                                                            updateNewItemField(item.lookupValue, col, v);
+                                                                            setShowDropdown(null);
+                                                                        }}
+                                                                    >
+                                                                        <Text style={styles.dropdownOptionText}>{v}</Text>
+                                                                    </TouchableOpacity>
+                                                                ))}
+                                                            </View>
+                                                        )}
+                                                    </View>
+                                                ))}
+
+                                                {Object.keys(item.otherColumns).length > 3 && (
+                                                    <Text style={styles.previewMore}>
+                                                        +{Object.keys(item.otherColumns).length - 3}개 더 보기...
+                                                    </Text>
+                                                )}
+                                            </View>
+                                        ))}
+                                    </ScrollView>
+                                </View>
+                            )}
+                        </View>
+                    )}
+
+                    {/* Step 5: 완료 */}
+                    {step === 4 && (
+                        <View style={styles.completeSection}>
+                            {isProcessing ? (
+                                <>
+                                    <RefreshCw size={48} color="#6366f1" />
+                                    <Text style={styles.processingText}>
+                                        처리 중... ({processedCount}/{totalCount})
+                                    </Text>
+                                </>
+                            ) : (
+                                <>
+                                    <Check size={48} color="#10b981" />
+                                    <Text style={styles.completeTitle}>완료!</Text>
+                                    <Text style={styles.completeStats}>
+                                        성공: {results.success}건 / 실패: {results.failed}건
+                                    </Text>
+                                    <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
+                                        <Text style={styles.closeButtonText}>닫기</Text>
+                                    </TouchableOpacity>
+                                </>
+                            )}
+                        </View>
+                    )}
+                </ScrollView>
+
+                {/* Footer Navigation */}
+                {step < 4 && (
+                    <View style={styles.footer}>
+                        {step > 1 && (
+                            <TouchableOpacity
+                                style={styles.backButton}
+                                onPress={() => { setStep(step - 1); setSearchText(''); }}
+                            >
+                                <ChevronLeft size={20} color="#6366f1" />
+                                <Text style={styles.backButtonText}>이전</Text>
+                            </TouchableOpacity>
+                        )}
+
+                        <View style={{ flex: 1 }} />
+
+                        {step === 3 ? (
+                            <TouchableOpacity
+                                style={[styles.nextButton, styles.executeButton]}
+                                onPress={executeUpdates}
+                                disabled={isProcessing}
+                            >
+                                <Upload size={20} color="#fff" />
+                                <Text style={styles.nextButtonText}>
+                                    {stats.totalUpdates + (allowOverwrite ? stats.totalOverwrites : 0)}건 업데이트 실행
+                                </Text>
+                            </TouchableOpacity>
+                        ) : (
+                            <TouchableOpacity
+                                style={[
+                                    styles.nextButton,
+                                    ((step === 1 && !lookupColumn) ||
+                                        (step === 2 && (detectedColumns.length === 0 || parsedRows.length === 0))) && styles.nextButtonDisabled
+                                ]}
+                                onPress={() => { setStep(step + 1); setSearchText(''); }}
+                                disabled={
+                                    (step === 1 && !lookupColumn) ||
+                                    (step === 2 && (detectedColumns.length === 0 || parsedRows.length === 0))
+                                }
+                            >
+                                <Text style={styles.nextButtonText}>다음</Text>
+                                <ChevronRight size={20} color="#fff" />
+                            </TouchableOpacity>
+                        )}
+                    </View>
+                )}
             </View>
         </Modal>
     );
