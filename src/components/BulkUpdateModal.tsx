@@ -489,6 +489,18 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                     </View>
                                     <Text style={styles.optionText}>기존 값 덮어쓰기 허용 ({stats.totalOverwrites}건)</Text>
                                 </TouchableOpacity>
+
+                                {stats.newCount > 0 && (
+                                    <TouchableOpacity
+                                        style={styles.optionRow}
+                                        onPress={() => setAllowNew(!allowNew)}
+                                    >
+                                        <View style={[styles.checkbox, allowNew && styles.checkboxChecked, { borderColor: '#22c55e' }]}>
+                                            {allowNew && <Check size={14} color="#fff" />}
+                                        </View>
+                                        <Text style={styles.optionText}>신규 항목 생성 허용 ({stats.newCount}건)</Text>
+                                    </TouchableOpacity>
+                                )}
                             </View>
 
                             {/* 변경사항 미리보기 */}
@@ -533,74 +545,71 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
 
                                     <ScrollView style={styles.previewScrollList} nestedScrollEnabled>
                                         {newItemsData.map((item, i) => (
-                                            <View key={i} style={[styles.previewItem, { backgroundColor: '#fefce8' }]}>
+                                            <View key={i} style={[styles.previewItem, { backgroundColor: allowNew ? '#f0fdf4' : '#fefce8' }]}>
                                                 <Text style={styles.previewLookup}>
                                                     {lookupColumn}: {item.lookupValue}
                                                 </Text>
 
-                                                {/* 입력된 컬럼 (읽기 전용) */}
-                                                {Object.entries(item.inputColumns).map(([col, val]) => (
-                                                    <View key={col} style={styles.newItemRow}>
-                                                        <Text style={styles.newItemLabel}>{col}:</Text>
-                                                        <Text style={styles.newItemValue}>{val}</Text>
-                                                        <Text style={styles.newItemBadge}>입력됨</Text>
-                                                    </View>
-                                                ))}
+                                                {/* 가로 스크롤 컬럼 영역 */}
+                                                <ScrollView horizontal showsHorizontalScrollIndicator style={{ marginTop: 8 }}>
+                                                    {/* 입력된 컬럼 (읽기 전용) */}
+                                                    {Object.entries(item.inputColumns).map(([col, val]) => (
+                                                        <View key={col} style={styles.newItemCard}>
+                                                            <Text style={styles.newItemCardLabel}>{col}</Text>
+                                                            <Text style={styles.newItemCardValue}>{val}</Text>
+                                                            <Text style={[styles.newItemBadge, { backgroundColor: '#dbeafe' }]}>입력됨</Text>
+                                                        </View>
+                                                    ))}
 
-                                                {/* 기타 컬럼 (편집 가능) */}
-                                                {Object.entries(item.otherColumns).slice(0, 3).map(([col, val]) => (
-                                                    <View key={col} style={styles.newItemRow}>
-                                                        <Text style={styles.newItemLabel}>{col}:</Text>
-                                                        <TouchableOpacity
-                                                            style={styles.newItemDropdown}
-                                                            onPress={() => {
-                                                                if (showDropdown?.key === item.lookupValue && showDropdown?.column === col) {
-                                                                    setShowDropdown(null);
-                                                                } else {
-                                                                    setShowDropdown({ key: item.lookupValue, column: col });
-                                                                }
-                                                            }}
-                                                        >
-                                                            <Text style={styles.newItemDropdownText} numberOfLines={1}>
-                                                                {val}
-                                                            </Text>
-                                                            <ChevronDown size={14} color="#6b7280" />
-                                                        </TouchableOpacity>
-
-                                                        {/* 드롭다운 옵션 */}
-                                                        {showDropdown?.key === item.lookupValue && showDropdown?.column === col && (
-                                                            <View style={styles.dropdownOptions}>
-                                                                <TouchableOpacity
-                                                                    style={styles.dropdownOption}
-                                                                    onPress={() => {
-                                                                        updateNewItemField(item.lookupValue, col, '신규등록');
+                                                    {/* 기타 컬럼 (편집 가능) - 모두 표시 */}
+                                                    {Object.entries(item.otherColumns).map(([col, val]) => (
+                                                        <View key={col} style={styles.newItemCard}>
+                                                            <Text style={styles.newItemCardLabel}>{col}</Text>
+                                                            <TouchableOpacity
+                                                                style={styles.newItemCardDropdown}
+                                                                onPress={() => {
+                                                                    if (showDropdown?.key === item.lookupValue && showDropdown?.column === col) {
                                                                         setShowDropdown(null);
-                                                                    }}
-                                                                >
-                                                                    <Text style={styles.dropdownOptionText}>신규등록</Text>
-                                                                </TouchableOpacity>
-                                                                {existingValues[col]?.slice(0, 10).map((v, idx) => (
+                                                                    } else {
+                                                                        setShowDropdown({ key: item.lookupValue, column: col });
+                                                                    }
+                                                                }}
+                                                            >
+                                                                <Text style={styles.newItemCardDropdownText} numberOfLines={1}>
+                                                                    {val}
+                                                                </Text>
+                                                                <ChevronDown size={12} color="#6b7280" />
+                                                            </TouchableOpacity>
+
+                                                            {/* 드롭다운 옵션 */}
+                                                            {showDropdown?.key === item.lookupValue && showDropdown?.column === col && (
+                                                                <View style={styles.dropdownOptionsCard}>
                                                                     <TouchableOpacity
-                                                                        key={idx}
                                                                         style={styles.dropdownOption}
                                                                         onPress={() => {
-                                                                            updateNewItemField(item.lookupValue, col, v);
+                                                                            updateNewItemField(item.lookupValue, col, '신규등록');
                                                                             setShowDropdown(null);
                                                                         }}
                                                                     >
-                                                                        <Text style={styles.dropdownOptionText}>{v}</Text>
+                                                                        <Text style={styles.dropdownOptionText}>신규등록</Text>
                                                                     </TouchableOpacity>
-                                                                ))}
-                                                            </View>
-                                                        )}
-                                                    </View>
-                                                ))}
-
-                                                {Object.keys(item.otherColumns).length > 3 && (
-                                                    <Text style={styles.previewMore}>
-                                                        +{Object.keys(item.otherColumns).length - 3}개 더 보기...
-                                                    </Text>
-                                                )}
+                                                                    {existingValues[col]?.slice(0, 10).map((v, idx) => (
+                                                                        <TouchableOpacity
+                                                                            key={idx}
+                                                                            style={styles.dropdownOption}
+                                                                            onPress={() => {
+                                                                                updateNewItemField(item.lookupValue, col, v);
+                                                                                setShowDropdown(null);
+                                                                            }}
+                                                                        >
+                                                                            <Text style={styles.dropdownOptionText}>{v}</Text>
+                                                                        </TouchableOpacity>
+                                                                    ))}
+                                                                </View>
+                                                            )}
+                                                        </View>
+                                                    ))}
+                                                </ScrollView>
                                             </View>
                                         ))}
                                     </ScrollView>
@@ -1008,6 +1017,59 @@ const styles = StyleSheet.create({
         shadowOpacity: 0.1,
         shadowRadius: 4,
         elevation: 5,
+    },
+    // 가로 스크롤 카드 스타일
+    newItemCard: {
+        backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        borderRadius: 8,
+        padding: 10,
+        marginRight: 8,
+        minWidth: 120,
+        maxWidth: 160,
+    },
+    newItemCardLabel: {
+        fontSize: 11,
+        color: '#6b7280',
+        marginBottom: 4,
+    },
+    newItemCardValue: {
+        fontSize: 13,
+        color: '#1f2937',
+        fontWeight: '500',
+    },
+    newItemCardDropdown: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#f9fafb',
+        borderWidth: 1,
+        borderColor: '#d1d5db',
+        borderRadius: 4,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+    },
+    newItemCardDropdownText: {
+        flex: 1,
+        fontSize: 12,
+        color: '#1f2937',
+    },
+    dropdownOptionsCard: {
+        position: 'absolute',
+        top: 70,
+        left: 0,
+        right: 0,
+        backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        borderRadius: 6,
+        maxHeight: 180,
+        zIndex: 100,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.15,
+        shadowRadius: 6,
+        elevation: 8,
     },
     dropdownOption: {
         paddingHorizontal: 12,
