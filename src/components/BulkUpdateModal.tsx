@@ -478,35 +478,21 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                 </View>
                             </View>
 
-                            {/* 옵션 */}
-                            <View style={styles.optionSection}>
-                                <TouchableOpacity
-                                    style={styles.optionRow}
-                                    onPress={() => setAllowOverwrite(!allowOverwrite)}
-                                >
-                                    <View style={[styles.checkbox, allowOverwrite && styles.checkboxChecked]}>
-                                        {allowOverwrite && <Check size={14} color="#fff" />}
-                                    </View>
-                                    <Text style={styles.optionText}>기존 값 덮어쓰기 허용 ({stats.totalOverwrites}건)</Text>
-                                </TouchableOpacity>
-
-                                {stats.newCount > 0 && (
-                                    <TouchableOpacity
-                                        style={styles.optionRow}
-                                        onPress={() => setAllowNew(!allowNew)}
-                                    >
-                                        <View style={[styles.checkbox, allowNew && styles.checkboxChecked, { borderColor: '#22c55e' }]}>
-                                            {allowNew && <Check size={14} color="#fff" />}
-                                        </View>
-                                        <Text style={styles.optionText}>신규 항목 생성 허용 ({stats.newCount}건)</Text>
-                                    </TouchableOpacity>
-                                )}
-                            </View>
-
                             {/* 변경사항 미리보기 */}
                             {stats.matchedCount > 0 && (
                                 <View style={styles.previewSection}>
-                                    <Text style={styles.previewTitle}>📝 변경 내역 ({stats.matchedCount}건)</Text>
+                                    <View style={styles.sectionHeader}>
+                                        <Text style={styles.previewTitle}>📝 변경 내역 ({stats.matchedCount}건)</Text>
+                                        <TouchableOpacity
+                                            style={styles.sectionCheckbox}
+                                            onPress={() => setAllowOverwrite(!allowOverwrite)}
+                                        >
+                                            <View style={[styles.checkboxSmall, allowOverwrite && styles.checkboxSmallChecked]}>
+                                                {allowOverwrite && <Check size={10} color="#fff" />}
+                                            </View>
+                                            <Text style={styles.sectionCheckboxText}>덮어쓰기 ({stats.totalOverwrites})</Text>
+                                        </TouchableOpacity>
+                                    </View>
                                     <ScrollView style={styles.previewScrollList} nestedScrollEnabled>
                                         {matchResults.filter(r => r.type === 'matched').map((r, i) => (
                                             <View key={i} style={styles.previewItem}>
@@ -534,12 +520,23 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
 
                             {/* 신규 항목 (편집 가능) */}
                             {stats.newCount > 0 && (
-                                <View style={[styles.previewSection, { borderColor: allowNew ? '#22c55e' : '#fbbf24', borderWidth: 1 }]}>
-                                    <Text style={styles.previewTitle}>🆕 신규 항목 ({stats.newCount}건)</Text>
+                                <View style={[styles.previewSection, { borderColor: allowNew ? '#22c55e' : '#fbbf24', borderWidth: 1, overflow: 'visible' }]}>
+                                    <View style={styles.sectionHeader}>
+                                        <Text style={styles.previewTitle}>🆕 신규 항목 ({stats.newCount}건)</Text>
+                                        <TouchableOpacity
+                                            style={styles.sectionCheckbox}
+                                            onPress={() => setAllowNew(!allowNew)}
+                                        >
+                                            <View style={[styles.checkboxSmall, allowNew && styles.checkboxSmallCheckedGreen]}>
+                                                {allowNew && <Check size={10} color="#fff" />}
+                                            </View>
+                                            <Text style={styles.sectionCheckboxText}>생성 허용</Text>
+                                        </TouchableOpacity>
+                                    </View>
                                     <Text style={[styles.previewNote, { marginBottom: 8 }]}>
                                         {allowNew
-                                            ? '위에서 "신규 허용"을 켜면 Notion에 새로 생성됩니다. 아래에서 기타 컬럼 값을 편집하세요.'
-                                            : '"신규 허용" 옵션을 켜면 새 항목을 생성할 수 있습니다.'
+                                            ? '아래에서 기타 컬럼 값을 편집 후 실행하세요.'
+                                            : '"생성 허용" 체크 시 Notion에 새로 생성합니다.'
                                         }
                                     </Text>
 
@@ -901,11 +898,49 @@ const styles = StyleSheet.create({
         padding: 12,
         marginBottom: 12,
     },
+    sectionHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    sectionCheckbox: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fff',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+    },
+    checkboxSmall: {
+        width: 16,
+        height: 16,
+        borderRadius: 4,
+        borderWidth: 1.5,
+        borderColor: '#f59e0b',
+        backgroundColor: '#fff',
+        marginRight: 6,
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    checkboxSmallChecked: {
+        backgroundColor: '#f59e0b',
+        borderColor: '#f59e0b',
+    },
+    checkboxSmallCheckedGreen: {
+        backgroundColor: '#22c55e',
+        borderColor: '#22c55e',
+    },
+    sectionCheckboxText: {
+        fontSize: 11,
+        color: '#6b7280',
+    },
     previewTitle: {
         fontSize: 14,
         fontWeight: '600',
         color: '#92400e',
-        marginBottom: 8,
     },
     previewScrollList: {
         maxHeight: 300,
@@ -1028,6 +1063,8 @@ const styles = StyleSheet.create({
         marginRight: 8,
         minWidth: 120,
         maxWidth: 160,
+        overflow: 'visible',
+        zIndex: 1,
     },
     newItemCardLabel: {
         fontSize: 11,
