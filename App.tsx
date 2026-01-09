@@ -533,6 +533,9 @@ export default function App() {
                 setLocationSelectedAssets([asset]);
                 setIsWorkMode(true);
               }}
+              onExport={() => setShowExportModal(true)}
+              onBulkUpdate={() => setShowBulkUpdateModal(true)}
+              onRefresh={onRefresh}
             />
 
             {/* 필터 설정 모달 */}

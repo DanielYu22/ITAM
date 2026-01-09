@@ -24,6 +24,9 @@ import {
     Copy,
     Trash2,
     Edit,
+    Download,
+    Upload,
+    RefreshCw,
 } from 'lucide-react-native';
 import { FilterConfig } from './FieldWorkFilter';
 import { Asset, NotionProperty } from '../lib/notion';
@@ -39,6 +42,10 @@ interface HomeScreenProps {
     onSaveTemplate: (name: string, overwriteId?: string) => void;
     onDeleteTemplate: (templateId: string) => void;
     onEditAsset: (asset: Asset) => void;
+    // Tool section callbacks
+    onExport?: () => void;
+    onBulkUpdate?: () => void;
+    onRefresh?: () => void;
 }
 
 export interface FilterTemplate {
@@ -59,6 +66,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     onSaveTemplate,
     onDeleteTemplate,
     onEditAsset,
+    onExport,
+    onBulkUpdate,
+    onRefresh,
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [showSearchResults, setShowSearchResults] = useState(false);
@@ -276,6 +286,42 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         <Text style={[styles.statNumber, styles.statNumberHighlight]}>{filteredCount}</Text>
                         <Text style={[styles.statLabel, styles.statLabelHighlight]}>작업 대상</Text>
                     </View>
+                </View>
+
+                {/* 도구 섹션 */}
+                <View style={styles.toolsSection}>
+                    <TouchableOpacity
+                        style={styles.toolCard}
+                        onPress={onExport}
+                        disabled={!onExport}
+                    >
+                        <View style={[styles.toolIconContainer, { backgroundColor: '#dcfce7' }]}>
+                            <Download size={28} color="#16a34a" />
+                        </View>
+                        <Text style={styles.toolLabel}>내보내기</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.toolCard}
+                        onPress={onBulkUpdate}
+                        disabled={!onBulkUpdate}
+                    >
+                        <View style={[styles.toolIconContainer, { backgroundColor: '#fef3c7' }]}>
+                            <Upload size={28} color="#d97706" />
+                        </View>
+                        <Text style={styles.toolLabel}>일괄 업데이트</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.toolCard}
+                        onPress={onRefresh}
+                        disabled={!onRefresh}
+                    >
+                        <View style={[styles.toolIconContainer, { backgroundColor: '#dbeafe' }]}>
+                            <RefreshCw size={28} color="#2563eb" />
+                        </View>
+                        <Text style={styles.toolLabel}>새로고침</Text>
+                    </TouchableOpacity>
                 </View>
 
                 {/* 현재 필터 요약 */}
@@ -591,6 +637,37 @@ const styles = StyleSheet.create({
         color: '#ffffff',
         fontSize: 16,
         fontWeight: '600',
+    },
+    toolsSection: {
+        flexDirection: 'row',
+        gap: 12,
+        marginBottom: 20,
+    },
+    toolCard: {
+        flex: 1,
+        backgroundColor: '#ffffff',
+        borderRadius: 16,
+        padding: 16,
+        alignItems: 'center',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 2,
+    },
+    toolIconContainer: {
+        width: 56,
+        height: 56,
+        borderRadius: 16,
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginBottom: 8,
+    },
+    toolLabel: {
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#374151',
+        textAlign: 'center',
     },
     statsContainer: {
         flexDirection: 'row',
