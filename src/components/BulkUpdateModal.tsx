@@ -22,17 +22,33 @@ interface BulkUpdateModalProps {
     onUpdate: (id: string, field: string, value: string, type: string) => Promise<void>;
 }
 
+// 다중 컬럼용 파싱된 행
 interface ParsedRow {
     lookupValue: string;
-    updateValue: string;
+    columnValues: Record<string, string>; // column name -> value
 }
 
-interface MatchResult {
-    type: 'update' | 'overwrite' | 'new' | 'skip';
-    lookupValue: string;
+// 컬럼별 변경 정보
+interface ColumnChange {
+    column: string;
+    oldValue: string;
     newValue: string;
-    oldValue?: string;
+    changeType: 'update' | 'overwrite' | 'same';
+}
+
+// 신규 항목의 기타 필드 데이터
+interface NewItemData {
+    lookupValue: string;
+    inputColumns: Record<string, string>; // 입력된 컬럼 값
+    otherColumns: Record<string, string>; // 나머지 컬럼 기본값 (수정 가능)
+}
+
+// 매칭 결과 (다중 컬럼)
+interface MatchResult {
+    type: 'matched' | 'new';
+    lookupValue: string;
     asset?: Asset;
+    columnChanges: ColumnChange[];
 }
 
 export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
@@ -43,16 +59,19 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
     schemaProperties,
     onUpdate,
 }) => {
-    // Steps: 1=룩업 선택, 2=업데이트 컬럼 선택, 3=데이터 붙여넣기, 4=미리보기, 5=실행중/완료
+    // Steps: 1=룩업 선택, 2=업데이트 컬럼 복수 선택, 3=데이터 붙여넣기, 4=미리보기, 5=실행중/완료
     const [step, setStep] = useState(1);
     const [lookupColumn, setLookupColumn] = useState('');
-    const [updateColumn, setUpdateColumn] = useState('');
+    const [updateColumns, setUpdateColumns] = useState<string[]>([]); // 복수 컬럼
     const [pastedData, setPastedData] = useState('');
     const [searchText, setSearchText] = useState('');
 
     // 옵션
     const [allowOverwrite, setAllowOverwrite] = useState(true);
     const [allowNew, setAllowNew] = useState(false);
+
+    // 신규 항목 편집 데이터
+    const [newItemsData, setNewItemsData] = useState<NewItemData[]>([]);
 
     // 실행 상태
     const [isProcessing, setIsProcessing] = useState(false);
@@ -67,26 +86,41 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         return schema.filter(col => col.toLowerCase().includes(query));
     }, [schema, searchText]);
 
-    // TSV 파싱
+    // 기존 값 목록 (드롭다운용)
+    const existingValues = useMemo(() => {
+        const values: Record<string, string[]> = {};
+        schema.forEach(col => {
+            const uniqueValues = [...new Set(assets.map(a => a.values[col]).filter(Boolean))];
+            values[col] = uniqueValues.sort();
+        });
+        return values;
+    }, [schema, assets]);
+
+    // TSV 파싱 (다중 컬럼)
     const parsedRows = useMemo((): ParsedRow[] => {
         if (!pastedData.trim()) return [];
 
         const lines = pastedData.trim().split('\n');
         if (lines.length < 2) return []; // 헤더 + 최소 1행 필요
 
-        // 첫 줄은 헤더로 무시
         return lines.slice(1).map(line => {
             const parts = line.split('\t');
+            const columnValues: Record<string, string> = {};
+
+            updateColumns.forEach((col, idx) => {
+                columnValues[col] = (parts[idx + 1] || '').trim();
+            });
+
             return {
                 lookupValue: (parts[0] || '').trim(),
-                updateValue: (parts[1] || '').trim(),
+                columnValues,
             };
         }).filter(row => row.lookupValue); // 빈 룩업값 제외
-    }, [pastedData]);
+    }, [pastedData, updateColumns]);
 
-    // 매칭 결과 계산
+    // 매칭 결과 계산 (다중 컬럼)
     const matchResults = useMemo((): MatchResult[] => {
-        if (!lookupColumn || !updateColumn || parsedRows.length === 0) return [];
+        if (!lookupColumn || updateColumns.length === 0 || parsedRows.length === 0) return [];
 
         return parsedRows.map(row => {
             // 룩업 컬럼으로 매칭되는 asset 찾기
@@ -95,80 +129,111 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
             );
 
             if (!matchedAsset) {
+                // 신규 항목
                 return {
                     type: 'new' as const,
                     lookupValue: row.lookupValue,
-                    newValue: row.updateValue,
+                    columnChanges: Object.entries(row.columnValues).map(([col, val]) => ({
+                        column: col,
+                        oldValue: '',
+                        newValue: val,
+                        changeType: 'update' as const,
+                    })),
                 };
             }
 
-            const oldValue = matchedAsset.values[updateColumn] || '';
+            // 각 컬럼별 변경사항 계산
+            const columnChanges: ColumnChange[] = Object.entries(row.columnValues).map(([col, newValue]) => {
+                const oldValue = matchedAsset.values[col] || '';
+                let changeType: 'update' | 'overwrite' | 'same';
 
-            if (oldValue && oldValue !== row.updateValue) {
-                return {
-                    type: 'overwrite' as const,
-                    lookupValue: row.lookupValue,
-                    newValue: row.updateValue,
-                    oldValue,
-                    asset: matchedAsset,
-                };
-            }
+                if (oldValue === newValue) {
+                    changeType = 'same';
+                } else if (oldValue && oldValue !== newValue) {
+                    changeType = 'overwrite';
+                } else {
+                    changeType = 'update';
+                }
 
-            if (!oldValue || oldValue === row.updateValue) {
-                return {
-                    type: 'update' as const,
-                    lookupValue: row.lookupValue,
-                    newValue: row.updateValue,
-                    oldValue,
-                    asset: matchedAsset,
-                };
-            }
+                return { column: col, oldValue, newValue, changeType };
+            });
 
             return {
-                type: 'skip' as const,
+                type: 'matched' as const,
                 lookupValue: row.lookupValue,
-                newValue: row.updateValue,
+                asset: matchedAsset,
+                columnChanges,
             };
         });
-    }, [lookupColumn, updateColumn, parsedRows, assets]);
+    }, [lookupColumn, updateColumns, parsedRows, assets]);
 
-    // 통계
+    // 통계 (다중 컬럼 기반)
     const stats = useMemo(() => {
-        const updates = matchResults.filter(r => r.type === 'update').length;
-        const overwrites = matchResults.filter(r => r.type === 'overwrite').length;
-        const newItems = matchResults.filter(r => r.type === 'new').length;
-        return { updates, overwrites, newItems, total: matchResults.length };
-    }, [matchResults]);
+        const matched = matchResults.filter(r => r.type === 'matched');
+        const newItems = matchResults.filter(r => r.type === 'new');
 
-    // 실행
-    const executeUpdates = useCallback(async () => {
-        const toProcess = matchResults.filter(r => {
-            if (r.type === 'update') return true;
-            if (r.type === 'overwrite' && allowOverwrite) return true;
-            // 신규 추가는 현재 미지원 (Notion API로 페이지 생성 필요)
-            return false;
+        let totalUpdates = 0;
+        let totalOverwrites = 0;
+        matched.forEach(r => {
+            r.columnChanges.forEach(c => {
+                if (c.changeType === 'update') totalUpdates++;
+                if (c.changeType === 'overwrite') totalOverwrites++;
+            });
         });
 
-        if (toProcess.length === 0) {
+        return {
+            matchedCount: matched.length,
+            newCount: newItems.length,
+            totalUpdates,
+            totalOverwrites,
+            total: matchResults.length
+        };
+    }, [matchResults]);
+
+    // 실행 (다중 컬럼)
+    const executeUpdates = useCallback(async () => {
+        const matchedToProcess = matchResults.filter(r => r.type === 'matched');
+
+        // 업데이트할 변경사항 수집
+        const updates: { assetId: string; column: string; value: string; propType: string }[] = [];
+        matchedToProcess.forEach(r => {
+            if (!r.asset) return;
+            r.columnChanges.forEach(c => {
+                if (c.changeType === 'update') {
+                    updates.push({
+                        assetId: r.asset!.id,
+                        column: c.column,
+                        value: c.newValue,
+                        propType: schemaProperties[c.column]?.type || 'rich_text',
+                    });
+                } else if (c.changeType === 'overwrite' && allowOverwrite) {
+                    updates.push({
+                        assetId: r.asset!.id,
+                        column: c.column,
+                        value: c.newValue,
+                        propType: schemaProperties[c.column]?.type || 'rich_text',
+                    });
+                }
+            });
+        });
+
+        if (updates.length === 0) {
             Alert.alert('알림', '업데이트할 항목이 없습니다.');
             return;
         }
 
         setIsProcessing(true);
-        setTotalCount(toProcess.length);
+        setTotalCount(updates.length);
         setProcessedCount(0);
         setResults({ success: 0, failed: 0 });
 
         let success = 0;
         let failed = 0;
-        const propType = schemaProperties[updateColumn]?.type || 'rich_text';
 
-        for (let i = 0; i < toProcess.length; i++) {
-            const item = toProcess[i];
-            if (!item.asset) continue;
-
+        for (let i = 0; i < updates.length; i++) {
+            const { assetId, column, value, propType } = updates[i];
             try {
-                await onUpdate(item.asset.id, updateColumn, item.newValue, propType);
+                await onUpdate(assetId, column, value, propType);
                 success++;
             } catch (error) {
                 console.error('Update failed:', error);
@@ -180,17 +245,18 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         setResults({ success, failed });
         setIsProcessing(false);
         setStep(5);
-    }, [matchResults, allowOverwrite, updateColumn, schemaProperties, onUpdate]);
+    }, [matchResults, allowOverwrite, updateColumns, schemaProperties, onUpdate]);
 
     // 초기화
     const reset = () => {
         setStep(1);
         setLookupColumn('');
-        setUpdateColumn('');
+        setUpdateColumns([]);
         setPastedData('');
         setSearchText('');
         setAllowOverwrite(true);
         setAllowNew(false);
+        setNewItemsData([]);
         setIsProcessing(false);
         setProcessedCount(0);
         setTotalCount(0);
@@ -257,11 +323,11 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                         </View>
                     )}
 
-                    {/* Step 2: 업데이트 컬럼 선택 */}
+                    {/* Step 2: 업데이트 컬럼 복수 선택 */}
                     {step === 2 && (
                         <View>
-                            <Text style={styles.stepTitle}>2. 업데이트 컬럼 선택</Text>
-                            <Text style={styles.stepDesc}>값을 덮어넣을 대상 컬럼을 선택하세요</Text>
+                            <Text style={styles.stepTitle}>2. 업데이트 컬럼 선택 ({updateColumns.length}개)</Text>
+                            <Text style={styles.stepDesc}>값을 덮어넣을 대상 컬럼들을 선택하세요 (복수 선택 가능)</Text>
 
                             <View style={styles.searchBox}>
                                 <Search size={18} color="#9ca3af" />
@@ -275,38 +341,48 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                             </View>
 
                             <View style={styles.columnList}>
-                                {filteredColumns.filter(c => c !== lookupColumn).map(col => (
-                                    <TouchableOpacity
-                                        key={col}
-                                        style={[styles.columnItem, updateColumn === col && styles.columnItemSelected]}
-                                        onPress={() => setUpdateColumn(col)}
-                                    >
-                                        <Text style={[styles.columnText, updateColumn === col && styles.columnTextSelected]}>
-                                            {col}
-                                        </Text>
-                                        <Text style={styles.columnType}>
-                                            {schemaProperties[col]?.type || 'text'}
-                                        </Text>
-                                        {updateColumn === col && <Check size={18} color="#6366f1" />}
-                                    </TouchableOpacity>
-                                ))}
+                                {filteredColumns.filter(c => c !== lookupColumn).map(col => {
+                                    const isSelected = updateColumns.includes(col);
+                                    return (
+                                        <TouchableOpacity
+                                            key={col}
+                                            style={[styles.columnItem, isSelected && styles.columnItemSelected]}
+                                            onPress={() => {
+                                                if (isSelected) {
+                                                    setUpdateColumns(updateColumns.filter(c => c !== col));
+                                                } else {
+                                                    setUpdateColumns([...updateColumns, col]);
+                                                }
+                                            }}
+                                        >
+                                            <View style={[styles.checkbox, isSelected && styles.checkboxChecked]}>
+                                                {isSelected && <Check size={14} color="#fff" />}
+                                            </View>
+                                            <Text style={[styles.columnText, isSelected && styles.columnTextSelected]}>
+                                                {col}
+                                            </Text>
+                                            <Text style={styles.columnType}>
+                                                {schemaProperties[col]?.type || 'text'}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    );
+                                })}
                             </View>
                         </View>
                     )}
 
-                    {/* Step 3: 데이터 붙여넣기 */}
                     {step === 3 && (
                         <View>
                             <Text style={styles.stepTitle}>3. Excel 데이터 붙여넣기</Text>
                             <Text style={styles.stepDesc}>
-                                Excel에서 2열 데이터를 복사하세요{'\n'}
-                                (1열: {lookupColumn}, 2열: {updateColumn})
+                                Excel에서 {updateColumns.length + 1}열 데이터를 복사하세요{'\n'}
+                                (1열: {lookupColumn}, {updateColumns.map((c, i) => `${i + 2}열: ${c}`).join(', ')})
                             </Text>
 
                             <View style={styles.pasteArea}>
                                 <TextInput
                                     style={styles.pasteInput}
-                                    placeholder={`${lookupColumn}\t${updateColumn}\n값1\t값1\n값2\t값2\n...`}
+                                    placeholder={`${lookupColumn}\t${updateColumns.join('\t')}\n값1\t값1\t...\n값2\t값2\t...\n...`}
                                     value={pastedData}
                                     onChangeText={setPastedData}
                                     multiline
@@ -334,19 +410,19 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                             {/* 통계 */}
                             <View style={styles.statsContainer}>
                                 <View style={styles.statItem}>
-                                    <Text style={styles.statValue}>{stats.total}</Text>
-                                    <Text style={styles.statLabel}>전체</Text>
+                                    <Text style={styles.statValue}>{stats.matchedCount}</Text>
+                                    <Text style={styles.statLabel}>매칭됨</Text>
                                 </View>
                                 <View style={[styles.statItem, styles.statUpdate]}>
-                                    <Text style={styles.statValue}>{stats.updates}</Text>
+                                    <Text style={styles.statValue}>{stats.totalUpdates}</Text>
                                     <Text style={styles.statLabel}>업데이트</Text>
                                 </View>
                                 <View style={[styles.statItem, styles.statOverwrite]}>
-                                    <Text style={styles.statValue}>{stats.overwrites}</Text>
+                                    <Text style={styles.statValue}>{stats.totalOverwrites}</Text>
                                     <Text style={styles.statLabel}>덮어쓰기</Text>
                                 </View>
                                 <View style={[styles.statItem, styles.statNew]}>
-                                    <Text style={styles.statValue}>{stats.newItems}</Text>
+                                    <Text style={styles.statValue}>{stats.newCount}</Text>
                                     <Text style={styles.statLabel}>신규</Text>
                                 </View>
                             </View>
@@ -360,23 +436,33 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                     <View style={[styles.checkbox, allowOverwrite && styles.checkboxChecked]}>
                                         {allowOverwrite && <Check size={14} color="#fff" />}
                                     </View>
-                                    <Text style={styles.optionText}>기존 값 덮어쓰기 허용 ({stats.overwrites}건)</Text>
+                                    <Text style={styles.optionText}>기존 값 덮어쓰기 허용 ({stats.totalOverwrites}건)</Text>
                                 </TouchableOpacity>
                             </View>
 
-                            {/* 덮어쓰기 미리보기 */}
-                            {stats.overwrites > 0 && allowOverwrite && (
+                            {/* 변경사항 미리보기 */}
+                            {stats.matchedCount > 0 && (
                                 <View style={styles.previewSection}>
-                                    <Text style={styles.previewTitle}>⚠️ 덮어쓰기 대상 ({stats.overwrites}건)</Text>
+                                    <Text style={styles.previewTitle}>📝 변경 내역 ({stats.matchedCount}건)</Text>
                                     <ScrollView style={styles.previewScrollList} nestedScrollEnabled>
-                                        {matchResults.filter(r => r.type === 'overwrite').map((r, i) => (
+                                        {matchResults.filter(r => r.type === 'matched').map((r, i) => (
                                             <View key={i} style={styles.previewItem}>
                                                 <Text style={styles.previewLookup}>{r.lookupValue}</Text>
-                                                <View style={styles.previewChange}>
-                                                    <Text style={styles.previewOld} numberOfLines={1}>{r.oldValue}</Text>
-                                                    <ChevronRight size={16} color="#9ca3af" />
-                                                    <Text style={styles.previewNew} numberOfLines={1}>{r.newValue}</Text>
-                                                </View>
+                                                {r.columnChanges.filter(c => c.changeType !== 'same').map((c, j) => (
+                                                    <View key={j} style={[
+                                                        styles.previewChange,
+                                                        c.changeType === 'overwrite' && styles.previewChangeOverwrite
+                                                    ]}>
+                                                        <Text style={styles.previewColumnName}>{c.column}:</Text>
+                                                        {c.oldValue ? (
+                                                            <Text style={styles.previewOld} numberOfLines={1}>
+                                                                <Text style={{ textDecorationLine: 'line-through' }}>{c.oldValue}</Text>
+                                                            </Text>
+                                                        ) : null}
+                                                        <ChevronRight size={14} color="#9ca3af" />
+                                                        <Text style={styles.previewNew} numberOfLines={1}>{c.newValue}</Text>
+                                                    </View>
+                                                ))}
                                             </View>
                                         ))}
                                     </ScrollView>
@@ -384,12 +470,12 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                             )}
 
                             {/* 신규 항목 */}
-                            {stats.newItems > 0 && (
-                                <View style={[styles.previewSection, styles.previewNew]}>
-                                    <Text style={styles.previewTitle}>🆕 매칭 실패 (신규 항목)</Text>
+                            {stats.newCount > 0 && (
+                                <View style={[styles.previewSection, { borderColor: '#fbbf24' }]}>
+                                    <Text style={styles.previewTitle}>🆕 신규 항목 ({stats.newCount}건)</Text>
                                     <Text style={styles.previewNote}>
-                                        {stats.newItems}건의 항목이 기존 데이터와 매칭되지 않습니다.
-                                        {'\n'}(신규 생성은 현재 미지원)
+                                        {stats.newCount}건의 항목이 기존 데이터와 매칭되지 않습니다.{'\n'}
+                                        (신규 생성은 현재 미지원)
                                     </Text>
                                 </View>
                             )}
@@ -445,7 +531,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                             >
                                 <Upload size={20} color="#fff" />
                                 <Text style={styles.nextButtonText}>
-                                    {stats.updates + (allowOverwrite ? stats.overwrites : 0)}건 업데이트 실행
+                                    {stats.totalUpdates + (allowOverwrite ? stats.totalOverwrites : 0)}건 업데이트 실행
                                 </Text>
                             </TouchableOpacity>
                         ) : (
@@ -453,13 +539,13 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                 style={[
                                     styles.nextButton,
                                     ((step === 1 && !lookupColumn) ||
-                                        (step === 2 && !updateColumn) ||
+                                        (step === 2 && updateColumns.length === 0) ||
                                         (step === 3 && parsedRows.length === 0)) && styles.nextButtonDisabled
                                 ]}
                                 onPress={() => { setStep(step + 1); setSearchText(''); }}
                                 disabled={
                                     (step === 1 && !lookupColumn) ||
-                                    (step === 2 && !updateColumn) ||
+                                    (step === 2 && updateColumns.length === 0) ||
                                     (step === 3 && parsedRows.length === 0)
                                 }
                             >
@@ -704,12 +790,24 @@ const styles = StyleSheet.create({
     previewChange: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
+        gap: 6,
+        marginTop: 4,
+        flexWrap: 'wrap',
+    },
+    previewChangeOverwrite: {
+        backgroundColor: '#fef3c7',
+        padding: 4,
+        borderRadius: 4,
+    },
+    previewColumnName: {
+        fontSize: 12,
+        color: '#6b7280',
+        fontWeight: '500',
+        minWidth: 60,
     },
     previewOld: {
         fontSize: 13,
         color: '#dc2626',
-        textDecorationLine: 'line-through',
     },
     previewNew: {
         fontSize: 13,
