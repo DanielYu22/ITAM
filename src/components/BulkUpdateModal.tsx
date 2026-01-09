@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
     View,
     Text,
@@ -10,7 +10,7 @@ import {
     Platform,
     Alert,
 } from 'react-native';
-import { X, Upload, Check, AlertTriangle, ChevronRight, ChevronLeft, Search, RefreshCw } from 'lucide-react-native';
+import { X, Upload, Check, AlertTriangle, ChevronRight, ChevronLeft, ChevronDown, Search, RefreshCw, Edit2 } from 'lucide-react-native';
 import { Asset, NotionProperty } from '../lib/notion';
 
 interface BulkUpdateModalProps {
@@ -247,6 +247,52 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         setStep(5);
     }, [matchResults, allowOverwrite, updateColumns, schemaProperties, onUpdate]);
 
+    // Step 4 진입 시 신규 항목 데이터 초기화
+    useEffect(() => {
+        if (step === 4) {
+            const newItems = matchResults.filter(r => r.type === 'new');
+            const otherColumns = schema.filter(col =>
+                col !== lookupColumn && !updateColumns.includes(col)
+            );
+
+            const initialData: NewItemData[] = newItems.map(item => {
+                const inputColumns: Record<string, string> = {};
+                item.columnChanges.forEach(c => {
+                    inputColumns[c.column] = c.newValue;
+                });
+
+                const otherCols: Record<string, string> = {};
+                otherColumns.forEach(col => {
+                    otherCols[col] = '신규등록';
+                });
+
+                return {
+                    lookupValue: item.lookupValue,
+                    inputColumns,
+                    otherColumns: otherCols,
+                };
+            });
+
+            setNewItemsData(initialData);
+        }
+    }, [step, matchResults, schema, lookupColumn, updateColumns]);
+
+    // 신규 항목 필드 값 변경
+    const updateNewItemField = (lookupValue: string, column: string, value: string) => {
+        setNewItemsData(prev => prev.map(item => {
+            if (item.lookupValue === lookupValue) {
+                return {
+                    ...item,
+                    otherColumns: { ...item.otherColumns, [column]: value },
+                };
+            }
+            return item;
+        }));
+    };
+
+    // 드롭다운 표시 상태
+    const [showDropdown, setShowDropdown] = useState<{ key: string; column: string } | null>(null);
+
     // 초기화
     const reset = () => {
         setStep(1);
@@ -469,14 +515,87 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                 </View>
                             )}
 
-                            {/* 신규 항목 */}
+                            {/* 신규 항목 (편집 가능) */}
                             {stats.newCount > 0 && (
-                                <View style={[styles.previewSection, { borderColor: '#fbbf24' }]}>
+                                <View style={[styles.previewSection, { borderColor: '#fbbf24', borderWidth: 1 }]}>
                                     <Text style={styles.previewTitle}>🆕 신규 항목 ({stats.newCount}건)</Text>
-                                    <Text style={styles.previewNote}>
-                                        {stats.newCount}건의 항목이 기존 데이터와 매칭되지 않습니다.{'\n'}
-                                        (신규 생성은 현재 미지원)
+                                    <Text style={[styles.previewNote, { marginBottom: 8 }]}>
+                                        신규 생성은 현재 미지원. 참고용으로 표시됩니다.
                                     </Text>
+
+                                    <ScrollView style={styles.previewScrollList} nestedScrollEnabled>
+                                        {newItemsData.map((item, i) => (
+                                            <View key={i} style={[styles.previewItem, { backgroundColor: '#fefce8' }]}>
+                                                <Text style={styles.previewLookup}>
+                                                    {lookupColumn}: {item.lookupValue}
+                                                </Text>
+
+                                                {/* 입력된 컬럼 (읽기 전용) */}
+                                                {Object.entries(item.inputColumns).map(([col, val]) => (
+                                                    <View key={col} style={styles.newItemRow}>
+                                                        <Text style={styles.newItemLabel}>{col}:</Text>
+                                                        <Text style={styles.newItemValue}>{val}</Text>
+                                                        <Text style={styles.newItemBadge}>입력됨</Text>
+                                                    </View>
+                                                ))}
+
+                                                {/* 기타 컬럼 (편집 가능) */}
+                                                {Object.entries(item.otherColumns).slice(0, 3).map(([col, val]) => (
+                                                    <View key={col} style={styles.newItemRow}>
+                                                        <Text style={styles.newItemLabel}>{col}:</Text>
+                                                        <TouchableOpacity
+                                                            style={styles.newItemDropdown}
+                                                            onPress={() => {
+                                                                if (showDropdown?.key === item.lookupValue && showDropdown?.column === col) {
+                                                                    setShowDropdown(null);
+                                                                } else {
+                                                                    setShowDropdown({ key: item.lookupValue, column: col });
+                                                                }
+                                                            }}
+                                                        >
+                                                            <Text style={styles.newItemDropdownText} numberOfLines={1}>
+                                                                {val}
+                                                            </Text>
+                                                            <ChevronDown size={14} color="#6b7280" />
+                                                        </TouchableOpacity>
+
+                                                        {/* 드롭다운 옵션 */}
+                                                        {showDropdown?.key === item.lookupValue && showDropdown?.column === col && (
+                                                            <View style={styles.dropdownOptions}>
+                                                                <TouchableOpacity
+                                                                    style={styles.dropdownOption}
+                                                                    onPress={() => {
+                                                                        updateNewItemField(item.lookupValue, col, '신규등록');
+                                                                        setShowDropdown(null);
+                                                                    }}
+                                                                >
+                                                                    <Text style={styles.dropdownOptionText}>신규등록</Text>
+                                                                </TouchableOpacity>
+                                                                {existingValues[col]?.slice(0, 10).map((v, idx) => (
+                                                                    <TouchableOpacity
+                                                                        key={idx}
+                                                                        style={styles.dropdownOption}
+                                                                        onPress={() => {
+                                                                            updateNewItemField(item.lookupValue, col, v);
+                                                                            setShowDropdown(null);
+                                                                        }}
+                                                                    >
+                                                                        <Text style={styles.dropdownOptionText}>{v}</Text>
+                                                                    </TouchableOpacity>
+                                                                ))}
+                                                            </View>
+                                                        )}
+                                                    </View>
+                                                ))}
+
+                                                {Object.keys(item.otherColumns).length > 3 && (
+                                                    <Text style={styles.previewMore}>
+                                                        +{Object.keys(item.otherColumns).length - 3}개 더 보기...
+                                                    </Text>
+                                                )}
+                                            </View>
+                                        ))}
+                                    </ScrollView>
                                 </View>
                             )}
                         </View>
@@ -824,6 +943,75 @@ const styles = StyleSheet.create({
     previewNote: {
         fontSize: 13,
         color: '#6b7280',
+    },
+    // 신규 항목 편집 스타일
+    newItemRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginTop: 6,
+        flexWrap: 'wrap',
+    },
+    newItemLabel: {
+        fontSize: 12,
+        color: '#6b7280',
+        width: 80,
+    },
+    newItemValue: {
+        fontSize: 13,
+        color: '#1f2937',
+        flex: 1,
+    },
+    newItemBadge: {
+        fontSize: 10,
+        color: '#059669',
+        backgroundColor: '#d1fae5',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+        marginLeft: 8,
+    },
+    newItemDropdown: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#d1d5db',
+        borderRadius: 6,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        flex: 1,
+    },
+    newItemDropdownText: {
+        flex: 1,
+        fontSize: 13,
+        color: '#1f2937',
+    },
+    dropdownOptions: {
+        position: 'absolute',
+        top: 36,
+        left: 80,
+        right: 0,
+        backgroundColor: '#fff',
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        borderRadius: 8,
+        maxHeight: 200,
+        zIndex: 100,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 5,
+    },
+    dropdownOption: {
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f3f4f6',
+    },
+    dropdownOptionText: {
+        fontSize: 13,
+        color: '#1f2937',
     },
     completeSection: {
         flex: 1,
