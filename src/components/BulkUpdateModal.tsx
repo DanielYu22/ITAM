@@ -105,11 +105,11 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         if (lines.length < 1) return [];
 
         const headerParts = lines[0].split('\t').map(h => h.trim());
-        // 첫 번째 컬럼은 lookup column, 나머지가 update columns
+        // 첫 번째 컬럼은 lookup column, 나머지가 update columns (스키마에 있는 것만)
         return headerParts.slice(1).filter(h => h && schema.includes(h));
     }, [pastedData, schema]);
 
-    // TSV 파싱 (헤더에서 자동 감지된 컬럼 사용)
+    // TSV 파싱 (헤더에서 자동 감지된 컬럼 사용) - 원본 인덱스 유지
     const parsedRows = useMemo((): ParsedRow[] => {
         if (!pastedData.trim()) return [];
 
@@ -117,14 +117,22 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         if (lines.length < 2) return []; // 헤더 + 최소 1행 필요
 
         const headerParts = lines[0].split('\t').map(h => h.trim());
-        const updateCols = headerParts.slice(1).filter(h => h && schema.includes(h));
+
+        // 각 컬럼의 원본 인덱스를 함께 저장
+        const columnIndexMap: { col: string; originalIndex: number }[] = [];
+        headerParts.forEach((h, idx) => {
+            if (idx > 0 && h && schema.includes(h)) {
+                columnIndexMap.push({ col: h, originalIndex: idx });
+            }
+        });
 
         return lines.slice(1).map(line => {
             const parts = line.split('\t');
             const columnValues: Record<string, string> = {};
 
-            updateCols.forEach((col, idx) => {
-                columnValues[col] = (parts[idx + 1] || '').trim();
+            // 원본 인덱스를 사용하여 올바른 값 매핑
+            columnIndexMap.forEach(({ col, originalIndex }) => {
+                columnValues[col] = (parts[originalIndex] || '').trim();
             });
 
             return {
