@@ -312,6 +312,37 @@ export class NotionClient {
         }
     }
 
+    // 페이지 아카이브 (삭제와 동일 효과)
+    async archivePage(pageId: string): Promise<boolean> {
+        try {
+            const response = await fetch(`${API_BASE_URL}/proxy`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    endpoint: `/pages/${pageId}`,
+                    method: 'PATCH',
+                    body: {
+                        archived: true
+                    },
+                    headers: this.getHeaders()
+                }),
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error("Archive page failed:", errorText);
+                return false;
+            }
+
+            return true;
+        } catch (error) {
+            console.error("Notion Archive Page Error:", error);
+            return false;
+        }
+    }
+
     private readonly SETTINGS_MARKER = '🔧_NEXUS_SETTINGS_';
 
     async loadSettings(): Promise<{ templates?: any[], fieldConfig?: string } | null> {

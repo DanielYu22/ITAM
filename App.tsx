@@ -737,6 +737,10 @@ export default function App() {
             if (!notionClient) return null;
             return await notionClient.createPage(values, schemaProperties);
           }}
+          onDeletePage={async (pageId) => {
+            if (!notionClient) return false;
+            return await notionClient.archivePage(pageId);
+          }}
         />
       </SafeAreaView>
     </SafeAreaProvider>

@@ -21,6 +21,7 @@ interface BulkUpdateModalProps {
     schemaProperties: Record<string, NotionProperty>;
     onUpdate: (id: string, field: string, value: string, type: string) => Promise<void>;
     onCreatePage?: (values: Record<string, string>) => Promise<string | null>;
+    onDeletePage?: (pageId: string) => Promise<boolean>;
 }
 
 // 다중 컬럼용 파싱된 행
@@ -68,6 +69,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
     schemaProperties,
     onUpdate,
     onCreatePage,
+    onDeletePage,
 }) => {
     // Steps: 1=룩업 선택, 2=데이터 붙여넣기(헤더 포함), 3=미리보기, 4=실행중/완료
     const [step, setStep] = useState(1);
@@ -93,6 +95,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
     const [undoHistory, setUndoHistory] = useState<UndoHistoryItem[]>([]);
     const [isUndoing, setIsUndoing] = useState(false);
     const [undoComplete, setUndoComplete] = useState(false);
+    const [createdPageIds, setCreatedPageIds] = useState<string[]>([]); // 신규 생성된 페이지 ID (undo용)
 
     // 컬럼 필터링
     const filteredColumns = useMemo(() => {
@@ -305,6 +308,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         }
 
         // 신규 항목 생성
+        const newlyCreatedIds: string[] = [];
         for (let i = 0; i < newItemsToCreate.length; i++) {
             const newItem = newItemsToCreate[i];
             try {
@@ -314,7 +318,10 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                     ...newItem.inputColumns,
                     ...newItem.otherColumns,
                 };
-                await onCreatePage!(allValues);
+                const pageId = await onCreatePage!(allValues);
+                if (pageId) {
+                    newlyCreatedIds.push(pageId); // Undo용 페이지 ID 저장
+                }
                 success++;
             } catch (error) {
                 console.error('Create failed:', error);
@@ -323,23 +330,27 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
             processedSoFar++;
             setProcessedCount(processedSoFar);
         }
+        setCreatedPageIds(newlyCreatedIds);
 
         setResults({ success, failed });
         setIsProcessing(false);
         setStep(4);
     }, [matchResults, allowOverwrite, allowNew, detectedColumns, schemaProperties, onUpdate, onCreatePage, newItemsData, lookupColumn]);
 
-    // Undo 실행 (이전 값으로 복원)
+    // Undo 실행 (이전 값으로 복원 + 신규 생성 삭제)
     const executeUndo = useCallback(async () => {
-        if (undoHistory.length === 0) return;
+        if (undoHistory.length === 0 && createdPageIds.length === 0) return;
 
         setIsUndoing(true);
         setProcessedCount(0);
-        setTotalCount(undoHistory.length);
+        const totalOps = undoHistory.length + createdPageIds.length;
+        setTotalCount(totalOps);
 
         let success = 0;
         let failed = 0;
+        let deletedCount = 0;
 
+        // 1. 기존 항목 복원
         for (let i = 0; i < undoHistory.length; i++) {
             const { assetId, column, oldValue, propType } = undoHistory[i];
             try {
@@ -352,11 +363,31 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
             setProcessedCount(i + 1);
         }
 
+        // 2. 신규 생성된 페이지 삭제
+        if (onDeletePage) {
+            for (let i = 0; i < createdPageIds.length; i++) {
+                try {
+                    const deleted = await onDeletePage(createdPageIds[i]);
+                    if (deleted) deletedCount++;
+                    else failed++;
+                } catch (error) {
+                    console.error('Delete failed:', error);
+                    failed++;
+                }
+                setProcessedCount(undoHistory.length + i + 1);
+            }
+        }
+
         setIsUndoing(false);
         setUndoComplete(true);
         setUndoHistory([]);
-        Alert.alert('되돌리기 완료', `${success}건 복원, ${failed}건 실패`);
-    }, [undoHistory, onUpdate]);
+        setCreatedPageIds([]);
+
+        const msg = deletedCount > 0
+            ? `${success}건 복원, ${deletedCount}건 삭제, ${failed}건 실패`
+            : `${success}건 복원, ${failed}건 실패`;
+        Alert.alert('되돌리기 완료', msg);
+    }, [undoHistory, createdPageIds, onUpdate, onDeletePage]);
 
     // Step 4 진입 시 신규 항목 데이터 초기화
     useEffect(() => {
@@ -813,11 +844,11 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                     </Text>
 
                                     {/* Undo 버튼 */}
-                                    {undoHistory.length > 0 && !undoComplete && (
+                                    {(undoHistory.length > 0 || createdPageIds.length > 0) && !undoComplete && (
                                         <TouchableOpacity style={styles.undoButton} onPress={executeUndo}>
                                             <RotateCcw size={16} color="#b45309" />
                                             <Text style={styles.undoButtonText}>
-                                                되돌리기 ({undoHistory.length}건)
+                                                되돌리기 ({undoHistory.length + createdPageIds.length}건)
                                             </Text>
                                         </TouchableOpacity>
                                     )}
