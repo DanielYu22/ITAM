@@ -10,7 +10,7 @@ import {
     Platform,
     Alert,
 } from 'react-native';
-import { X, Upload, Check, AlertTriangle, ChevronRight, ChevronLeft, ChevronDown, Search, RefreshCw, Edit2 } from 'lucide-react-native';
+import { X, Upload, Check, AlertTriangle, ChevronRight, ChevronLeft, ChevronDown, Search, RefreshCw, Edit2, RotateCcw } from 'lucide-react-native';
 import { Asset, NotionProperty } from '../lib/notion';
 
 interface BulkUpdateModalProps {
@@ -52,6 +52,14 @@ interface MatchResult {
     columnChanges: ColumnChange[];
 }
 
+// Undo를 위한 이력 저장
+interface UndoHistoryItem {
+    assetId: string;
+    column: string;
+    oldValue: string;
+    propType: string;
+}
+
 export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
     visible,
     onClose,
@@ -80,6 +88,11 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
     const [processedCount, setProcessedCount] = useState(0);
     const [totalCount, setTotalCount] = useState(0);
     const [results, setResults] = useState<{ success: number; failed: number }>({ success: 0, failed: 0 });
+
+    // Undo 상태
+    const [undoHistory, setUndoHistory] = useState<UndoHistoryItem[]>([]);
+    const [isUndoing, setIsUndoing] = useState(false);
+    const [undoComplete, setUndoComplete] = useState(false);
 
     // 컬럼 필터링
     const filteredColumns = useMemo(() => {
@@ -250,6 +263,24 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
             return;
         }
 
+        // Undo를 위해 현재 값 저장 (업데이트만, 신규 생성은 제외)
+        const historyItems: UndoHistoryItem[] = [];
+        matchedToProcess.forEach(r => {
+            if (!r.asset) return;
+            r.columnChanges.forEach(c => {
+                if (c.changeType === 'update' || (c.changeType === 'overwrite' && allowOverwrite)) {
+                    historyItems.push({
+                        assetId: r.asset!.id,
+                        column: c.column,
+                        oldValue: c.oldValue || '',
+                        propType: schemaProperties[c.column]?.type || 'rich_text',
+                    });
+                }
+            });
+        });
+        setUndoHistory(historyItems);
+        setUndoComplete(false);
+
         setIsProcessing(true);
         setTotalCount(totalOperations);
         setProcessedCount(0);
@@ -297,6 +328,35 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         setIsProcessing(false);
         setStep(4);
     }, [matchResults, allowOverwrite, allowNew, detectedColumns, schemaProperties, onUpdate, onCreatePage, newItemsData, lookupColumn]);
+
+    // Undo 실행 (이전 값으로 복원)
+    const executeUndo = useCallback(async () => {
+        if (undoHistory.length === 0) return;
+
+        setIsUndoing(true);
+        setProcessedCount(0);
+        setTotalCount(undoHistory.length);
+
+        let success = 0;
+        let failed = 0;
+
+        for (let i = 0; i < undoHistory.length; i++) {
+            const { assetId, column, oldValue, propType } = undoHistory[i];
+            try {
+                await onUpdate(assetId, column, oldValue, propType);
+                success++;
+            } catch (error) {
+                console.error('Undo failed:', error);
+                failed++;
+            }
+            setProcessedCount(i + 1);
+        }
+
+        setIsUndoing(false);
+        setUndoComplete(true);
+        setUndoHistory([]);
+        Alert.alert('되돌리기 완료', `${success}건 복원, ${failed}건 실패`);
+    }, [undoHistory, onUpdate]);
 
     // Step 4 진입 시 신규 항목 데이터 초기화
     useEffect(() => {
@@ -732,24 +792,36 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                             )}
                         </View>
                     )}
-
                     {/* Step 5: 완료 */}
                     {step === 4 && (
                         <View style={styles.completeSection}>
-                            {isProcessing ? (
+                            {(isProcessing || isUndoing) ? (
                                 <>
                                     <RefreshCw size={48} color="#6366f1" />
                                     <Text style={styles.processingText}>
-                                        처리 중... ({processedCount}/{totalCount})
+                                        {isUndoing ? '되돌리는 중' : '처리 중'}... ({processedCount}/{totalCount})
                                     </Text>
                                 </>
                             ) : (
                                 <>
                                     <Check size={48} color="#10b981" />
-                                    <Text style={styles.completeTitle}>완료!</Text>
+                                    <Text style={styles.completeTitle}>
+                                        {undoComplete ? '되돌리기 완료!' : '완료!'}
+                                    </Text>
                                     <Text style={styles.completeStats}>
                                         성공: {results.success}건 / 실패: {results.failed}건
                                     </Text>
+
+                                    {/* Undo 버튼 */}
+                                    {undoHistory.length > 0 && !undoComplete && (
+                                        <TouchableOpacity style={styles.undoButton} onPress={executeUndo}>
+                                            <RotateCcw size={16} color="#b45309" />
+                                            <Text style={styles.undoButtonText}>
+                                                되돌리기 ({undoHistory.length}건)
+                                            </Text>
+                                        </TouchableOpacity>
+                                    )}
+
                                     <TouchableOpacity style={styles.closeButton} onPress={handleClose}>
                                         <Text style={styles.closeButtonText}>닫기</Text>
                                     </TouchableOpacity>
@@ -1362,6 +1434,22 @@ const styles = StyleSheet.create({
         marginTop: 8,
         fontSize: 16,
         color: '#6b7280',
+    },
+    undoButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: '#fef3c7',
+        paddingVertical: 12,
+        paddingHorizontal: 20,
+        borderRadius: 8,
+        marginTop: 16,
+        gap: 8,
+    },
+    undoButtonText: {
+        fontSize: 14,
+        fontWeight: '600',
+        color: '#b45309',
     },
     closeButton: {
         marginTop: 24,
