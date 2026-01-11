@@ -70,6 +70,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
     // 옵션
     const [allowOverwrite, setAllowOverwrite] = useState(true);
     const [allowNew, setAllowNew] = useState(false);
+    const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
 
     // 신규 항목 편집 데이터
     const [newItemsData, setNewItemsData] = useState<NewItemData[]>([]);
@@ -478,8 +479,117 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                 </View>
                             </View>
 
-                            {/* 변경사항 미리보기 */}
-                            {stats.matchedCount > 0 && (
+                            {/* 뷰모드 토글 */}
+                            <View style={styles.viewModeToggle}>
+                                <TouchableOpacity
+                                    style={[styles.viewModeBtn, viewMode === 'card' && styles.viewModeBtnActive]}
+                                    onPress={() => setViewMode('card')}
+                                >
+                                    <Text style={[styles.viewModeText, viewMode === 'card' && styles.viewModeTextActive]}>카드</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.viewModeBtn, viewMode === 'table' && styles.viewModeBtnActive]}
+                                    onPress={() => setViewMode('table')}
+                                >
+                                    <Text style={[styles.viewModeText, viewMode === 'table' && styles.viewModeTextActive]}>표</Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            {/* 테이블 뷰 */}
+                            {viewMode === 'table' && (
+                                <View style={styles.tableContainer}>
+                                    <ScrollView horizontal showsHorizontalScrollIndicator>
+                                        <View>
+                                            {/* 테이블 헤더 */}
+                                            <View style={styles.tableRow}>
+                                                <View style={[styles.tableCell, styles.tableHeaderCell, { width: 80 }]}>
+                                                    <Text style={styles.tableHeaderText}>유형</Text>
+                                                </View>
+                                                <View style={[styles.tableCell, styles.tableHeaderCell, { width: 140 }]}>
+                                                    <Text style={styles.tableHeaderText}>{lookupColumn}</Text>
+                                                </View>
+                                                {detectedColumns.map((col: string) => (
+                                                    <View key={col} style={[styles.tableCell, styles.tableHeaderCell, { width: 140 }]}>
+                                                        <Text style={styles.tableHeaderText}>{col}</Text>
+                                                    </View>
+                                                ))}
+                                            </View>
+
+                                            {/* 테이블 본문 */}
+                                            <ScrollView style={{ maxHeight: 350 }} nestedScrollEnabled>
+                                                {matchResults.map((r, i) => (
+                                                    <View key={i} style={[
+                                                        styles.tableRow,
+                                                        r.type === 'new' && { backgroundColor: allowNew ? '#f0fdf4' : '#fefce8' },
+                                                        r.type === 'matched' && r.columnChanges.some(c => c.changeType === 'overwrite') && { backgroundColor: '#fef3c7' }
+                                                    ]}>
+                                                        <View style={[styles.tableCell, { width: 80 }]}>
+                                                            <Text style={[
+                                                                styles.tableBadge,
+                                                                r.type === 'new' ? styles.tableBadgeNew : styles.tableBadgeUpdate
+                                                            ]}>
+                                                                {r.type === 'new' ? '신규' : '업데이트'}
+                                                            </Text>
+                                                        </View>
+                                                        <View style={[styles.tableCell, { width: 140 }]}>
+                                                            <Text style={styles.tableCellText} numberOfLines={2}>{r.lookupValue}</Text>
+                                                        </View>
+                                                        {detectedColumns.map((col: string) => {
+                                                            const change = r.columnChanges.find(c => c.column === col);
+                                                            const newItemData = newItemsData.find(item => item.lookupValue === r.lookupValue);
+                                                            const newValue = r.type === 'new'
+                                                                ? (newItemData?.inputColumns[col] || newItemData?.otherColumns[col] || '-')
+                                                                : (change?.newValue || '-');
+                                                            const oldValue = change?.oldValue;
+                                                            return (
+                                                                <View key={col} style={[styles.tableCell, { width: 140 }]}>
+                                                                    {oldValue && (
+                                                                        <Text style={styles.tableOldValue} numberOfLines={1}>
+                                                                            {oldValue}
+                                                                        </Text>
+                                                                    )}
+                                                                    <Text style={[
+                                                                        styles.tableCellText,
+                                                                        change?.changeType === 'overwrite' && { color: '#b45309' },
+                                                                        change?.changeType === 'update' && { color: '#059669' }
+                                                                    ]} numberOfLines={2}>
+                                                                        {newValue}
+                                                                    </Text>
+                                                                </View>
+                                                            );
+                                                        })}
+                                                    </View>
+                                                ))}
+                                            </ScrollView>
+                                        </View>
+                                    </ScrollView>
+
+                                    {/* 테이블 범례 */}
+                                    <View style={styles.tableLegend}>
+                                        <View style={styles.legendItem}>
+                                            <View style={[styles.legendDot, { backgroundColor: '#fef3c7' }]} />
+                                            <Text style={styles.legendText}>덮어쓰기</Text>
+                                            <TouchableOpacity onPress={() => setAllowOverwrite(!allowOverwrite)}>
+                                                <View style={[styles.checkboxSmall, allowOverwrite && styles.checkboxSmallChecked]}>
+                                                    {allowOverwrite && <Check size={10} color="#fff" />}
+                                                </View>
+                                            </TouchableOpacity>
+                                        </View>
+                                        <View style={styles.legendItem}>
+                                            <View style={[styles.legendDot, { backgroundColor: '#f0fdf4' }]} />
+                                            <Text style={styles.legendText}>신규</Text>
+                                            <TouchableOpacity onPress={() => setAllowNew(!allowNew)}>
+                                                <View style={[styles.checkboxSmall, allowNew && styles.checkboxSmallCheckedGreen]}>
+                                                    {allowNew && <Check size={10} color="#fff" />}
+                                                </View>
+                                            </TouchableOpacity>
+                                        </View>
+                                    </View>
+                                </View>
+                            )}
+
+                            {/* 카드 뷰: 변경사항 미리보기 */}
+                            {viewMode === 'card' && stats.matchedCount > 0 && (
                                 <View style={styles.previewSection}>
                                     <View style={styles.sectionHeader}>
                                         <Text style={styles.previewTitle}>📝 변경 내역 ({stats.matchedCount}건)</Text>
@@ -518,8 +628,8 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                 </View>
                             )}
 
-                            {/* 신규 항목 (편집 가능) */}
-                            {stats.newCount > 0 && (
+                            {/* 카드 뷰: 신규 항목 (편집 가능) */}
+                            {viewMode === 'card' && stats.newCount > 0 && (
                                 <View style={[styles.previewSection, { borderColor: allowNew ? '#22c55e' : '#fbbf24', borderWidth: 1, overflow: 'visible' }]}>
                                     <View style={styles.sectionHeader}>
                                         <Text style={styles.previewTitle}>🆕 신규 항목 ({stats.newCount}건)</Text>
@@ -936,6 +1046,111 @@ const styles = StyleSheet.create({
     sectionCheckboxText: {
         fontSize: 11,
         color: '#6b7280',
+    },
+    // 뷰모드 토글 스타일
+    viewModeToggle: {
+        flexDirection: 'row',
+        backgroundColor: '#f3f4f6',
+        borderRadius: 8,
+        padding: 4,
+        marginBottom: 12,
+    },
+    viewModeBtn: {
+        flex: 1,
+        paddingVertical: 8,
+        alignItems: 'center',
+        borderRadius: 6,
+    },
+    viewModeBtnActive: {
+        backgroundColor: '#fff',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.1,
+        shadowRadius: 2,
+        elevation: 2,
+    },
+    viewModeText: {
+        fontSize: 13,
+        color: '#6b7280',
+    },
+    viewModeTextActive: {
+        color: '#1f2937',
+        fontWeight: '600',
+    },
+    // 테이블 뷰 스타일
+    tableContainer: {
+        backgroundColor: '#fff',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        marginBottom: 12,
+    },
+    tableRow: {
+        flexDirection: 'row',
+        borderBottomWidth: 1,
+        borderBottomColor: '#f3f4f6',
+    },
+    tableCell: {
+        padding: 8,
+        borderRightWidth: 1,
+        borderRightColor: '#f3f4f6',
+        justifyContent: 'center',
+    },
+    tableHeaderCell: {
+        backgroundColor: '#f9fafb',
+    },
+    tableHeaderText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#374151',
+    },
+    tableCellText: {
+        fontSize: 12,
+        color: '#1f2937',
+    },
+    tableOldValue: {
+        fontSize: 10,
+        color: '#9ca3af',
+        textDecorationLine: 'line-through',
+        marginBottom: 2,
+    },
+    tableBadge: {
+        fontSize: 10,
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+        overflow: 'hidden',
+        textAlign: 'center',
+    },
+    tableBadgeNew: {
+        backgroundColor: '#dcfce7',
+        color: '#166534',
+    },
+    tableBadgeUpdate: {
+        backgroundColor: '#dbeafe',
+        color: '#1e40af',
+    },
+    tableLegend: {
+        flexDirection: 'row',
+        padding: 10,
+        borderTopWidth: 1,
+        borderTopColor: '#f3f4f6',
+        gap: 16,
+    },
+    legendItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+    },
+    legendDot: {
+        width: 12,
+        height: 12,
+        borderRadius: 2,
+    },
+    legendText: {
+        fontSize: 11,
+        color: '#6b7280',
+        marginRight: 4,
     },
     previewTitle: {
         fontSize: 14,
