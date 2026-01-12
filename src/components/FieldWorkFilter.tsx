@@ -278,6 +278,26 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
         }
     };
 
+    // 필터 조건에서 사용된 컬럼들을 편집필드에 추가
+    const importFilterColumnsToEditable = () => {
+        const filterColumns = new Set<string>();
+
+        // targetGroups에서 사용된 모든 컬럼 수집
+        targetGroups.forEach(group => {
+            group.conditions.forEach(cond => {
+                if (cond.column) {
+                    filterColumns.add(cond.column);
+                }
+            });
+        });
+
+        // 기존 편집필드에 없는 컬럼만 추가
+        const newColumns = Array.from(filterColumns).filter(col => !editableFields.includes(col));
+        if (newColumns.length > 0) {
+            setEditableFields(prev => [...prev, ...newColumns]);
+        }
+    };
+
     // 적용
     const getMatchCount = (cond: TargetCondition) => {
         if (!assets || assets.length === 0) return 0;
@@ -710,6 +730,33 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                                     </TouchableOpacity>
                                 )}
                             </View>
+
+                            {/* 필터 조건 컬럼 가져오기 버튼 */}
+                            {(() => {
+                                const filterColumnsSet = new Set<string>();
+                                targetGroups.forEach(group => {
+                                    group.conditions.forEach(cond => {
+                                        if (cond.column && !editableFields.includes(cond.column)) {
+                                            filterColumnsSet.add(cond.column);
+                                        }
+                                    });
+                                });
+                                const importableCount = filterColumnsSet.size;
+                                if (importableCount > 0) {
+                                    return (
+                                        <TouchableOpacity
+                                            style={styles.importFilterColumnsButton}
+                                            onPress={importFilterColumnsToEditable}
+                                        >
+                                            <Filter size={16} color="#6366f1" />
+                                            <Text style={styles.importFilterColumnsText}>
+                                                작업대상 조건 컬럼 가져오기 ({importableCount}개)
+                                            </Text>
+                                        </TouchableOpacity>
+                                    );
+                                }
+                                return null;
+                            })()}
 
                             <View style={styles.editableList}>
                                 {schema
@@ -1317,6 +1364,23 @@ const styles = StyleSheet.create({
         flex: 1,
         fontSize: 15,
         color: '#1f2937',
+    },
+    importFilterColumnsButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#eef2ff',
+        borderRadius: 10,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: '#c7d2fe',
+        gap: 8,
+    },
+    importFilterColumnsText: {
+        fontSize: 14,
+        color: '#6366f1',
+        fontWeight: '500',
     },
     pickerOverlay: {
         flex: 1,
