@@ -28,6 +28,7 @@ const CARD_HEIGHT = SCREEN_HEIGHT - 152;
 
 interface MobileCardViewProps {
     assets: Asset[];
+    allAssets?: Asset[]; // 전체 자산 목록 (Move 컬럼 중복 체크용)
     schema: string[];
     schemaProperties: Record<string, NotionProperty>;
     onUpdateAsset: (assetId: string, field: string, value: string, type: string) => Promise<void>;
@@ -98,6 +99,7 @@ const getConditionText = (cond: TargetCondition): string => {
 
 export const MobileCardView: React.FC<MobileCardViewProps> = ({
     assets,
+    allAssets,
     schema,
     schemaProperties,
     onUpdateAsset,
@@ -142,6 +144,82 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
         setShowOptions(false);
     };
 
+    // Move 컬럼 중복 체크 및 밀기 기능
+    const handleMoveColumnSave = async (
+        assetId: string,
+        newValue: string,
+        propType: string,
+        afterSave: () => void
+    ) => {
+        const moveValue = parseInt(newValue, 10);
+        if (isNaN(moveValue)) {
+            Alert.alert('오류', 'Move 값은 숫자여야 합니다.');
+            return false;
+        }
+
+        // 전체 자산에서 중복 체크 (allAssets 우선, 없으면 assets 사용)
+        const checkAssets = allAssets || assets;
+        const duplicateAsset = checkAssets.find(
+            a => a.id !== assetId && parseInt(a.values['Move'] || '0', 10) === moveValue
+        );
+
+        if (duplicateAsset) {
+            // 중복 발견 - 사용자에게 옵션 제공
+            Alert.alert(
+                '⚠️ 중복값 발견',
+                `Move ${moveValue}은(는) 이미 다른 장비에 할당되어 있습니다.\n\n기존 값들을 밀고 삽입하시겠습니까?\n(${moveValue}, ${moveValue + 1}, ... 값들이 각각 +1 됩니다)`,
+                [
+                    { text: '취소', style: 'cancel' },
+                    {
+                        text: '밀고 삽입',
+                        style: 'default',
+                        onPress: async () => {
+                            try {
+                                // 1. 해당 값 이상인 모든 자산의 Move 값을 +1
+                                const assetsToShift = checkAssets
+                                    .filter(a => {
+                                        const existingMove = parseInt(a.values['Move'] || '0', 10);
+                                        return a.id !== assetId && existingMove >= moveValue && !isNaN(existingMove);
+                                    })
+                                    .sort((a, b) => {
+                                        // 역순으로 정렬하여 큰 값부터 업데이트 (충돌 방지)
+                                        const aMove = parseInt(a.values['Move'] || '0', 10);
+                                        const bMove = parseInt(b.values['Move'] || '0', 10);
+                                        return bMove - aMove;
+                                    });
+
+                                // 2. 각 자산의 Move 값을 +1
+                                for (const asset of assetsToShift) {
+                                    const currentMove = parseInt(asset.values['Move'] || '0', 10);
+                                    const newMove = (currentMove + 1).toString();
+                                    await onUpdateAsset(asset.id, 'Move', newMove, propType);
+                                    if (onLocalUpdate) {
+                                        onLocalUpdate(asset.id, 'Move', newMove);
+                                    }
+                                }
+
+                                // 3. 현재 자산에 새 Move 값 저장
+                                await onUpdateAsset(assetId, 'Move', newValue, propType);
+                                if (onLocalUpdate) {
+                                    onLocalUpdate(assetId, 'Move', newValue);
+                                }
+
+                                Alert.alert('✅ 완료', `${assetsToShift.length}개 항목이 밀리고, Move ${moveValue}이(가) 저장되었습니다.`);
+                                afterSave();
+                            } catch (error) {
+                                console.error('Move shift error:', error);
+                                Alert.alert('오류', '값 업데이트 중 오류가 발생했습니다.');
+                            }
+                        }
+                    }
+                ]
+            );
+            return false; // 비동기 처리, 모달 닫지 않음
+        }
+
+        return true; // 중복 없음, 정상 저장 진행
+    };
+
     const handleSave = async () => {
         if (!selectedAsset || !editingField) return;
 
@@ -154,6 +232,33 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                 valueToSave = selectedOptions.join(', ');
             } else if (propType === 'select') {
                 valueToSave = selectedOptions[0] || '';
+            }
+
+            // Move 컬럼 특별 처리
+            if (editingField === 'Move' && valueToSave.trim() !== '') {
+                const canProceed = await handleMoveColumnSave(
+                    selectedAsset.id,
+                    valueToSave,
+                    propType,
+                    () => {
+                        // 저장 완료 후 처리
+                        const updatedAsset = {
+                            ...selectedAsset,
+                            values: {
+                                ...selectedAsset.values,
+                                [editingField]: valueToSave
+                            }
+                        };
+                        setSelectedAsset(updatedAsset);
+                        setEditModalVisible(false);
+                        setEditingField(null);
+                        setIsSaving(false);
+                    }
+                );
+                if (!canProceed) {
+                    setIsSaving(false);
+                    return; // 중복 처리 중이거나 취소됨
+                }
             }
 
             await onUpdateAsset(selectedAsset.id, editingField, valueToSave, propType);

@@ -675,6 +675,7 @@ export default function App() {
               ) : (
                 <MobileCardView
                   assets={workFilteredAssets}
+                  allAssets={assets}
                   schema={schema}
                   schemaProperties={schemaProperties}
                   onUpdateAsset={handleUpdateAsset}
