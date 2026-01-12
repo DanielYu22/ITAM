@@ -465,6 +465,31 @@ export default function App() {
               터널 사용 시: Vercel 배포 URL 또는 ngrok URL을 API Base URL에 입력하세요.
             </Text>
           </ScrollView>
+
+          {/* Settings 화면에서도 글로벌 플로팅 버튼 */}
+          <View style={styles.globalFloatingBar}>
+            <TouchableOpacity
+              style={styles.globalFloatingButton}
+              onPress={() => setShowSettings(false)}
+            >
+              <Home size={22} color="#ffffff" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.globalFloatingButton, refreshing && styles.globalFloatingButtonActive]}
+              onPress={() => {
+                if (!refreshing) {
+                  onRefresh();
+                }
+              }}
+              disabled={refreshing}
+            >
+              {refreshing ? (
+                <ActivityIndicator size="small" color="#ffffff" />
+              ) : (
+                <RefreshCw size={22} color="#ffffff" />
+              )}
+            </TouchableOpacity>
+          </View>
         </SafeAreaView>
       </SafeAreaProvider>
     );
@@ -743,6 +768,43 @@ export default function App() {
             return await notionClient.archivePage(pageId);
           }}
         />
+
+        {/* 글로벌 플로팅 버튼 - 홈, 새로고침 */}
+        <View style={styles.globalFloatingBar}>
+          <TouchableOpacity
+            style={styles.globalFloatingButton}
+            onPress={handleBackToHome}
+          >
+            <Home size={22} color="#ffffff" />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.globalFloatingButton, refreshing && styles.globalFloatingButtonActive]}
+            onPress={() => {
+              if (!refreshing) {
+                Alert.alert(
+                  '🔄 새로고침',
+                  'Notion에서 최신 데이터를 가져옵니다. 현재 작업 상태는 유지됩니다.',
+                  [
+                    { text: '취소', style: 'cancel' },
+                    {
+                      text: '새로고침',
+                      onPress: () => {
+                        onRefresh();
+                      }
+                    }
+                  ]
+                );
+              }
+            }}
+            disabled={refreshing}
+          >
+            {refreshing ? (
+              <ActivityIndicator size="small" color="#ffffff" />
+            ) : (
+              <RefreshCw size={22} color="#ffffff" />
+            )}
+          </TouchableOpacity>
+        </View>
       </SafeAreaView>
     </SafeAreaProvider>
   );
@@ -1016,5 +1078,29 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: '#1f2937',
     fontFamily: 'monospace',
+  },
+  globalFloatingBar: {
+    position: 'absolute',
+    bottom: 20,
+    right: 20,
+    flexDirection: 'column',
+    gap: 10,
+    zIndex: 1000,
+  },
+  globalFloatingButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#6366f1',
+    justifyContent: 'center',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 6,
+    elevation: 8,
+  },
+  globalFloatingButtonActive: {
+    backgroundColor: '#4f46e5',
   },
 });
