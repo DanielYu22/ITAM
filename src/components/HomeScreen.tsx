@@ -425,6 +425,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                         <Play size={18} color="#6366f1" />
                                     </TouchableOpacity>
                                     <TouchableOpacity
+                                        style={styles.templateDeleteButton}
+                                        onPress={() => handleDelete(template)}
+                                    >
+                                        <Trash2 size={16} color="#9ca3af" />
+                                    </TouchableOpacity>
+                                    <TouchableOpacity
                                         style={styles.templateMenuButton}
                                         onPress={() => openTemplateMenu(template)}
                                     >
@@ -807,6 +813,9 @@ const styles = StyleSheet.create({
         fontSize: 12,
         color: '#9ca3af',
         marginTop: 2,
+    },
+    templateDeleteButton: {
+        padding: 12,
     },
     templateMenuButton: {
         padding: 14,
