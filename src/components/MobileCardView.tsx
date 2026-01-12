@@ -379,6 +379,14 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                         >
                             {(editableFields.length > 0 ? editableFields : schema)
                                 .filter((field: string) => field !== titleField)
+                                .sort((a: string, b: string) => {
+                                    // 조건 매칭 필드를 상단으로 정렬
+                                    const aMatched = !!getFieldCondition(a);
+                                    const bMatched = !!getFieldCondition(b);
+                                    if (aMatched && !bMatched) return -1;
+                                    if (!aMatched && bMatched) return 1;
+                                    return 0; // 원래 순서 유지
+                                })
                                 .map((field: string) => {
                                     const fieldCondition = getFieldCondition(field);
                                     const isHighlighted = !!fieldCondition;
