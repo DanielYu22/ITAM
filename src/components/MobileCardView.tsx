@@ -288,21 +288,19 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                     const resolvedCount = beforeConditions.length - afterConditions.length;
 
                     if (afterConditions.length === 0) {
-                        // 모든 조건 해결됨 - 완료 표시
-                        Alert.alert('✅ 완료!', '모든 조건이 충족되었습니다. 다음 항목으로 이동합니다.', [
-                            {
-                                text: '확인',
-                                onPress: () => {
-                                    // 다음 카드로 자동 이동
-                                    if (currentIndex < assets.length - 1) {
-                                        flatListRef.current?.scrollToIndex({
-                                            index: currentIndex + 1,
-                                            animated: true
-                                        });
-                                    }
-                                }
-                            }
-                        ]);
+                        // 모든 조건 해결됨 - 자동으로 다음 항목 이동
+                        if (currentIndex < assets.length - 1) {
+                            // 잠시 후 자동 이동 (사용자가 결과 확인할 시간)
+                            setTimeout(() => {
+                                flatListRef.current?.scrollToIndex({
+                                    index: currentIndex + 1,
+                                    animated: true
+                                });
+                            }, 800);
+                            Alert.alert('✅ 완료!', '다음 항목으로 자동 이동합니다.');
+                        } else {
+                            Alert.alert('🎉 모든 작업 완료!', '마지막 항목까지 모두 처리했습니다.');
+                        }
                     } else {
                         // 일부 조건 해결됨
                         Alert.alert('👍 진행 중', `${resolvedCount}개 조건 해결! 남은 조건: ${afterConditions.length}개`);
