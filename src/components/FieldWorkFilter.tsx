@@ -1017,33 +1017,70 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
 
                                     const dbValues = columnValues[cond.column] || [];
                                     const selectedValues = cond.values;
-                                    // DB값과 이미 선택된 값(커스텀 포함)의 합집합
-                                    const allPossibleValues = Array.from(new Set([...dbValues, ...selectedValues])).sort();
 
-                                    const filtered = allPossibleValues.filter(v =>
+                                    // 현재 데이터에 존재하는 값만 표시 (schemaProperties의 options도 포함)
+                                    const schemaOptions = schemaProperties[cond.column]?.options?.map(o => o.name) || [];
+                                    const validValues = Array.from(new Set([...dbValues, ...schemaOptions])).sort();
+
+                                    // 이미 선택된 값 중 더 이상 존재하지 않는 값들
+                                    const staleSelectedValues = selectedValues.filter(v => !validValues.includes(v));
+
+                                    const filteredValidValues = validValues.filter(v =>
                                         v.toLowerCase().includes(valueSearchText.toLowerCase())
                                     );
 
-                                    return filtered.map(val => (
-                                        <TouchableOpacity
-                                            key={val}
-                                            style={[
-                                                styles.valueItem,
-                                                cond.values.includes(val) && styles.valueItemActive,
-                                            ]}
-                                            onPress={() => toggleConditionValue(activeConditionId, val)}
-                                        >
-                                            <Text style={[
-                                                styles.valueItemText,
-                                                cond.values.includes(val) && styles.valueItemTextActive,
-                                            ]}>
-                                                {val}
-                                            </Text>
-                                            {cond.values.includes(val) && (
-                                                <Check size={18} color="#6366f1" />
+                                    const filteredStaleValues = staleSelectedValues.filter(v =>
+                                        v.toLowerCase().includes(valueSearchText.toLowerCase())
+                                    );
+
+                                    return (
+                                        <>
+                                            {/* 유효하지 않은 선택값 (경고 표시) */}
+                                            {filteredStaleValues.length > 0 && (
+                                                <>
+                                                    <Text style={styles.staleValuesWarning}>
+                                                        ⚠️ 더 이상 존재하지 않는 값 (삭제 권장)
+                                                    </Text>
+                                                    {filteredStaleValues.map(val => (
+                                                        <TouchableOpacity
+                                                            key={val}
+                                                            style={[styles.valueItem, styles.valueItemStale]}
+                                                            onPress={() => toggleConditionValue(activeConditionId, val)}
+                                                        >
+                                                            <Text style={[styles.valueItemText, styles.valueItemTextStale]}>
+                                                                {val}
+                                                            </Text>
+                                                            {cond.values.includes(val) && (
+                                                                <Check size={18} color="#ef4444" />
+                                                            )}
+                                                        </TouchableOpacity>
+                                                    ))}
+                                                </>
                                             )}
-                                        </TouchableOpacity>
-                                    ));
+
+                                            {/* 유효한 값들 */}
+                                            {filteredValidValues.map(val => (
+                                                <TouchableOpacity
+                                                    key={val}
+                                                    style={[
+                                                        styles.valueItem,
+                                                        cond.values.includes(val) && styles.valueItemActive,
+                                                    ]}
+                                                    onPress={() => toggleConditionValue(activeConditionId, val)}
+                                                >
+                                                    <Text style={[
+                                                        styles.valueItemText,
+                                                        cond.values.includes(val) && styles.valueItemTextActive,
+                                                    ]}>
+                                                        {val}
+                                                    </Text>
+                                                    {cond.values.includes(val) && (
+                                                        <Check size={18} color="#6366f1" />
+                                                    )}
+                                                </TouchableOpacity>
+                                            ))}
+                                        </>
+                                    );
                                 })()}
                             </ScrollView>
 
@@ -1708,5 +1745,22 @@ const styles = StyleSheet.create({
         color: '#ffffff',
         fontSize: 16,
         fontWeight: '600',
+    },
+    staleValuesWarning: {
+        fontSize: 12,
+        color: '#ef4444',
+        fontWeight: '500',
+        padding: 12,
+        paddingBottom: 4,
+        backgroundColor: '#fef2f2',
+    },
+    valueItemStale: {
+        backgroundColor: '#fef2f2',
+        borderLeftWidth: 3,
+        borderLeftColor: '#ef4444',
+    },
+    valueItemTextStale: {
+        color: '#b91c1c',
+        textDecorationLine: 'line-through',
     },
 });
