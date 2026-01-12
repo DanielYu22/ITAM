@@ -8,6 +8,7 @@ import {
     TextInput,
     Modal,
     Alert,
+    Platform,
 } from 'react-native';
 import {
     Play,
@@ -194,22 +195,32 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
     // 템플릿 삭제
     const handleDelete = (template: FilterTemplate) => {
-        Alert.alert(
-            '템플릿 삭제',
-            `"${template.name}" 템플릿을 삭제하시겠습니까?`,
-            [
-                { text: '취소', style: 'cancel' },
-                {
-                    text: '삭제',
-                    style: 'destructive',
-                    onPress: () => {
-                        onDeleteTemplate(template.id);
-                        setShowTemplateMenu(false);
-                        setSelectedTemplate(null);
+        if (Platform.OS === 'web') {
+            // 웹에서는 window.confirm 사용 (Alert.alert의 버튼이 작동하지 않음)
+            const confirmed = window.confirm(`"${template.name}" 템플릿을 삭제하시겠습니까?`);
+            if (confirmed) {
+                onDeleteTemplate(template.id);
+                setShowTemplateMenu(false);
+                setSelectedTemplate(null);
+            }
+        } else {
+            Alert.alert(
+                '템플릿 삭제',
+                `"${template.name}" 템플릿을 삭제하시겠습니까?`,
+                [
+                    { text: '취소', style: 'cancel' },
+                    {
+                        text: '삭제',
+                        style: 'destructive',
+                        onPress: () => {
+                            onDeleteTemplate(template.id);
+                            setShowTemplateMenu(false);
+                            setSelectedTemplate(null);
+                        }
                     }
-                }
-            ]
-        );
+                ]
+            );
+        }
     };
 
     // 저장 확인
