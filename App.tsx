@@ -773,7 +773,7 @@ export default function App() {
         <View style={styles.globalFloatingBar}>
           <TouchableOpacity
             style={styles.globalFloatingButton}
-            onPress={handleBackToHome}
+            onPress={goHome}
           >
             <Home size={22} color="#ffffff" />
           </TouchableOpacity>
