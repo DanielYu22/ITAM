@@ -97,6 +97,9 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
     const [undoComplete, setUndoComplete] = useState(false);
     const [createdPageIds, setCreatedPageIds] = useState<string[]>([]); // 신규 생성된 페이지 ID (undo용)
 
+    // 미리보기 필터 상태
+    const [previewFilter, setPreviewFilter] = useState<'all' | 'update' | 'overwrite' | 'new' | 'noChange'>('all');
+
     // 컬럼 필터링
     const filteredColumns = useMemo(() => {
         if (!searchText.trim()) return schema;
@@ -214,7 +217,19 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
 
         let totalUpdates = 0;
         let totalOverwrites = 0;
+        let itemsWithUpdates = 0;  // 업데이트가 있는 항목 수
+        let itemsWithOverwrites = 0;  // 덮어쓰기가 있는 항목 수
+        let itemsWithNoChange = 0;  // 변경 없는 항목 수
+
         matched.forEach(r => {
+            const hasUpdate = r.columnChanges.some(c => c.changeType === 'update');
+            const hasOverwrite = r.columnChanges.some(c => c.changeType === 'overwrite');
+            const hasAnyChange = hasUpdate || hasOverwrite;
+
+            if (hasUpdate) itemsWithUpdates++;
+            if (hasOverwrite) itemsWithOverwrites++;
+            if (!hasAnyChange) itemsWithNoChange++;
+
             r.columnChanges.forEach(c => {
                 if (c.changeType === 'update') totalUpdates++;
                 if (c.changeType === 'overwrite') totalOverwrites++;
@@ -226,9 +241,43 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
             newCount: newItems.length,
             totalUpdates,
             totalOverwrites,
+            itemsWithUpdates,
+            itemsWithOverwrites,
+            itemsWithNoChange,
+            itemsWithActualChanges: matched.length - itemsWithNoChange,
             total: matchResults.length
         };
     }, [matchResults]);
+
+    // 필터링된 미리보기 결과
+    const filteredMatchResults = useMemo(() => {
+        // 기본적으로 변경이 있는 항목만 표시
+        let results = matchResults.filter(r => {
+            if (r.type === 'new') return true;
+            // 변경이 있는 항목만 (update 또는 overwrite)
+            return r.columnChanges.some(c => c.changeType !== 'same');
+        });
+
+        // 추가 필터 적용
+        if (previewFilter === 'update') {
+            results = results.filter(r =>
+                r.type === 'matched' && r.columnChanges.some(c => c.changeType === 'update')
+            );
+        } else if (previewFilter === 'overwrite') {
+            results = results.filter(r =>
+                r.type === 'matched' && r.columnChanges.some(c => c.changeType === 'overwrite')
+            );
+        } else if (previewFilter === 'new') {
+            results = results.filter(r => r.type === 'new');
+        } else if (previewFilter === 'noChange') {
+            // 변경 없는 항목 표시
+            results = matchResults.filter(r =>
+                r.type === 'matched' && r.columnChanges.every(c => c.changeType === 'same')
+            );
+        }
+
+        return results;
+    }, [matchResults, previewFilter]);
 
     // 실행 (다중 컬럼 + 신규 생성)
     const executeUpdates = useCallback(async () => {
@@ -558,25 +607,53 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                         <View>
                             <Text style={styles.stepTitle}>3. 미리보기 및 확인</Text>
 
-                            {/* 통계 */}
+                            {/* 통계 - 클릭하면 해당 유형만 표시 */}
                             <View style={styles.statsContainer}>
-                                <View style={styles.statItem}>
-                                    <Text style={styles.statValue}>{stats.matchedCount}</Text>
-                                    <Text style={styles.statLabel}>매칭됨</Text>
-                                </View>
-                                <View style={[styles.statItem, styles.statUpdate]}>
-                                    <Text style={styles.statValue}>{stats.totalUpdates}</Text>
+                                <TouchableOpacity
+                                    style={[styles.statItem, previewFilter === 'all' && styles.statItemActive]}
+                                    onPress={() => setPreviewFilter('all')}
+                                >
+                                    <Text style={styles.statValue}>{stats.itemsWithActualChanges + stats.newCount}</Text>
+                                    <Text style={styles.statLabel}>변경있음</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.statItem, styles.statUpdate, previewFilter === 'update' && styles.statItemActive]}
+                                    onPress={() => setPreviewFilter('update')}
+                                >
+                                    <Text style={styles.statValue}>{stats.itemsWithUpdates}</Text>
                                     <Text style={styles.statLabel}>업데이트</Text>
-                                </View>
-                                <View style={[styles.statItem, styles.statOverwrite]}>
-                                    <Text style={styles.statValue}>{stats.totalOverwrites}</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.statItem, styles.statOverwrite, previewFilter === 'overwrite' && styles.statItemActive]}
+                                    onPress={() => setPreviewFilter('overwrite')}
+                                >
+                                    <Text style={styles.statValue}>{stats.itemsWithOverwrites}</Text>
                                     <Text style={styles.statLabel}>덮어쓰기</Text>
-                                </View>
-                                <View style={[styles.statItem, styles.statNew]}>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.statItem, styles.statNew, previewFilter === 'new' && styles.statItemActive]}
+                                    onPress={() => setPreviewFilter('new')}
+                                >
                                     <Text style={styles.statValue}>{stats.newCount}</Text>
                                     <Text style={styles.statLabel}>신규</Text>
-                                </View>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.statItem, styles.statNoChange, previewFilter === 'noChange' && styles.statItemActive]}
+                                    onPress={() => setPreviewFilter('noChange')}
+                                >
+                                    <Text style={styles.statValue}>{stats.itemsWithNoChange}</Text>
+                                    <Text style={styles.statLabel}>변경없음</Text>
+                                </TouchableOpacity>
                             </View>
+
+                            {/* 필터 결과 요약 */}
+                            <Text style={styles.filterSummary}>
+                                {previewFilter === 'all' ? '변경이 있는 항목만 표시' :
+                                    previewFilter === 'update' ? '업데이트 항목' :
+                                        previewFilter === 'overwrite' ? '덮어쓰기 항목' :
+                                            previewFilter === 'new' ? '신규 항목' : '변경없는 항목'}
+                                : {filteredMatchResults.length}건
+                            </Text>
 
                             {/* 뷰모드 토글 */}
                             <View style={styles.viewModeToggle}>
@@ -616,12 +693,8 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
 
                                             {/* 테이블 본문 */}
                                             <ScrollView style={{ maxHeight: 350 }} nestedScrollEnabled>
-                                                {matchResults.map((r, i) => (
-                                                    <View key={i} style={[
-                                                        styles.tableRow,
-                                                        r.type === 'new' && { backgroundColor: allowNew ? '#f0fdf4' : '#fefce8' },
-                                                        r.type === 'matched' && r.columnChanges.some(c => c.changeType === 'overwrite') && { backgroundColor: '#fef3c7' }
-                                                    ]}>
+                                                {filteredMatchResults.map((r, i) => (
+                                                    <View key={i} style={styles.tableRow}>
                                                         <View style={[styles.tableCell, { width: 80 }]}>
                                                             <Text style={[
                                                                 styles.tableBadge,
@@ -630,7 +703,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                                                 {r.type === 'new' ? '신규' : '업데이트'}
                                                             </Text>
                                                         </View>
-                                                        <View style={[styles.tableCell, { width: 140 }]}>
+                                                        <View style={[styles.tableCell, styles.tableCellKey, { width: 140 }]}>
                                                             <Text style={styles.tableCellText} numberOfLines={2}>{r.lookupValue}</Text>
                                                         </View>
                                                         {detectedColumns.map((col: string) => {
@@ -640,17 +713,27 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                                                 ? (newItemData?.inputColumns[col] || newItemData?.otherColumns[col] || '-')
                                                                 : (change?.newValue || '-');
                                                             const oldValue = change?.oldValue;
+                                                            const hasChange = change?.changeType !== 'same';
+
                                                             return (
-                                                                <View key={col} style={[styles.tableCell, { width: 140 }]}>
-                                                                    {oldValue && (
+                                                                <View key={col} style={[
+                                                                    styles.tableCell,
+                                                                    { width: 140 },
+                                                                    // 변경된 셀만 배경색 적용
+                                                                    hasChange && change?.changeType === 'overwrite' && { backgroundColor: '#fef3c7' },
+                                                                    hasChange && change?.changeType === 'update' && { backgroundColor: '#ecfdf5' },
+                                                                    r.type === 'new' && { backgroundColor: '#f0fdf4' }
+                                                                ]}>
+                                                                    {/* 변경된 경우만 이전 값 표시 */}
+                                                                    {hasChange && oldValue && (
                                                                         <Text style={styles.tableOldValue} numberOfLines={1}>
                                                                             {oldValue}
                                                                         </Text>
                                                                     )}
                                                                     <Text style={[
                                                                         styles.tableCellText,
-                                                                        change?.changeType === 'overwrite' && { color: '#b45309' },
-                                                                        change?.changeType === 'update' && { color: '#059669' }
+                                                                        hasChange && change?.changeType === 'overwrite' && { color: '#b45309', fontWeight: '500' },
+                                                                        hasChange && change?.changeType === 'update' && { color: '#059669', fontWeight: '500' }
                                                                     ]} numberOfLines={2}>
                                                                         {newValue}
                                                                     </Text>
@@ -688,10 +771,10 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                             )}
 
                             {/* 카드 뷰: 변경사항 미리보기 */}
-                            {viewMode === 'card' && stats.matchedCount > 0 && (
+                            {viewMode === 'card' && filteredMatchResults.filter(r => r.type === 'matched').length > 0 && (
                                 <View style={styles.previewSection}>
                                     <View style={styles.sectionHeader}>
-                                        <Text style={styles.previewTitle}>📝 변경 내역 ({stats.matchedCount}건)</Text>
+                                        <Text style={styles.previewTitle}>📝 변경 내역 ({filteredMatchResults.filter(r => r.type === 'matched').length}건)</Text>
                                         <TouchableOpacity
                                             style={styles.sectionCheckbox}
                                             onPress={() => setAllowOverwrite(!allowOverwrite)}
@@ -699,17 +782,20 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                             <View style={[styles.checkboxSmall, allowOverwrite && styles.checkboxSmallChecked]}>
                                                 {allowOverwrite && <Check size={10} color="#fff" />}
                                             </View>
-                                            <Text style={styles.sectionCheckboxText}>덮어쓰기 ({stats.totalOverwrites})</Text>
+                                            <Text style={styles.sectionCheckboxText}>덮어쓰기 ({stats.itemsWithOverwrites})</Text>
                                         </TouchableOpacity>
                                     </View>
                                     <ScrollView style={styles.previewScrollList} nestedScrollEnabled>
-                                        {matchResults.filter(r => r.type === 'matched').map((r, i) => (
+                                        {filteredMatchResults.filter(r => r.type === 'matched').map((r, i) => (
                                             <View key={i} style={styles.previewItem}>
-                                                <Text style={styles.previewLookup}>{r.lookupValue}</Text>
+                                                <View style={styles.previewLookupRow}>
+                                                    <Text style={styles.previewLookup}>{r.lookupValue}</Text>
+                                                </View>
                                                 {r.columnChanges.filter(c => c.changeType !== 'same').map((c, j) => (
                                                     <View key={j} style={[
                                                         styles.previewChange,
-                                                        c.changeType === 'overwrite' && styles.previewChangeOverwrite
+                                                        c.changeType === 'overwrite' && styles.previewChangeOverwrite,
+                                                        c.changeType === 'update' && styles.previewChangeUpdate
                                                     ]}>
                                                         <Text style={styles.previewColumnName}>{c.column}:</Text>
                                                         {c.oldValue ? (
@@ -1076,6 +1162,14 @@ const styles = StyleSheet.create({
         borderColor: '#10b981',
         backgroundColor: '#f0fdf4',
     },
+    statNoChange: {
+        borderColor: '#9ca3af',
+        backgroundColor: '#f9fafb',
+    },
+    statItemActive: {
+        borderWidth: 3,
+        borderColor: '#6366f1',
+    },
     statValue: {
         fontSize: 24,
         fontWeight: 'bold',
@@ -1084,6 +1178,24 @@ const styles = StyleSheet.create({
     statLabel: {
         fontSize: 12,
         color: '#6b7280',
+    },
+    filterSummary: {
+        fontSize: 13,
+        color: '#6b7280',
+        marginBottom: 8,
+        textAlign: 'center',
+    },
+    tableCellKey: {
+        backgroundColor: '#f3f4f6',
+    },
+    previewLookupRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        marginBottom: 6,
+    },
+    previewChangeUpdate: {
+        backgroundColor: '#ecfdf5',
+        borderLeftColor: '#10b981',
     },
     optionSection: {
         marginBottom: 16,
