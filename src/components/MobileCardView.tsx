@@ -256,31 +256,50 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                 valueToSave = selectedOptions[0] || '';
             }
 
-            // Move 컬럼 특별 처리
+            // Move 컬럼 특별 처리: 중복값이 있으면 Alert 표시 후 처리
             if (editingField === 'Move' && valueToSave.trim() !== '') {
-                const canProceed = await handleMoveColumnSave(
-                    selectedAsset.id,
-                    valueToSave,
-                    propType,
-                    () => {
-                        // 저장 완료 후 처리
-                        const updatedAsset = {
-                            ...selectedAsset,
-                            values: {
-                                ...selectedAsset.values,
-                                [editingField]: valueToSave
-                            }
-                        };
-                        setSelectedAsset(updatedAsset);
-                        setEditModalVisible(false);
-                        setEditingField(null);
-                        setIsSaving(false);
-                    }
-                );
-                if (!canProceed) {
+                const moveValue = parseInt(valueToSave, 10);
+                if (isNaN(moveValue)) {
+                    Alert.alert('오류', 'Move 값은 숫자여야 합니다.');
                     setIsSaving(false);
-                    return; // 중복 처리 중이거나 취소됨
+                    return;
                 }
+
+                // 중복 체크
+                const checkAssets = allAssets || assets;
+                const duplicateAsset = checkAssets.find(
+                    a => a.id !== selectedAsset.id && parseInt(a.values['Move'] || '0', 10) === moveValue
+                );
+
+                if (duplicateAsset) {
+                    // 중복 발견 - handleMoveColumnSave에서 Alert 처리
+                    const canProceed = await handleMoveColumnSave(
+                        selectedAsset.id,
+                        valueToSave,
+                        propType,
+                        () => {
+                            // 저장 완료 후 처리
+                            const updatedAsset = {
+                                ...selectedAsset,
+                                values: {
+                                    ...selectedAsset.values,
+                                    [editingField]: valueToSave
+                                }
+                            };
+                            setSelectedAsset(updatedAsset);
+                            setEditModalVisible(false);
+                            setEditingField(null);
+                            setIsSaving(false);
+                            // 다음 필드로 이동
+                            openNextField(editingField);
+                        }
+                    );
+                    if (!canProceed) {
+                        setIsSaving(false);
+                        return; // Alert 표시 중, 사용자 선택 대기
+                    }
+                }
+                // 중복 없으면 아래 일반 저장 로직으로 계속 진행
             }
 
             await onUpdateAsset(selectedAsset.id, editingField, valueToSave, propType);
