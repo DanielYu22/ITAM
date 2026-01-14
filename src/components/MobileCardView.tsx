@@ -122,6 +122,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     const [showOptions, setShowOptions] = useState(false);
     const [optionSearchText, setOptionSearchText] = useState('');
     const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
+    const [highlightedOptionIndex, setHighlightedOptionIndex] = useState(0); // 방향키 드롭다운 네비게이션
 
     const titleField = useMemo(() => {
         return Object.keys(schemaProperties).find(k => schemaProperties[k].type === 'title') || 'Name';
@@ -141,8 +142,10 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
         }
 
         setOptionSearchText('');
+        setHighlightedOptionIndex(0);
         setEditModalVisible(true);
-        setShowOptions(false);
+        // Select/Multi-Select는 드롭다운 자동 오픈
+        setShowOptions(['select', 'multi_select'].includes(propType));
     };
 
     // Move 컬럼 중복 체크 및 밀기 기능
@@ -323,7 +326,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
         }
     };
 
-    const toggleOption = (option: string, isMulti: boolean) => {
+    const toggleOption = (option: string, isMulti: boolean, autoSave: boolean = false) => {
         if (isMulti) {
             setSelectedOptions(prev =>
                 prev.includes(option)
@@ -332,8 +335,15 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
             );
         } else {
             setSelectedOptions([option]);
-            setEditValue(option); // For display in main input
+            setEditValue(option);
             setShowOptions(false);
+
+            // Select 타입에서 선택하면 즉시 저장 (키보드 방향키+엔터 사용 시)
+            if (autoSave && selectedAsset && editingField) {
+                setTimeout(() => {
+                    handleSave();
+                }, 50);
+            }
         }
     };
 
@@ -518,6 +528,9 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                                         <TouchableOpacity
                                             onPress={() => setEditModalVisible(false)}
                                             disabled={isSaving}
+                                            accessible={false}
+                                            focusable={false}
+                                            tabIndex={-1}
                                         >
                                             <X size={24} color="#6b7280" />
                                         </TouchableOpacity>
@@ -562,20 +575,49 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                                                                     onChangeText={(text) => {
                                                                         setOptionSearchText(text);
                                                                         setShowOptions(true);
+                                                                        setHighlightedOptionIndex(0);
                                                                     }}
                                                                     placeholder="옵션 검색 또는 생성..."
                                                                     placeholderTextColor="#9ca3af"
+                                                                    autoFocus
+                                                                    onKeyPress={(e: any) => {
+                                                                        const key = e.nativeEvent?.key || e.key;
+                                                                        if (key === 'ArrowDown') {
+                                                                            setHighlightedOptionIndex(prev =>
+                                                                                Math.min(prev + 1, filteredOptions.length - 1)
+                                                                            );
+                                                                        } else if (key === 'ArrowUp') {
+                                                                            setHighlightedOptionIndex(prev => Math.max(prev - 1, 0));
+                                                                        } else if (key === 'Enter' && filteredOptions.length > 0) {
+                                                                            const selectedOpt = filteredOptions[highlightedOptionIndex];
+                                                                            if (selectedOpt) {
+                                                                                const isMulti = schemaProperties[editingField]?.type === 'multi_select';
+                                                                                toggleOption(selectedOpt.name, isMulti, !isMulti);
+                                                                                setOptionSearchText('');
+                                                                            }
+                                                                        } else if (key === 'Escape') {
+                                                                            setEditModalVisible(false);
+                                                                        }
+                                                                    }}
                                                                 />
                                                             </View>
 
                                                             <ScrollView style={styles.optionsList} keyboardShouldPersistTaps="handled">
-                                                                {filteredOptions.map(opt => {
+                                                                {filteredOptions.map((opt, idx) => {
                                                                     const isSelected = selectedOptions.includes(opt.name);
+                                                                    const isHighlighted = idx === highlightedOptionIndex;
                                                                     return (
                                                                         <TouchableOpacity
                                                                             key={opt.id}
-                                                                            style={[styles.optionItem, isSelected && styles.optionItemSelected]}
-                                                                            onPress={() => toggleOption(opt.name, schemaProperties[editingField].type === 'multi_select')}
+                                                                            style={[
+                                                                                styles.optionItem,
+                                                                                isSelected && styles.optionItemSelected,
+                                                                                isHighlighted && styles.optionItemHighlighted
+                                                                            ]}
+                                                                            onPress={() => {
+                                                                                const isMulti = schemaProperties[editingField].type === 'multi_select';
+                                                                                toggleOption(opt.name, isMulti, !isMulti);
+                                                                            }}
                                                                         >
                                                                             <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>
                                                                                 {opt.name}
@@ -924,6 +966,11 @@ const styles = StyleSheet.create({
     },
     optionItemSelected: {
         backgroundColor: '#eef2ff',
+    },
+    optionItemHighlighted: {
+        backgroundColor: '#e0e7ff',
+        borderLeftWidth: 3,
+        borderLeftColor: '#6366f1',
     },
     optionText: {
         fontSize: 15,
