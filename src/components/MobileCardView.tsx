@@ -123,10 +123,28 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     const [optionSearchText, setOptionSearchText] = useState('');
     const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
     const [highlightedOptionIndex, setHighlightedOptionIndex] = useState(0); // 방향키 드롭다운 네비게이션
+    const [hasAutoFocused, setHasAutoFocused] = useState(false); // 자동 포커스 여부
 
     const titleField = useMemo(() => {
         return Object.keys(schemaProperties).find(k => schemaProperties[k].type === 'title') || 'Name';
     }, [schemaProperties]);
+
+    // 현장 작업 진입 시 첫 번째 타겟 필드 자동 오픈
+    useEffect(() => {
+        if (hasAutoFocused || !filterConfig || assets.length === 0) return;
+
+        const firstAsset = assets[0];
+        const matchedConditions = getMatchedConditions(firstAsset, filterConfig);
+
+        if (matchedConditions.length > 0) {
+            // 첫 번째 매칭된 조건의 필드를 자동 오픈
+            const firstTargetField = matchedConditions[0].column;
+            setTimeout(() => {
+                handleEdit(firstAsset, firstTargetField);
+            }, 500);
+            setHasAutoFocused(true);
+        }
+    }, [assets, filterConfig, hasAutoFocused]);
 
     const handleEdit = (asset: Asset, field: string) => {
         setSelectedAsset(asset);
