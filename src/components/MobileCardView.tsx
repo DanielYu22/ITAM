@@ -129,22 +129,35 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
         return Object.keys(schemaProperties).find(k => schemaProperties[k].type === 'title') || 'Name';
     }, [schemaProperties]);
 
-    // 현장 작업 진입 시 첫 번째 타겟 필드 자동 오픈
+    // 현장 작업 진입 시 첫 번째 타겟 필드 자동 오픈 (조건에 해당하는 필드 우선)
     useEffect(() => {
-        if (hasAutoFocused || !filterConfig || assets.length === 0) return;
+        if (hasAutoFocused || assets.length === 0) return;
 
         const firstAsset = assets[0];
-        const matchedConditions = getMatchedConditions(firstAsset, filterConfig);
 
-        if (matchedConditions.length > 0) {
-            // 첫 번째 매칭된 조건의 필드를 자동 오픈
-            const firstTargetField = matchedConditions[0].column;
+        // 1. 필터 조건이 있으면 조건에 해당하는 첫 번째 필드 선택
+        if (filterConfig) {
+            const matchedConditions = getMatchedConditions(firstAsset, filterConfig);
+            if (matchedConditions.length > 0) {
+                const firstTargetField = matchedConditions[0].column;
+                setTimeout(() => {
+                    handleEdit(firstAsset, firstTargetField);
+                }, 500);
+                setHasAutoFocused(true);
+                return;
+            }
+        }
+
+        // 2. 조건 매칭 없으면, editableFields 중 첫 번째 (Name 제외)
+        const fieldsToCheck = editableFields.length > 0 ? editableFields : schema;
+        const firstEditableField = fieldsToCheck.find((f: string) => f !== titleField);
+        if (firstEditableField) {
             setTimeout(() => {
-                handleEdit(firstAsset, firstTargetField);
+                handleEdit(firstAsset, firstEditableField);
             }, 500);
             setHasAutoFocused(true);
         }
-    }, [assets, filterConfig, hasAutoFocused]);
+    }, [assets, filterConfig, hasAutoFocused, editableFields, schema, titleField]);
 
     const handleEdit = (asset: Asset, field: string) => {
         setSelectedAsset(asset);
