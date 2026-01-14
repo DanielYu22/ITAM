@@ -111,6 +111,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [currentIndex, setCurrentIndex] = useState(0);
     const flatListRef = useRef<FlatList>(null);
+    const fieldScrollRef = useRef<ScrollView>(null);
 
     // 편집 상태
     const [editingField, setEditingField] = useState<string | null>(null);
@@ -310,6 +311,11 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
 
             setEditModalVisible(false);
             setEditingField(null);
+
+            // 저장 후 스크롤을 위로 이동 (타겟 필드가 상단에 정렬되므로)
+            setTimeout(() => {
+                fieldScrollRef.current?.scrollTo({ y: 0, animated: true });
+            }, 100);
         } catch (error) {
             Alert.alert('Error', 'Failed to update asset');
         } finally {
@@ -371,9 +377,11 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                         </View>
 
                         <ScrollView
+                            ref={fieldScrollRef}
                             style={styles.cardBody}
                             showsVerticalScrollIndicator={false}
                             contentContainerStyle={styles.cardBodyContent}
+                            keyboardShouldPersistTaps="handled"
                         >
                             {(editableFields.length > 0 ? editableFields : schema)
                                 .filter((field: string) => field !== titleField)
@@ -604,6 +612,13 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                                                     placeholder="값을 입력하세요"
                                                     multiline={schemaProperties[editingField]?.type === 'rich_text'}
                                                     autoFocus
+                                                    blurOnSubmit={!schemaProperties[editingField]?.type?.includes('rich_text')}
+                                                    returnKeyType="done"
+                                                    onSubmitEditing={() => {
+                                                        if (!schemaProperties[editingField]?.type?.includes('rich_text')) {
+                                                            handleSave();
+                                                        }
+                                                    }}
                                                 />
                                             )}
                                         </View>
