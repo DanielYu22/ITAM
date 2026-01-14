@@ -179,80 +179,131 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
         setShowOptions(['select', 'multi_select'].includes(propType));
     };
 
+    // Move 값 입력 시 주변 값 계산
+    const nearestMoveValues = useMemo(() => {
+        if (editingField !== 'Move' || !editValue) return null;
+
+        const currentVal = parseInt(editValue, 10);
+        if (isNaN(currentVal)) return null;
+
+        const checkAssets = allAssets || assets;
+        const moveValues = checkAssets
+            .map((a: Asset) => parseInt(a.values['Move'] || '0', 10))
+            .filter((v: number) => !isNaN(v) && v > 0)
+            .sort((a: number, b: number) => a - b);
+
+        const uniqueValues = Array.from(new Set(moveValues)) as number[]; // 중복 제거
+
+        let prev: number | null = null;
+        let next: number | null = null;
+        const hasDuplicate = uniqueValues.includes(currentVal);
+
+        for (const val of uniqueValues) {
+            if (val < currentVal) {
+                prev = val;
+            } else if (val > currentVal) {
+                if (next === null) next = val; // 큰 값 중 첫 번째
+                break;
+            }
+        }
+
+        return { prev, next, hasDuplicate };
+    }, [editValue, editingField, allAssets, assets]);
+
     // Move 컬럼 중복 체크 및 밀기 기능
-    const handleMoveColumnSave = async (
+    const handleMoveColumnSave = (
         assetId: string,
         newValue: string,
         propType: string,
         afterSave: () => void
-    ) => {
-        const moveValue = parseInt(newValue, 10);
-        if (isNaN(moveValue)) {
-            Alert.alert('오류', 'Move 값은 숫자여야 합니다.');
-            return false;
-        }
+    ): Promise<boolean> => {
+        return new Promise((resolve) => {
+            const moveValue = parseInt(newValue, 10);
+            if (isNaN(moveValue)) {
+                Alert.alert('오류', 'Move 값은 숫자여야 합니다.');
+                resolve(false);
+                return;
+            }
 
-        // 전체 자산에서 중복 체크 (allAssets 우선, 없으면 assets 사용)
-        const checkAssets = allAssets || assets;
-        const duplicateAsset = checkAssets.find(
-            a => a.id !== assetId && parseInt(a.values['Move'] || '0', 10) === moveValue
-        );
+            // 전체 자산에서 중복 체크 (allAssets 우선, 없으면 assets 사용)
+            const checkAssets = allAssets || assets;
+            const duplicateAsset = checkAssets.find(
+                a => a.id !== assetId && parseInt(a.values['Move'] || '0', 10) === moveValue
+            );
 
-        if (duplicateAsset) {
-            // 중복 발견 - 사용자에게 옵션 제공
-            Alert.alert(
-                '⚠️ 중복값 발견',
-                `Move ${moveValue}은(는) 이미 다른 장비에 할당되어 있습니다.\n\n기존 값들을 밀고 삽입하시겠습니까?\n(${moveValue}, ${moveValue + 1}, ... 값들이 각각 +1 됩니다)`,
-                [
-                    { text: '취소', style: 'cancel' },
-                    {
-                        text: '밀고 삽입',
-                        style: 'default',
-                        onPress: async () => {
-                            try {
-                                // 1. 해당 값 이상인 모든 자산의 Move 값을 +1
-                                const assetsToShift = checkAssets
-                                    .filter(a => {
-                                        const existingMove = parseInt(a.values['Move'] || '0', 10);
-                                        return a.id !== assetId && existingMove >= moveValue && !isNaN(existingMove);
-                                    })
-                                    .sort((a, b) => {
-                                        // 역순으로 정렬하여 큰 값부터 업데이트 (충돌 방지)
-                                        const aMove = parseInt(a.values['Move'] || '0', 10);
-                                        const bMove = parseInt(b.values['Move'] || '0', 10);
-                                        return bMove - aMove;
-                                    });
+            if (duplicateAsset) {
+                const title = '⚠️ 중복값 발견';
+                const message = `Move ${moveValue}은(는) 이미 다른 장비에 할당되어 있습니다.\n\n기존 값들을 밀고 삽입하시겠습니까?\n(${moveValue}, ${moveValue + 1}, ... 값들이 각각 +1 됩니다)`;
 
-                                // 2. 각 자산의 Move 값을 +1
-                                for (const asset of assetsToShift) {
-                                    const currentMove = parseInt(asset.values['Move'] || '0', 10);
-                                    const newMove = (currentMove + 1).toString();
-                                    await onUpdateAsset(asset.id, 'Move', newMove, propType);
-                                    if (onLocalUpdate) {
-                                        onLocalUpdate(asset.id, 'Move', newMove);
-                                    }
-                                }
+                const executeShift = async () => {
+                    try {
+                        // 1. 해당 값 이상인 모든 자산의 Move 값을 +1
+                        const assetsToShift = checkAssets
+                            .filter(a => {
+                                const existingMove = parseInt(a.values['Move'] || '0', 10);
+                                return a.id !== assetId && existingMove >= moveValue && !isNaN(existingMove);
+                            })
+                            .sort((a, b) => {
+                                // 역순으로 정렬하여 큰 값부터 업데이트 (충돌 방지)
+                                const aMove = parseInt(a.values['Move'] || '0', 10);
+                                const bMove = parseInt(b.values['Move'] || '0', 10);
+                                return bMove - aMove;
+                            });
 
-                                // 3. 현재 자산에 새 Move 값 저장
-                                await onUpdateAsset(assetId, 'Move', newValue, propType);
-                                if (onLocalUpdate) {
-                                    onLocalUpdate(assetId, 'Move', newValue);
-                                }
-
-                                Alert.alert('✅ 완료', `${assetsToShift.length}개 항목이 밀리고, Move ${moveValue}이(가) 저장되었습니다.`);
-                                afterSave();
-                            } catch (error) {
-                                console.error('Move shift error:', error);
-                                Alert.alert('오류', '값 업데이트 중 오류가 발생했습니다.');
+                        // 2. 각 자산의 Move 값을 +1
+                        for (const asset of assetsToShift) {
+                            const currentMove = parseInt(asset.values['Move'] || '0', 10);
+                            const newMove = (currentMove + 1).toString();
+                            await onUpdateAsset(asset.id, 'Move', newMove, propType);
+                            if (onLocalUpdate) {
+                                onLocalUpdate(asset.id, 'Move', newMove);
                             }
                         }
-                    }
-                ]
-            );
-            return false; // 비동기 처리, 모달 닫지 않음
-        }
 
-        return true; // 중복 없음, 정상 저장 진행
+                        // 3. 현재 자산에 새 Move 값 저장
+                        await onUpdateAsset(assetId, 'Move', newValue, propType);
+                        if (onLocalUpdate) {
+                            onLocalUpdate(assetId, 'Move', newValue);
+                        }
+
+                        if (Platform.OS === 'web') {
+                            window.alert(`✅ 완료: ${assetsToShift.length}개 항목이 밀리고, Move ${moveValue}이(가) 저장되었습니다.`);
+                        } else {
+                            Alert.alert('✅ 완료', `${assetsToShift.length}개 항목이 밀리고, Move ${moveValue}이(가) 저장되었습니다.`);
+                        }
+                        afterSave();
+                        resolve(false); // 직접 처리했으므로 부모 저장 로직 중단
+                    } catch (error) {
+                        console.error('Move shift error:', error);
+                        Alert.alert('오류', '값 업데이트 중 오류가 발생했습니다.');
+                        resolve(false);
+                    }
+                };
+
+                if (Platform.OS === 'web') {
+                    if (window.confirm(`${title}\n\n${message}`)) {
+                        executeShift();
+                    } else {
+                        resolve(false);
+                    }
+                } else {
+                    Alert.alert(
+                        title,
+                        message,
+                        [
+                            { text: '취소', style: 'cancel', onPress: () => resolve(false) },
+                            {
+                                text: '밀고 삽입',
+                                style: 'default',
+                                onPress: executeShift
+                            }
+                        ]
+                    );
+                }
+            } else {
+                resolve(true); // 중복 없음, 정상 저장 진행
+            }
+        });
     };
 
     const handleSave = async () => {
@@ -735,21 +786,42 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                                                     )}
                                                 </View>
                                             ) : (
-                                                <TextInput
-                                                    style={styles.textInput}
-                                                    value={editValue}
-                                                    onChangeText={setEditValue}
-                                                    placeholder="값을 입력하세요"
-                                                    multiline={schemaProperties[editingField]?.type === 'rich_text'}
-                                                    autoFocus
-                                                    blurOnSubmit={!schemaProperties[editingField]?.type?.includes('rich_text')}
-                                                    returnKeyType="done"
-                                                    onSubmitEditing={() => {
-                                                        if (!schemaProperties[editingField]?.type?.includes('rich_text')) {
-                                                            handleSave();
-                                                        }
-                                                    }}
-                                                />
+                                                <View>
+                                                    {editingField === 'Move' && nearestMoveValues && (
+                                                        <View style={styles.nearestMovesContainer}>
+                                                            <View style={styles.nearestMoveItem}>
+                                                                <Text style={styles.nearestMoveLabel}>Prev</Text>
+                                                                <Text style={styles.nearestMoveValue}>
+                                                                    {nearestMoveValues.prev !== null ? nearestMoveValues.prev : '-'}
+                                                                </Text>
+                                                            </View>
+                                                            {nearestMoveValues.hasDuplicate && (
+                                                                <Text style={styles.duplicateWarning}>⚠️ 중복</Text>
+                                                            )}
+                                                            <View style={styles.nearestMoveItem}>
+                                                                <Text style={styles.nearestMoveLabel}>Next</Text>
+                                                                <Text style={styles.nearestMoveValue}>
+                                                                    {nearestMoveValues.next !== null ? nearestMoveValues.next : '-'}
+                                                                </Text>
+                                                            </View>
+                                                        </View>
+                                                    )}
+                                                    <TextInput
+                                                        style={styles.textInput}
+                                                        value={editValue}
+                                                        onChangeText={setEditValue}
+                                                        placeholder="값을 입력하세요"
+                                                        multiline={schemaProperties[editingField]?.type === 'rich_text'}
+                                                        autoFocus
+                                                        blurOnSubmit={!schemaProperties[editingField]?.type?.includes('rich_text')}
+                                                        returnKeyType="done"
+                                                        onSubmitEditing={() => {
+                                                            if (!schemaProperties[editingField]?.type?.includes('rich_text')) {
+                                                                handleSave();
+                                                            }
+                                                        }}
+                                                    />
+                                                </View>
                                             )}
                                         </View>
                                     )}
@@ -1093,6 +1165,34 @@ const styles = StyleSheet.create({
     saveButtonText: {
         color: '#ffffff',
         fontSize: 16,
+        fontWeight: '600',
+    },
+    nearestMovesContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
+        paddingHorizontal: 8,
+        backgroundColor: '#f3f4f6',
+        paddingVertical: 8,
+        borderRadius: 8,
+    },
+    nearestMoveItem: {
+        alignItems: 'center',
+    },
+    nearestMoveLabel: {
+        fontSize: 12,
+        color: '#6b7280',
+        marginBottom: 2,
+    },
+    nearestMoveValue: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#374151',
+    },
+    duplicateWarning: {
+        color: '#ef4444',
+        fontSize: 13,
         fontWeight: '600',
     },
 });
