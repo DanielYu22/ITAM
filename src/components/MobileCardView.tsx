@@ -312,6 +312,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                 }
             }
 
+            const savedField = editingField; // 저장하기 전에 현재 필드 저장
             setEditModalVisible(false);
             setEditingField(null);
 
@@ -319,6 +320,11 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
             setTimeout(() => {
                 fieldScrollRef.current?.scrollTo({ y: 0, animated: true });
             }, 100);
+
+            // 저장 후 다음 필드로 자동 이동
+            if (savedField) {
+                openNextField(savedField);
+            }
         } catch (error) {
             Alert.alert('Error', 'Failed to update asset');
         } finally {
@@ -358,6 +364,38 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
             opt.name.toLowerCase().includes(optionSearchText.toLowerCase())
         );
     }, [editingField, schemaProperties, optionSearchText]);
+
+    // 정렬된 편집 가능 필드 목록 (타겟 필드가 상단에)
+    const sortedEditableFields = useMemo(() => {
+        const currentAsset = assets[currentIndex];
+        if (!currentAsset || !filterConfig) return editableFields.length > 0 ? editableFields : schema;
+
+        const matchedConditions = getMatchedConditions(currentAsset, filterConfig);
+        return (editableFields.length > 0 ? editableFields : schema)
+            .filter((field: string) => field !== titleField)
+            .sort((a: string, b: string) => {
+                const aMatched = matchedConditions.some(c => c.column === a);
+                const bMatched = matchedConditions.some(c => c.column === b);
+                if (aMatched && !bMatched) return -1;
+                if (!aMatched && bMatched) return 1;
+                return 0;
+            });
+    }, [assets, currentIndex, filterConfig, editableFields, schema, titleField]);
+
+    // 다음 필드로 자동 이동
+    const openNextField = (currentField: string) => {
+        const currentAsset = assets[currentIndex];
+        if (!currentAsset) return;
+
+        const currentIdx = sortedEditableFields.indexOf(currentField);
+        if (currentIdx >= 0 && currentIdx < sortedEditableFields.length - 1) {
+            const nextField = sortedEditableFields[currentIdx + 1];
+            // 잠시 후 다음 필드 열기
+            setTimeout(() => {
+                handleEdit(currentAsset, nextField);
+            }, 200);
+        }
+    };
 
     const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
         const contentOffsetX = event.nativeEvent.contentOffset.x;
