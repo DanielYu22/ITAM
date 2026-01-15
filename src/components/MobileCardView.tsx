@@ -129,35 +129,41 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
         return Object.keys(schemaProperties).find(k => schemaProperties[k].type === 'title') || 'Name';
     }, [schemaProperties]);
 
-    // 현장 작업 진입 시 첫 번째 타겟 필드 자동 오픈 (조건에 해당하는 필드 우선)
+    // 현장 작업 진입 시 첫 번째 타겟 필드 자동 오픈 (조건에 해당하는 필드 우선, Title 제외)
     useEffect(() => {
-        if (hasAutoFocused || assets.length === 0) return;
+        // 이미 포커스 했거나, 데이터가 없거나, 스키마 정보가 아직 없으면 리턴
+        if (hasAutoFocused || assets.length === 0 || Object.keys(schemaProperties).length === 0) return;
 
         const firstAsset = assets[0];
+        let targetField = '';
 
-        // 1. 필터 조건이 있으면 조건에 해당하는 첫 번째 필드 선택
+        // 1. 필터 조건이 있으면 조건에 해당하는 첫 번째 필드 선택 (Title 제외)
         if (filterConfig) {
             const matchedConditions = getMatchedConditions(firstAsset, filterConfig);
-            if (matchedConditions.length > 0) {
-                const firstTargetField = matchedConditions[0].column;
-                setTimeout(() => {
-                    handleEdit(firstAsset, firstTargetField);
-                }, 500);
-                setHasAutoFocused(true);
-                return;
+            // Title이 아닌 첫 번째 매칭 조건 찾기
+            const firstValidCondition = matchedConditions.find(c => c.column !== titleField);
+            if (firstValidCondition) {
+                targetField = firstValidCondition.column;
             }
         }
 
-        // 2. 조건 매칭 없으면, editableFields 중 첫 번째 (Name 제외)
-        const fieldsToCheck = editableFields.length > 0 ? editableFields : schema;
-        const firstEditableField = fieldsToCheck.find((f: string) => f !== titleField);
-        if (firstEditableField) {
+        // 2. 조건 매칭 없으면, editableFields 중 첫 번째 (Title 제외)
+        if (!targetField) {
+            const fieldsToCheck = editableFields.length > 0 ? editableFields : schema;
+            const firstEditableField = fieldsToCheck.find((f: string) => f !== titleField);
+            if (firstEditableField) {
+                targetField = firstEditableField;
+            }
+        }
+
+        // 3. 타겟 필드가 결정되면 오픈
+        if (targetField) {
             setTimeout(() => {
-                handleEdit(firstAsset, firstEditableField);
+                handleEdit(firstAsset, targetField);
             }, 500);
             setHasAutoFocused(true);
         }
-    }, [assets, filterConfig, hasAutoFocused, editableFields, schema, titleField]);
+    }, [assets, filterConfig, hasAutoFocused, editableFields, schema, titleField, schemaProperties]);
 
     const handleEdit = (asset: Asset, field: string) => {
         setSelectedAsset(asset);
