@@ -751,563 +751,495 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                                                                     }}
                                                                     placeholder="옵션 검색 또는 생성..."
                                                                     placeholderTextColor="#9ca3af"
-                                                                    transparent
-                                                                    animationType="slide"
-                                                                    onRequestClose={() => setEditModalVisible(false)}
-                                                                >
-                                                                    <KeyboardAvoidingView
-                                                                        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                                                                        style={styles.modalOverlay}
-                                                                    >
-                                                                        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-                                                                            <View style={styles.modalSubOverlay}>
-                                                                                <TouchableWithoutFeedback onPress={() => { }}>
-                                                                                    <View style={styles.modalContent}>
-                                                                                        <View style={styles.modalHeader}>
-                                                                                            <Text style={styles.modalTitle}>
-                                                                                                {editingField} 편집
-                                                                                            </Text>
-                                                                                            <TouchableOpacity
-                                                                                                onPress={() => setEditModalVisible(false)}
-                                                                                                disabled={isSaving}
-                                                                                                accessible={false}
-                                                                                                focusable={false}
-                                                                                                tabIndex={-1}
-                                                                                            >
-                                                                                                <X size={24} color="#6b7280" />
-                                                                                            </TouchableOpacity>
-                                                                                        </View>
-
-                                                                                        {editingField && (
-                                                                                            <View style={styles.inputContainer}>
-                                                                                                {['select', 'multi_select'].includes(schemaProperties[editingField]?.type) ? (
-                                                                                                    <View style={styles.selectContainer}>
-                                                                                                        {/* 선택된 값 표시 영역 */}
-                                                                                                        <TouchableOpacity
-                                                                                                            style={styles.selectedValueBox}
-                                                                                                            onPress={() => setShowOptions(!showOptions)}
-                                                                                                        >
-                                                                                                            <View style={styles.selectedTags}>
-                                                                                                                {selectedOptions.length > 0 ? (
-                                                                                                                    selectedOptions.map(opt => (
-                                                                                                                        <View key={opt} style={styles.tag}>
-                                                                                                                            <Text style={styles.tagText}>{opt}</Text>
-                                                                                                                            {schemaProperties[editingField].type === 'multi_select' && (
-                                                                                                                                <TouchableOpacity onPress={() => toggleOption(opt, true)}>
-                                                                                                                                    <X size={12} color="#4b5563" />
-                                                                                                                                </TouchableOpacity>
-                                                                                                                            )}
-                                                                                                                        </View>
-                                                                                                                    ))
-                                                                                                                ) : (
-                                                                                                                    <Text style={styles.placeholderText}>값을 선택하세요</Text>
-                                                                                                                )}
-                                                                                                            </View>
-                                                                                                            <ChevronDown size={20} color="#9ca3af" />
-                                                                                                        </TouchableOpacity>
-
-                                                                                                        {/* 옵션 드롭다운 */}
-                                                                                                        {(showOptions || optionSearchText) && (
-                                                                                                            <View style={styles.dropdownContainer}>
-                                                                                                                <View style={styles.optionSearch}>
-                                                                                                                    <Search size={16} color="#9ca3af" />
-                                                                                                                    <TextInput
-                                                                                                                        style={styles.optionSearchInput}
-                                                                                                                        value={optionSearchText}
-                                                                                                                        onChangeText={(text) => {
-                                                                                                                            setOptionSearchText(text);
-                                                                                                                            setShowOptions(true);
-                                                                                                                            setHighlightedOptionIndex(0);
-                                                                                                                        }}
-                                                                                                                        placeholder="옵션 검색 또는 생성..."
-                                                                                                                        placeholderTextColor="#9ca3af"
-                                                                                                                        autoFocus
-                                                                                                                        onKeyPress={(e: any) => {
-                                                                                                                            const key = e.nativeEvent?.key || e.key;
-                                                                                                                            if (key === 'ArrowDown') {
-                                                                                                                                setHighlightedOptionIndex(prev =>
-                                                                                                                                    Math.min(prev + 1, filteredOptions.length - 1)
-                                                                                                                                );
-                                                                                                                            } else if (key === 'ArrowUp') {
-                                                                                                                                setHighlightedOptionIndex(prev => Math.max(prev - 1, 0));
-                                                                                                                            } else if (key === 'Enter' && filteredOptions.length > 0) {
-                                                                                                                                const selectedOpt = filteredOptions[highlightedOptionIndex];
-                                                                                                                                if (selectedOpt) {
-                                                                                                                                    const isMulti = schemaProperties[editingField]?.type === 'multi_select';
-                                                                                                                                    toggleOption(selectedOpt.name, isMulti, !isMulti);
-                                                                                                                                    setOptionSearchText('');
-                                                                                                                                }
-                                                                                                                            } else if (key === 'Escape') {
-                                                                                                                                setEditModalVisible(false);
-                                                                                                                            }
-                                                                                                                        }}
-                                                                                                                    />
-                                                                                                                </View>
-
-                                                                                                                <ScrollView style={styles.optionsList} keyboardShouldPersistTaps="handled">
-                                                                                                                    {filteredOptions.map((opt, idx) => {
-                                                                                                                        const isSelected = selectedOptions.includes(opt.name);
-                                                                                                                        const isHighlighted = idx === highlightedOptionIndex;
-                                                                                                                        return (
-                                                                                                                            <TouchableOpacity
-                                                                                                                                key={opt.id}
-                                                                                                                                style={[
-                                                                                                                                    styles.optionItem,
-                                                                                                                                    isSelected && styles.optionItemSelected,
-                                                                                                                                    isHighlighted && styles.optionItemHighlighted
-                                                                                                                                ]}
-                                                                                                                                onPress={() => {
-                                                                                                                                    const isMulti = schemaProperties[editingField].type === 'multi_select';
-                                                                                                                                    toggleOption(opt.name, isMulti, !isMulti);
-                                                                                                                                }}
-                                                                                                                            >
-                                                                                                                                <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>
-                                                                                                                                    {opt.name}
-                                                                                                                                </Text>
-                                                                                                                                {isSelected && <Check size={16} color="#6366f1" />}
-                                                                                                                            </TouchableOpacity>
-                                                                                                                        );
-                                                                                                                    })}
-
-                                                                                                                    {/* 결과 없음 & 생성 옵션 */}
-                                                                                                                    {optionSearchText && !filteredOptions.some(o => o.name.toLowerCase() === optionSearchText.toLowerCase()) && (
-                                                                                                                        <TouchableOpacity
-                                                                                                                            style={styles.createOptionItem}
-                                                                                                                            onPress={() => {
-                                                                                                                                toggleOption(optionSearchText, schemaProperties[editingField].type === 'multi_select');
-                                                                                                                                setOptionSearchText('');
-                                                                                                                            }}
-                                                                                                                        >
-                                                                                                                            <Plus size={16} color="#6366f1" />
-                                                                                                                            <Text style={styles.createOptionText}>
-                                                                                                                                "{optionSearchText}" 생성
-                                                                                                                            </Text>
-                                                                                                                        </TouchableOpacity>
-                                                                                                                    )}
-                                                                                                                </ScrollView>
-                                                                                                            </View>
-                                                                                                        )}
-                                                                                                    </View>
-                                                                                                ) : (
-                                                                                                    <View>
-                                                                                                        {editingField === 'Move' && nearestMoveValues && (
-                                                                                                            <View style={styles.nearestMovesContainer}>
-                                                                                                                <View style={styles.nearestMoveItem}>
-                                                                                                                    <Text style={styles.nearestMoveLabel}>Prev</Text>
-                                                                                                                    <Text style={styles.nearestMoveValue}>
-                                                                                                                        {nearestMoveValues.prev !== null ? nearestMoveValues.prev : '-'}
-                                                                                                                    </Text>
-                                                                                                                </View>
-                                                                                                                {nearestMoveValues.hasDuplicate && (
-                                                                                                                    <Text style={styles.duplicateWarning}>⚠️ 중복</Text>
-                                                                                                                )}
-                                                                                                                <View style={styles.nearestMoveItem}>
-                                                                                                                    <Text style={styles.nearestMoveLabel}>Next</Text>
-                                                                                                                    <Text style={styles.nearestMoveValue}>
-                                                                                                                        {nearestMoveValues.next !== null ? nearestMoveValues.next : '-'}
-                                                                                                                    </Text>
-                                                                                                                </View>
-                                                                                                            </View>
-                                                                                                        )}
-                                                                                                        <TextInput
-                                                                                                            style={styles.textInput}
-                                                                                                            value={editValue}
-                                                                                                            onChangeText={setEditValue}
-                                                                                                            placeholder="값을 입력하세요"
-                                                                                                            multiline={false}
-                                                                                                            autoFocus
-                                                                                                            blurOnSubmit={true}
-                                                                                                            returnKeyType="done"
-                                                                                                            onSubmitEditing={handleSave}
-                                                                                                        />
-                                                                                                    </View>
-                                                                                                )}
-                                                                                            </View>
-                                                                                        )}
-
-                                                                                        <TouchableOpacity
-                                                                                            style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
-                                                                                            onPress={handleSave}
-                                                                                            disabled={isSaving}
-                                                                                        >
-                                                                                            <Text style={styles.saveButtonText}>
-                                                                                                {isSaving ? '저장 중...' : '저장'}
-                                                                                            </Text>
-                                                                                        </TouchableOpacity>
-                                                                                    </View>
-                                                                                </TouchableWithoutFeedback>
-                                                                            </View>
-                                                                        </TouchableWithoutFeedback>
-                                                                    </KeyboardAvoidingView>
-                                                                </Modal>
+                                                                    autoFocus
+                                                                    onKeyPress={(e: any) => {
+                                                                        const key = e.nativeEvent?.key || e.key;
+                                                                        if (key === 'ArrowDown') {
+                                                                            setHighlightedOptionIndex(prev =>
+                                                                                Math.min(prev + 1, filteredOptions.length - 1)
+                                                                            );
+                                                                        } else if (key === 'ArrowUp') {
+                                                                            setHighlightedOptionIndex(prev => Math.max(prev - 1, 0));
+                                                                        } else if (key === 'Enter' && filteredOptions.length > 0) {
+                                                                            const selectedOpt = filteredOptions[highlightedOptionIndex];
+                                                                            if (selectedOpt) {
+                                                                                const isMulti = schemaProperties[editingField]?.type === 'multi_select';
+                                                                                toggleOption(selectedOpt.name, isMulti, !isMulti);
+                                                                                setOptionSearchText('');
+                                                                            }
+                                                                        } else if (key === 'Escape') {
+                                                                            setEditModalVisible(false);
+                                                                        }
+                                                                    }}
+                                                                />
                                                             </View>
-                                                            );
+
+                                                            <ScrollView style={styles.optionsList} keyboardShouldPersistTaps="handled">
+                                                                {filteredOptions.map((opt, idx) => {
+                                                                    const isSelected = selectedOptions.includes(opt.name);
+                                                                    const isHighlighted = idx === highlightedOptionIndex;
+                                                                    return (
+                                                                        <TouchableOpacity
+                                                                            key={opt.id}
+                                                                            style={[
+                                                                                styles.optionItem,
+                                                                                isSelected && styles.optionItemSelected,
+                                                                                isHighlighted && styles.optionItemHighlighted
+                                                                            ]}
+                                                                            onPress={() => {
+                                                                                const isMulti = schemaProperties[editingField].type === 'multi_select';
+                                                                                toggleOption(opt.name, isMulti, !isMulti);
+                                                                            }}
+                                                                        >
+                                                                            <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>
+                                                                                {opt.name}
+                                                                            </Text>
+                                                                            {isSelected && <Check size={16} color="#6366f1" />}
+                                                                        </TouchableOpacity>
+                                                                    );
+                                                                })}
+
+                                                                {/* 결과 없음 & 생성 옵션 */}
+                                                                {optionSearchText && !filteredOptions.some(o => o.name.toLowerCase() === optionSearchText.toLowerCase()) && (
+                                                                    <TouchableOpacity
+                                                                        style={styles.createOptionItem}
+                                                                        onPress={() => {
+                                                                            toggleOption(optionSearchText, schemaProperties[editingField].type === 'multi_select');
+                                                                            setOptionSearchText('');
+                                                                        }}
+                                                                    >
+                                                                        <Plus size={16} color="#6366f1" />
+                                                                        <Text style={styles.createOptionText}>
+                                                                            "{optionSearchText}" 생성
+                                                                        </Text>
+                                                                    </TouchableOpacity>
+                                                                )}
+                                                            </ScrollView>
+                                                        </View>
+                                                    )}
+                                                </View>
+                                            ) : (
+                                                <View>
+                                                    {/* Text Input & Move Warnings */}
+                                                    {editingField === 'Move' && nearestMoveValues && (
+                                                        <View style={styles.nearestMovesContainer}>
+                                                            <View style={styles.nearestMoveItem}>
+                                                                <Text style={styles.nearestMoveLabel}>Prev</Text>
+                                                                <Text style={styles.nearestMoveValue}>
+                                                                    {nearestMoveValues.prev !== null ? nearestMoveValues.prev : '-'}
+                                                                </Text>
+                                                            </View>
+                                                            {nearestMoveValues.hasDuplicate && (
+                                                                <Text style={styles.duplicateWarning}>⚠️ 중복</Text>
+                                                            )}
+                                                            <View style={styles.nearestMoveItem}>
+                                                                <Text style={styles.nearestMoveLabel}>Next</Text>
+                                                                <Text style={styles.nearestMoveValue}>
+                                                                    {nearestMoveValues.next !== null ? nearestMoveValues.next : '-'}
+                                                                </Text>
+                                                            </View>
+                                                        </View>
+                                                    )}
+                                                    <TextInput
+                                                        style={styles.textInput}
+                                                        value={editValue}
+                                                        onChangeText={setEditValue}
+                                                        placeholder="값을 입력하세요"
+                                                        multiline={false}
+                                                        autoFocus
+                                                        blurOnSubmit={true}
+                                                        returnKeyType="done"
+                                                        onSubmitEditing={handleSave}
+                                                    />
+                                                </View>
+                                            )}
+                                        </View>
+                                    )}
+
+                                    {/* Save Button */}
+                                    <TouchableOpacity
+                                        style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
+                                        onPress={handleSave}
+                                        disabled={isSaving}
+                                    >
+                                        <Text style={styles.saveButtonText}>
+                                            {isSaving ? '저장 중...' : '저장'}
+                                        </Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </TouchableWithoutFeedback>
+                        </KeyboardAvoidingView>
+                    </View>
+                </TouchableWithoutFeedback>
+            </Modal>
+        </View>
+    );
 };
 
-                                                            const styles = StyleSheet.create({
-                                                                container: {
-                                                                flex: 1,
-                                                            backgroundColor: '#f3f4f6',
+const styles = StyleSheet.create({
+    container: {
+        flex: 1,
+        backgroundColor: '#f3f4f6',
     },
-                                                            paginationContainer: {
-                                                                flexDirection: 'row',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'space-between',
-                                                            paddingHorizontal: 16,
-                                                            paddingVertical: 12,
-                                                            backgroundColor: '#ffffff',
-                                                            borderBottomWidth: 1,
-                                                            borderBottomColor: '#e5e7eb',
+    paginationContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        paddingHorizontal: 16,
+        paddingVertical: 12,
+        backgroundColor: '#ffffff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#e5e7eb',
     },
-                                                            paginationInfo: {
-                                                                alignItems: 'center',
-                                                            flex: 1,
+    paginationInfo: {
+        alignItems: 'center',
+        flex: 1,
     },
-                                                            paginationText: {
-                                                                fontSize: 14,
-                                                            color: '#6b7280',
-                                                            fontWeight: '500',
+    paginationText: {
+        fontSize: 14,
+        color: '#6b7280',
+        fontWeight: '500',
     },
-                                                            currentIndexText: {
-                                                                color: '#6366f1',
-                                                            fontWeight: 'bold',
-                                                            fontSize: 16,
+    currentIndexText: {
+        color: '#6366f1',
+        fontWeight: 'bold',
+        fontSize: 16,
     },
-                                                            assetNameHint: {
-                                                                fontSize: 12,
-                                                            color: '#9ca3af',
-                                                            marginTop: 2,
+    assetNameHint: {
+        fontSize: 12,
+        color: '#9ca3af',
+        marginTop: 2,
     },
-                                                            navButton: {
-                                                                padding: 8,
+    navButton: {
+        padding: 8,
     },
-                                                            flatList: {
-                                                                flex: 1,
+    flatList: {
+        flex: 1,
     },
-                                                            cardContainer: {
-                                                                width: SCREEN_WIDTH,
-                                                            height: CARD_HEIGHT, // Explicit pixel height for web scroll support
+    cardContainer: {
+        width: SCREEN_WIDTH,
+        height: CARD_HEIGHT, // Explicit pixel height for web scroll support
     },
-                                                            cardWrapper: {
-                                                                flex: 1,
-                                                            padding: 16,
-                                                            paddingBottom: 0,
+    cardWrapper: {
+        flex: 1,
+        padding: 16,
+        paddingBottom: 0,
     },
-                                                            card: {
-                                                                flex: 1,
-                                                            backgroundColor: '#ffffff',
-                                                            borderRadius: 24,
-                                                            shadowColor: '#000',
-                                                            shadowOffset: {width: 0, height: 4 },
-                                                            shadowOpacity: 0.1,
-                                                            shadowRadius: 12,
-                                                            elevation: 5,
+    card: {
+        flex: 1,
+        backgroundColor: '#ffffff',
+        borderRadius: 24,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.1,
+        shadowRadius: 12,
+        elevation: 5,
         // overflow: 'hidden', // Removed to prevent clipping on web
     },
-                                                            cardHeader: {
-                                                                padding: 20,
-                                                            backgroundColor: '#f8fafc',
-                                                            borderBottomWidth: 1,
-                                                            borderBottomColor: '#f1f5f9',
+    cardHeader: {
+        padding: 20,
+        backgroundColor: '#f8fafc',
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
     },
-                                                            cardTitle: {
-                                                                fontSize: 20,
-                                                            fontWeight: 'bold',
-                                                            color: '#1e293b',
-                                                            textAlign: 'center',
+    cardTitle: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#1e293b',
+        textAlign: 'center',
     },
-                                                            conditionBadges: {
-                                                                flexDirection: 'row',
-                                                            flexWrap: 'wrap',
-                                                            justifyContent: 'center',
-                                                            marginTop: 12,
-                                                            gap: 6,
+    conditionBadges: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        justifyContent: 'center',
+        marginTop: 12,
+        gap: 6,
     },
-                                                            conditionBadge: {
-                                                                flexDirection: 'row',
-                                                            alignItems: 'center',
-                                                            backgroundColor: '#fef3c7',
-                                                            paddingHorizontal: 10,
-                                                            paddingVertical: 4,
-                                                            borderRadius: 12,
-                                                            gap: 4,
+    conditionBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fef3c7',
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+        gap: 4,
     },
-                                                            conditionBadgeText: {
-                                                                fontSize: 11,
-                                                            color: '#b45309',
-                                                            fontWeight: '500',
+    conditionBadgeText: {
+        fontSize: 11,
+        color: '#b45309',
+        fontWeight: '500',
     },
-                                                            conditionMore: {
-                                                                fontSize: 11,
-                                                            color: '#9ca3af',
-                                                            marginLeft: 4,
+    conditionMore: {
+        fontSize: 11,
+        color: '#9ca3af',
+        marginLeft: 4,
     },
-                                                            cardBody: {
-                                                                flex: 1,
+    cardBody: {
+        flex: 1,
     },
-                                                            cardBodyContent: {
-                                                                flexGrow: 1, // Ensure content fills space
-                                                            padding: 20,
-                                                            paddingBottom: 20, // Reset to normal padding, using spacer instead
+    cardBodyContent: {
+        flexGrow: 1, // Ensure content fills space
+        padding: 20,
+        paddingBottom: 20, // Reset to normal padding, using spacer instead
     },
-                                                            fieldRow: {
-                                                                marginBottom: 16,
-                                                            backgroundColor: '#f8fafc',
-                                                            borderRadius: 16,
-                                                            padding: 16,
-                                                            borderWidth: 1,
-                                                            borderColor: '#f1f5f9',
+    fieldRow: {
+        marginBottom: 16,
+        backgroundColor: '#f8fafc',
+        borderRadius: 16,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: '#f1f5f9',
     },
-                                                            fieldRowHighlighted: {
-                                                                backgroundColor: '#fef3c7',
-                                                            borderColor: '#fcd34d',
-                                                            borderWidth: 2,
+    fieldRowHighlighted: {
+        backgroundColor: '#fef3c7',
+        borderColor: '#fcd34d',
+        borderWidth: 2,
     },
-                                                            fieldLabelRow: {
-                                                                flexDirection: 'row',
-                                                            justifyContent: 'space-between',
-                                                            alignItems: 'center',
-                                                            marginBottom: 8,
+    fieldLabelRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 8,
     },
-                                                            fieldLabelContainer: {
-                                                                flexDirection: 'row',
-                                                            alignItems: 'center',
-                                                            flexWrap: 'wrap',
-                                                            flex: 1,
-                                                            gap: 6,
+    fieldLabelContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        flexWrap: 'wrap',
+        flex: 1,
+        gap: 6,
     },
-                                                            fieldLabel: {
-                                                                fontSize: 13,
-                                                            color: '#64748b',
-                                                            fontWeight: '600',
-                                                            textTransform: 'uppercase',
-                                                            letterSpacing: 0.5,
+    fieldLabel: {
+        fontSize: 13,
+        color: '#64748b',
+        fontWeight: '600',
+        textTransform: 'uppercase',
+        letterSpacing: 0.5,
     },
-                                                            fieldLabelHighlighted: {
-                                                                color: '#b45309',
+    fieldLabelHighlighted: {
+        color: '#b45309',
     },
-                                                            fieldConditionBadge: {
-                                                                flexDirection: 'row',
-                                                            alignItems: 'center',
-                                                            backgroundColor: '#fde68a',
-                                                            paddingHorizontal: 6,
-                                                            paddingVertical: 2,
-                                                            borderRadius: 8,
-                                                            gap: 3,
+    fieldConditionBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#fde68a',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 8,
+        gap: 3,
     },
-                                                            fieldConditionText: {
-                                                                fontSize: 10,
-                                                            color: '#92400e',
-                                                            fontWeight: '500',
+    fieldConditionText: {
+        fontSize: 10,
+        color: '#92400e',
+        fontWeight: '500',
     },
-                                                            fieldValueContainer: {
-                                                                flexDirection: 'row',
-                                                            alignItems: 'center',
+    fieldValueContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
     },
-                                                            fieldValueHighlighted: {
-                                                                color: '#92400e',
+    fieldValueHighlighted: {
+        color: '#92400e',
     },
-                                                            fieldValue: {
-                                                                fontSize: 16,
-                                                            color: '#334155',
-                                                            lineHeight: 24,
+    fieldValue: {
+        fontSize: 16,
+        color: '#334155',
+        lineHeight: 24,
     },
-                                                            footer: {
-                                                                height: 0,
+    footer: {
+        height: 0,
     },
-                                                            modalOverlay: {
-                                                                flex: 1,
-                                                            backgroundColor: 'rgba(0,0,0,0.5)',
-                                                            justifyContent: 'flex-end',
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'flex-end',
     },
-                                                            modalSubOverlay: {
-                                                                flex: 1,
-                                                            justifyContent: 'flex-end',
+    modalSubOverlay: {
+        flex: 1,
+        justifyContent: 'flex-end',
     },
-                                                            modalContent: {
-                                                                backgroundColor: '#ffffff',
-                                                            borderTopLeftRadius: 20,
-                                                            borderTopRightRadius: 20,
-                                                            padding: 20,
-                                                            maxHeight: '80%',
+    modalContent: {
+        backgroundColor: '#ffffff',
+        borderTopLeftRadius: 20,
+        borderTopRightRadius: 20,
+        padding: 20,
+        maxHeight: '80%',
     },
-                                                            modalHeader: {
-                                                                flexDirection: 'row',
-                                                            justifyContent: 'space-between',
-                                                            alignItems: 'center',
-                                                            marginBottom: 20,
+    modalHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 20,
     },
-                                                            modalTitle: {
-                                                                fontSize: 18,
-                                                            fontWeight: 'bold',
-                                                            color: '#1f2937',
+    modalTitle: {
+        fontSize: 18,
+        fontWeight: 'bold',
+        color: '#1f2937',
     },
-                                                            inputContainer: {
-                                                                marginBottom: 20,
+    inputContainer: {
+        marginBottom: 20,
     },
-                                                            textInput: {
-                                                                backgroundColor: '#f3f4f6',
-                                                            borderRadius: 12,
-                                                            padding: 16,
-                                                            fontSize: 16,
-                                                            color: '#1f2937',
-                                                            minHeight: 50,
+    textInput: {
+        backgroundColor: '#f3f4f6',
+        borderRadius: 12,
+        padding: 16,
+        fontSize: 16,
+        color: '#1f2937',
+        minHeight: 50,
     },
-                                                            selectContainer: {
-                                                                position: 'relative',
-                                                            zIndex: 1000,
+    selectContainer: {
+        position: 'relative',
+        zIndex: 1000,
     },
-                                                            selectedValueBox: {
-                                                                flexDirection: 'row',
-                                                            justifyContent: 'space-between',
-                                                            alignItems: 'center',
-                                                            backgroundColor: '#f3f4f6',
-                                                            borderRadius: 12,
-                                                            padding: 12,
-                                                            minHeight: 50,
+    selectedValueBox: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        backgroundColor: '#f3f4f6',
+        borderRadius: 12,
+        padding: 12,
+        minHeight: 50,
     },
-                                                            selectedTags: {
-                                                                flex: 1,
-                                                            flexDirection: 'row',
-                                                            flexWrap: 'wrap',
-                                                            gap: 8,
+    selectedTags: {
+        flex: 1,
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 8,
     },
-                                                            tag: {
-                                                                flexDirection: 'row',
-                                                            alignItems: 'center',
-                                                            backgroundColor: '#e0e7ff',
-                                                            borderRadius: 6,
-                                                            paddingHorizontal: 8,
-                                                            paddingVertical: 4,
-                                                            gap: 6,
+    tag: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: '#e0e7ff',
+        borderRadius: 6,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        gap: 6,
     },
-                                                            tagText: {
-                                                                fontSize: 14,
-                                                            color: '#4338ca',
-                                                            fontWeight: '500',
+    tagText: {
+        fontSize: 14,
+        color: '#4338ca',
+        fontWeight: '500',
     },
-                                                            placeholderText: {
-                                                                color: '#9ca3af',
-                                                            fontSize: 16,
+    placeholderText: {
+        color: '#9ca3af',
+        fontSize: 16,
     },
-                                                            dropdownContainer: {
-                                                                marginTop: 8,
-                                                            backgroundColor: '#ffffff',
-                                                            borderRadius: 12,
-                                                            borderWidth: 1,
-                                                            borderColor: '#e5e7eb',
-                                                            maxHeight: 250,
-                                                            overflow: 'hidden',
+    dropdownContainer: {
+        marginTop: 8,
+        backgroundColor: '#ffffff',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        maxHeight: 250,
+        overflow: 'hidden',
     },
-                                                            optionSearch: {
-                                                                flexDirection: 'row',
-                                                            alignItems: 'center',
-                                                            padding: 10,
-                                                            borderBottomWidth: 1,
-                                                            borderBottomColor: '#f3f4f6',
-                                                            gap: 8,
+    optionSearch: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f3f4f6',
+        gap: 8,
     },
-                                                            optionSearchInput: {
-                                                                flex: 1,
-                                                            fontSize: 15,
-                                                            color: '#1f2937',
+    optionSearchInput: {
+        flex: 1,
+        fontSize: 15,
+        color: '#1f2937',
     },
-                                                            optionsList: {
-                                                                maxHeight: 200,
+    optionsList: {
+        maxHeight: 200,
     },
-                                                            optionItem: {
-                                                                flexDirection: 'row',
-                                                            alignItems: 'center',
-                                                            justifyContent: 'space-between',
-                                                            padding: 12,
-                                                            borderBottomWidth: 1,
-                                                            borderBottomColor: '#f3f4f6',
+    optionItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        padding: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f3f4f6',
     },
-                                                            optionItemSelected: {
-                                                                backgroundColor: '#eef2ff',
+    optionItemSelected: {
+        backgroundColor: '#eef2ff',
     },
-                                                            optionItemHighlighted: {
-                                                                backgroundColor: '#e0e7ff',
-                                                            borderLeftWidth: 3,
-                                                            borderLeftColor: '#6366f1',
+    optionItemHighlighted: {
+        backgroundColor: '#e0e7ff',
+        borderLeftWidth: 3,
+        borderLeftColor: '#6366f1',
     },
-                                                            optionText: {
-                                                                fontSize: 15,
-                                                            color: '#1f2937',
+    optionText: {
+        fontSize: 15,
+        color: '#1f2937',
     },
-                                                            optionTextSelected: {
-                                                                color: '#6366f1',
-                                                            fontWeight: '500',
+    optionTextSelected: {
+        color: '#6366f1',
+        fontWeight: '500',
     },
-                                                            createOptionItem: {
-                                                                flexDirection: 'row',
-                                                            alignItems: 'center',
-                                                            padding: 12,
-                                                            gap: 8,
-                                                            borderTopWidth: 1,
-                                                            borderTopColor: '#f3f4f6',
+    createOptionItem: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        padding: 12,
+        gap: 8,
+        borderTopWidth: 1,
+        borderTopColor: '#f3f4f6',
     },
-                                                            createOptionText: {
-                                                                fontSize: 15,
-                                                            color: '#6366f1',
-                                                            fontWeight: '500',
+    createOptionText: {
+        fontSize: 15,
+        color: '#6366f1',
+        fontWeight: '500',
     },
-                                                            saveButton: {
-                                                                backgroundColor: '#6366f1',
-                                                            borderRadius: 12,
-                                                            padding: 16,
-                                                            alignItems: 'center',
+    saveButton: {
+        backgroundColor: '#6366f1',
+        borderRadius: 12,
+        padding: 16,
+        alignItems: 'center',
     },
-                                                            saveButtonDisabled: {
-                                                                backgroundColor: '#9ca3af',
+    saveButtonDisabled: {
+        backgroundColor: '#9ca3af',
     },
-                                                            saveButtonText: {
-                                                                color: '#ffffff',
-                                                            fontSize: 16,
-                                                            fontWeight: '600',
+    saveButtonText: {
+        color: '#ffffff',
+        fontSize: 16,
+        fontWeight: '600',
     },
-                                                            nearestMovesContainer: {
-                                                                flexDirection: 'row',
-                                                            justifyContent: 'space-between',
-                                                            alignItems: 'center',
-                                                            marginBottom: 12,
-                                                            paddingHorizontal: 8,
-                                                            backgroundColor: '#f3f4f6',
-                                                            paddingVertical: 8,
-                                                            borderRadius: 8,
+    nearestMovesContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
+        paddingHorizontal: 8,
+        backgroundColor: '#f3f4f6',
+        paddingVertical: 8,
+        borderRadius: 8,
     },
-                                                            nearestMoveItem: {
-                                                                alignItems: 'center',
+    nearestMoveItem: {
+        alignItems: 'center',
     },
-                                                            nearestMoveLabel: {
-                                                                fontSize: 12,
-                                                            color: '#6b7280',
-                                                            marginBottom: 2,
+    nearestMoveLabel: {
+        fontSize: 12,
+        color: '#6b7280',
+        marginBottom: 2,
     },
-                                                            nearestMoveValue: {
-                                                                fontSize: 16,
-                                                            fontWeight: 'bold',
-                                                            color: '#374151',
+    nearestMoveValue: {
+        fontSize: 16,
+        fontWeight: 'bold',
+        color: '#374151',
     },
-                                                            duplicateWarning: {
-                                                                color: '#ef4444',
-                                                            fontSize: 13,
-                                                            fontWeight: '600',
+    duplicateWarning: {
+        color: '#ef4444',
+        fontSize: 13,
+        fontWeight: '600',
     },
-                                                            locationHeader: {
-                                                                flexDirection: 'row',
-                                                            alignItems: 'center',
-                                                            paddingVertical: 12,
-                                                            paddingHorizontal: 16,
-                                                            backgroundColor: '#f3f4f6',
-                                                            borderBottomWidth: 1,
-                                                            borderBottomColor: '#e5e7eb',
-                                                            gap: 8,
+    locationHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        backgroundColor: '#f3f4f6',
+        borderBottomWidth: 1,
+        borderBottomColor: '#e5e7eb',
+        gap: 8,
     },
-                                                            locationHeaderText: {
-                                                                flex: 1,
-                                                            fontSize: 14,
-                                                            color: '#4b5563',
-                                                            fontWeight: '500',
+    locationHeaderText: {
+        flex: 1,
+        fontSize: 14,
+        color: '#4b5563',
+        fontWeight: '500',
     },
 });
