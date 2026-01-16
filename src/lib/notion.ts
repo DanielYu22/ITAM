@@ -210,11 +210,11 @@ export class NotionClient {
             const targetUrl = `${API_BASE_URL}/api/notion/v1/pages/${pageId}`;
             const properties: any = {};
             if (type === 'select') {
-                properties[propertyName] = { select: { name: value } };
+                properties[propertyName] = value ? { select: { name: value } } : { select: null };
             } else if (type === 'date') {
-                properties[propertyName] = { date: { start: value } };
+                properties[propertyName] = value ? { date: { start: value } } : { date: null };
             } else if (type === 'status') {
-                properties[propertyName] = { status: { name: value } };
+                properties[propertyName] = value ? { status: { name: value } } : { status: null };
             } else if (type === 'multi_select') {
                 const names = value.split(',').map(v => v.trim()).filter(Boolean);
                 properties[propertyName] = { multi_select: names.map(n => ({ name: n })) };
