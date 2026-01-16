@@ -612,6 +612,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                                             </View>
                                         </TouchableOpacity>
                                     );
+                                })}
                         </ScrollView>
                     </View>
                 </View>
