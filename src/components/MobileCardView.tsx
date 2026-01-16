@@ -330,7 +330,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
         });
     };
 
-    const handleSave = async () => {
+    const handleSave = async (directValue?: string) => {
         if (!selectedAsset || !editingField) return;
 
         setIsSaving(true);
@@ -341,8 +341,9 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
             if (propType === 'multi_select') {
                 valueToSave = selectedOptions.join(', ');
             } else if (propType === 'select') {
-                // editValue를 사용 (selectedOptions는 비동기 상태 업데이트로 인해 타이밍 이슈 발생 가능)
-                valueToSave = editValue || selectedOptions[0] || '';
+                // directValue가 전달되면 우선 사용 (toggleOption에서 직접 전달)
+                // 그렇지 않으면 editValue 또는 selectedOptions 사용
+                valueToSave = directValue ?? (editValue || selectedOptions[0] || '');
             }
 
             // Move 컬럼 특별 처리: 중복값이 있으면 Alert 표시 후 처리
@@ -470,10 +471,10 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
             setEditValue(option);
             setShowOptions(false);
 
-            // Select 타입에서 선택하면 즉시 저장 (키보드 방향키+엔터 사용 시)
+            // Select 타입에서 선택하면 즉시 저장 - option을 직접 전달하여 상태 동기화 이슈 방지
             if (autoSave && selectedAsset && editingField) {
                 setTimeout(() => {
-                    handleSave();
+                    handleSave(option); // 선택된 값 직접 전달
                 }, 50);
             }
         }
