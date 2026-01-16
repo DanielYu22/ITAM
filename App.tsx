@@ -68,6 +68,7 @@ export default function App() {
   const [templateName, setTemplateName] = useState('');
   const [showExportModal, setShowExportModal] = useState(false);
   const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false);
+  const [skipLocationSelection, setSkipLocationSelection] = useState(false);
 
   // Notion Client
   const [notionClient, setNotionClient] = useState<NotionClient | null>(null);
@@ -354,18 +355,23 @@ export default function App() {
 
     // 위치 계층이 설정된 템플릿이면 바로 현장 작업 모드로 전환
     if (template.config.locationHierarchy && template.config.locationHierarchy.length > 0) {
-      setIsFieldWorkActive(true); // 필터 설정 화면 건너뛰기
+      setIsWorkMode(true); // 필터 설정 화면 건너뛰기
+      setSkipLocationSelection(true); // 위치 선택 화면 건너뛰기
     }
 
     Alert.alert('템플릿 로드', `"${template.name}" 템플릿이 적용되었습니다.`);
   }, []);
 
-  // 작업 시작
   const startWork = useCallback(() => {
     setIsWorkMode(true);
     setLocationSelectedAssets([]);
     setLocationFilters({});
-  }, []);
+
+    // 위치 계층이 있어도 초기에는 전체 보기로 시작 (상단 네비게이션으로 변경 가능)
+    if (fieldWorkConfig?.locationHierarchy && fieldWorkConfig.locationHierarchy.length > 0) {
+      setSkipLocationSelection(true);
+    }
+  }, [fieldWorkConfig]);
 
   // 홈으로 돌아가기
   const handleBackToLocation = () => {
@@ -674,8 +680,8 @@ export default function App() {
 
             {/* Main Content */}
             <View style={styles.content}>
-              {/* 위치 계층이 설정되어 있고 아직 선택 완료 안됨 */}
-              {fieldWorkConfig?.locationHierarchy && fieldWorkConfig.locationHierarchy.length > 0 && locationSelectedAssets.length === 0 ? (
+              {/* 위치 계층이 설정되어 있고 아직 선택 완료 안됨 (skipLocationSelection이 false일 때만 표시) */}
+              {fieldWorkConfig?.locationHierarchy && fieldWorkConfig.locationHierarchy.length > 0 && locationSelectedAssets.length === 0 && !skipLocationSelection ? (
                 <LocationNavigator
                   assets={workFilteredAssets}
                   locationHierarchy={fieldWorkConfig.locationHierarchy}
@@ -712,6 +718,13 @@ export default function App() {
                   onUpdateAsset={handleUpdateAsset}
                   editableFields={fieldWorkConfig?.editableFields}
                   filterConfig={fieldWorkConfig}
+                  locationHierarchy={fieldWorkConfig?.locationHierarchy}
+                  locationFilters={locationFilters}
+                  onRequestChangeLocation={() => {
+                    setSkipLocationSelection(false);
+                    setLocationSelectedAssets([]);
+                    setLocationFilters({});
+                  }}
                   onLocalUpdate={(assetId, field, value) => {
                     // 로컬 상태 즉시 업데이트 (Optimistic Update)
                     setAssets(prev => prev.map(a =>

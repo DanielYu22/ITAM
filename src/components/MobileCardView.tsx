@@ -17,7 +17,7 @@ import {
     NativeSyntheticEvent,
     NativeScrollEvent,
 } from 'react-native';
-import { Edit2, X, Check, Search, Plus, ChevronDown, ChevronRight, ChevronLeft, AlertCircle, CheckCircle } from 'lucide-react-native';
+import { Edit2, X, Check, Search, Plus, ChevronDown, ChevronRight, ChevronLeft, AlertCircle, CheckCircle, MapPin } from 'lucide-react-native';
 import { Asset, NotionProperty } from '../lib/notion';
 import { FilterConfig, TargetCondition } from './FieldWorkFilter';
 
@@ -35,6 +35,10 @@ interface MobileCardViewProps {
     editableFields?: string[];
     filterConfig?: FilterConfig | null;
     onLocalUpdate?: (assetId: string, field: string, value: string) => void;
+    // Location Navigation
+    locationHierarchy?: string[];
+    locationFilters?: Record<string, string>;
+    onRequestChangeLocation?: () => void;
 }
 
 // 필터 조건 평가 함수
@@ -106,8 +110,22 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     editableFields = [],
     filterConfig = null,
     onLocalUpdate,
+    locationHierarchy,
+    locationFilters,
+    onRequestChangeLocation,
 }) => {
     const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+
+    // Location Text Generation
+    const locationText = useMemo(() => {
+        if (!locationHierarchy || !locationFilters || Object.keys(locationFilters).length === 0) {
+            return '전체 위치 (변경하려면 클릭)';
+        }
+        return locationHierarchy
+            .map(col => locationFilters[col])
+            .filter(val => val)
+            .join(' > ');
+    }, [locationHierarchy, locationFilters]);
     const [editModalVisible, setEditModalVisible] = useState(false);
     const [currentIndex, setCurrentIndex] = useState(0);
     const flatListRef = useRef<FlatList>(null);
@@ -599,252 +617,270 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                     </View>
                 </View>
             </View>
-        );
-    };
+                    </TouchableWithoutFeedback >
+                </KeyboardAvoidingView >
+            </Modal >
+        </View >
+    );
+};
 
-    return (
-        <View style={styles.container}>
-            {/* Pagination / Context Info */}
-            <View style={styles.paginationContainer}>
-                <TouchableOpacity
-                    onPress={() => flatListRef.current?.scrollToIndex({ index: Math.max(0, currentIndex - 1) })}
-                    disabled={currentIndex === 0}
-                    style={styles.navButton}
-                >
-                    <ChevronLeft size={24} color={currentIndex === 0 ? '#e5e7eb' : '#6366f1'} />
-                </TouchableOpacity>
+return (
+    <View style={styles.container}>
+        {/* Location Navigation Bar */}
+        {locationHierarchy && locationHierarchy.length > 0 && (
+            <TouchableOpacity
+                style={styles.locationHeader}
+                onPress={onRequestChangeLocation}
+            >
+                <MapPin size={16} color="#6366f1" />
+                <Text style={styles.locationHeaderText} numberOfLines={1}>
+                    {locationText}
+                </Text>
+                <ChevronDown size={16} color="#6b7280" />
+            </TouchableOpacity>
+        )}
 
-                <View style={styles.paginationInfo}>
-                    <Text style={styles.paginationText}>
-                        <Text style={styles.currentIndexText}>{currentIndex + 1}</Text> / {assets.length}
-                    </Text>
-                    <Text style={styles.assetNameHint} numberOfLines={1}>
-                        {assets[currentIndex]?.values[titleField]}
-                    </Text>
-                </View>
+        {/* Pagination */}
+        <View style={styles.paginationContainer}>
+            <TouchableOpacity
+                onPress={() => flatListRef.current?.scrollToIndex({ index: Math.max(0, currentIndex - 1) })}
+                disabled={currentIndex === 0}
+                style={styles.navButton}
+            >
+                <ChevronLeft size={24} color={currentIndex === 0 ? '#e5e7eb' : '#6366f1'} />
+            </TouchableOpacity>
 
-                <TouchableOpacity
-                    onPress={() => flatListRef.current?.scrollToIndex({ index: Math.min(assets.length - 1, currentIndex + 1) })}
-                    disabled={currentIndex === assets.length - 1}
-                    style={styles.navButton}
-                >
-                    <ChevronRight size={24} color={currentIndex === assets.length - 1 ? '#e5e7eb' : '#6366f1'} />
-                </TouchableOpacity>
+            <View style={styles.paginationInfo}>
+                <Text style={styles.paginationText}>
+                    <Text style={styles.currentIndexText}>{currentIndex + 1}</Text> / {assets.length}
+                </Text>
+                <Text style={styles.assetNameHint} numberOfLines={1}>
+                    {assets[currentIndex]?.values[titleField]}
+                </Text>
             </View>
 
-            <FlatList
-                ref={flatListRef}
-                data={assets}
-                extraData={assets}
-                renderItem={renderAssetCard}
-                keyExtractor={item => item.id}
-                horizontal
-                pagingEnabled
-                showsHorizontalScrollIndicator={false}
-                onScroll={handleScroll}
-                scrollEventThrottle={16}
-                style={styles.flatList}
-                getItemLayout={(_, index) => ({
-                    length: SCREEN_WIDTH,
-                    offset: SCREEN_WIDTH * index,
-                    index,
-                })}
-            />
-
-            {/* Edit Modal */}
-            <Modal
-                visible={editModalVisible}
-                transparent
-                animationType="slide"
-                onRequestClose={() => setEditModalVisible(false)}
+            <TouchableOpacity
+                onPress={() => flatListRef.current?.scrollToIndex({ index: Math.min(assets.length - 1, currentIndex + 1) })}
+                disabled={currentIndex === assets.length - 1}
+                style={styles.navButton}
             >
-                <KeyboardAvoidingView
-                    behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                    style={styles.modalOverlay}
-                >
-                    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-                        <View style={styles.modalSubOverlay}>
-                            <TouchableWithoutFeedback onPress={() => { }}>
-                                <View style={styles.modalContent}>
-                                    <View style={styles.modalHeader}>
-                                        <Text style={styles.modalTitle}>
-                                            {editingField} 편집
-                                        </Text>
-                                        <TouchableOpacity
-                                            onPress={() => setEditModalVisible(false)}
-                                            disabled={isSaving}
-                                            accessible={false}
-                                            focusable={false}
-                                            tabIndex={-1}
-                                        >
-                                            <X size={24} color="#6b7280" />
-                                        </TouchableOpacity>
-                                    </View>
+                <ChevronRight size={24} color={currentIndex === assets.length - 1 ? '#e5e7eb' : '#6366f1'} />
+            </TouchableOpacity>
+        </View>
 
-                                    {editingField && (
-                                        <View style={styles.inputContainer}>
-                                            {['select', 'multi_select'].includes(schemaProperties[editingField]?.type) ? (
-                                                <View style={styles.selectContainer}>
-                                                    {/* 선택된 값 표시 영역 */}
-                                                    <TouchableOpacity
-                                                        style={styles.selectedValueBox}
-                                                        onPress={() => setShowOptions(!showOptions)}
-                                                    >
-                                                        <View style={styles.selectedTags}>
-                                                            {selectedOptions.length > 0 ? (
-                                                                selectedOptions.map(opt => (
-                                                                    <View key={opt} style={styles.tag}>
-                                                                        <Text style={styles.tagText}>{opt}</Text>
-                                                                        {schemaProperties[editingField].type === 'multi_select' && (
-                                                                            <TouchableOpacity onPress={() => toggleOption(opt, true)}>
-                                                                                <X size={12} color="#4b5563" />
-                                                                            </TouchableOpacity>
-                                                                        )}
-                                                                    </View>
-                                                                ))
-                                                            ) : (
-                                                                <Text style={styles.placeholderText}>값을 선택하세요</Text>
-                                                            )}
-                                                        </View>
-                                                        <ChevronDown size={20} color="#9ca3af" />
-                                                    </TouchableOpacity>
+        <FlatList
+            ref={flatListRef}
+            data={assets}
+            extraData={assets}
+            renderItem={renderAssetCard}
+            keyExtractor={item => item.id}
+            horizontal
+            pagingEnabled
+            showsHorizontalScrollIndicator={false}
+            onScroll={handleScroll}
+            scrollEventThrottle={16}
+            style={styles.flatList}
+            getItemLayout={(_, index) => ({
+                length: SCREEN_WIDTH,
+                offset: SCREEN_WIDTH * index,
+                index,
+            })}
+        />
 
-                                                    {/* 옵션 드롭다운 */}
-                                                    {(showOptions || optionSearchText) && (
-                                                        <View style={styles.dropdownContainer}>
-                                                            <View style={styles.optionSearch}>
-                                                                <Search size={16} color="#9ca3af" />
-                                                                <TextInput
-                                                                    style={styles.optionSearchInput}
-                                                                    value={optionSearchText}
-                                                                    onChangeText={(text) => {
-                                                                        setOptionSearchText(text);
-                                                                        setShowOptions(true);
-                                                                        setHighlightedOptionIndex(0);
-                                                                    }}
-                                                                    placeholder="옵션 검색 또는 생성..."
-                                                                    placeholderTextColor="#9ca3af"
-                                                                    autoFocus
-                                                                    onKeyPress={(e: any) => {
-                                                                        const key = e.nativeEvent?.key || e.key;
-                                                                        if (key === 'ArrowDown') {
-                                                                            setHighlightedOptionIndex(prev =>
-                                                                                Math.min(prev + 1, filteredOptions.length - 1)
-                                                                            );
-                                                                        } else if (key === 'ArrowUp') {
-                                                                            setHighlightedOptionIndex(prev => Math.max(prev - 1, 0));
-                                                                        } else if (key === 'Enter' && filteredOptions.length > 0) {
-                                                                            const selectedOpt = filteredOptions[highlightedOptionIndex];
-                                                                            if (selectedOpt) {
-                                                                                const isMulti = schemaProperties[editingField]?.type === 'multi_select';
-                                                                                toggleOption(selectedOpt.name, isMulti, !isMulti);
-                                                                                setOptionSearchText('');
-                                                                            }
-                                                                        } else if (key === 'Escape') {
-                                                                            setEditModalVisible(false);
-                                                                        }
-                                                                    }}
-                                                                />
-                                                            </View>
-
-                                                            <ScrollView style={styles.optionsList} keyboardShouldPersistTaps="handled">
-                                                                {filteredOptions.map((opt, idx) => {
-                                                                    const isSelected = selectedOptions.includes(opt.name);
-                                                                    const isHighlighted = idx === highlightedOptionIndex;
-                                                                    return (
-                                                                        <TouchableOpacity
-                                                                            key={opt.id}
-                                                                            style={[
-                                                                                styles.optionItem,
-                                                                                isSelected && styles.optionItemSelected,
-                                                                                isHighlighted && styles.optionItemHighlighted
-                                                                            ]}
-                                                                            onPress={() => {
-                                                                                const isMulti = schemaProperties[editingField].type === 'multi_select';
-                                                                                toggleOption(opt.name, isMulti, !isMulti);
-                                                                            }}
-                                                                        >
-                                                                            <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>
-                                                                                {opt.name}
-                                                                            </Text>
-                                                                            {isSelected && <Check size={16} color="#6366f1" />}
-                                                                        </TouchableOpacity>
-                                                                    );
-                                                                })}
-
-                                                                {/* 결과 없음 & 생성 옵션 */}
-                                                                {optionSearchText && !filteredOptions.some(o => o.name.toLowerCase() === optionSearchText.toLowerCase()) && (
-                                                                    <TouchableOpacity
-                                                                        style={styles.createOptionItem}
-                                                                        onPress={() => {
-                                                                            toggleOption(optionSearchText, schemaProperties[editingField].type === 'multi_select');
-                                                                            setOptionSearchText('');
-                                                                        }}
-                                                                    >
-                                                                        <Plus size={16} color="#6366f1" />
-                                                                        <Text style={styles.createOptionText}>
-                                                                            "{optionSearchText}" 생성
-                                                                        </Text>
-                                                                    </TouchableOpacity>
-                                                                )}
-                                                            </ScrollView>
-                                                        </View>
-                                                    )}
-                                                </View>
-                                            ) : (
-                                                <View>
-                                                    {editingField === 'Move' && nearestMoveValues && (
-                                                        <View style={styles.nearestMovesContainer}>
-                                                            <View style={styles.nearestMoveItem}>
-                                                                <Text style={styles.nearestMoveLabel}>Prev</Text>
-                                                                <Text style={styles.nearestMoveValue}>
-                                                                    {nearestMoveValues.prev !== null ? nearestMoveValues.prev : '-'}
-                                                                </Text>
-                                                            </View>
-                                                            {nearestMoveValues.hasDuplicate && (
-                                                                <Text style={styles.duplicateWarning}>⚠️ 중복</Text>
-                                                            )}
-                                                            <View style={styles.nearestMoveItem}>
-                                                                <Text style={styles.nearestMoveLabel}>Next</Text>
-                                                                <Text style={styles.nearestMoveValue}>
-                                                                    {nearestMoveValues.next !== null ? nearestMoveValues.next : '-'}
-                                                                </Text>
-                                                            </View>
-                                                        </View>
-                                                    )}
-                                                    <TextInput
-                                                        style={styles.textInput}
-                                                        value={editValue}
-                                                        onChangeText={setEditValue}
-                                                        placeholder="값을 입력하세요"
-                                                        multiline={false}
-                                                        autoFocus
-                                                        blurOnSubmit={true}
-                                                        returnKeyType="done"
-                                                        onSubmitEditing={handleSave}
-                                                    />
-                                                </View>
-                                            )}
-                                        </View>
-                                    )}
-
+        {/* Edit Modal */}
+        <Modal
+            visible={editModalVisible}
+            transparent
+            animationType="slide"
+            onRequestClose={() => setEditModalVisible(false)}
+        >
+            <KeyboardAvoidingView
+                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+                style={styles.modalOverlay}
+            >
+                <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+                    <View style={styles.modalSubOverlay}>
+                        <TouchableWithoutFeedback onPress={() => { }}>
+                            <View style={styles.modalContent}>
+                                <View style={styles.modalHeader}>
+                                    <Text style={styles.modalTitle}>
+                                        {editingField} 편집
+                                    </Text>
                                     <TouchableOpacity
-                                        style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
-                                        onPress={handleSave}
+                                        onPress={() => setEditModalVisible(false)}
                                         disabled={isSaving}
+                                        accessible={false}
+                                        focusable={false}
+                                        tabIndex={-1}
                                     >
-                                        <Text style={styles.saveButtonText}>
-                                            {isSaving ? '저장 중...' : '저장'}
-                                        </Text>
+                                        <X size={24} color="#6b7280" />
                                     </TouchableOpacity>
                                 </View>
-                            </TouchableWithoutFeedback>
-                        </View>
-                    </TouchableWithoutFeedback>
-                </KeyboardAvoidingView>
-            </Modal>
-        </View>
-    );
+
+                                {editingField && (
+                                    <View style={styles.inputContainer}>
+                                        {['select', 'multi_select'].includes(schemaProperties[editingField]?.type) ? (
+                                            <View style={styles.selectContainer}>
+                                                {/* 선택된 값 표시 영역 */}
+                                                <TouchableOpacity
+                                                    style={styles.selectedValueBox}
+                                                    onPress={() => setShowOptions(!showOptions)}
+                                                >
+                                                    <View style={styles.selectedTags}>
+                                                        {selectedOptions.length > 0 ? (
+                                                            selectedOptions.map(opt => (
+                                                                <View key={opt} style={styles.tag}>
+                                                                    <Text style={styles.tagText}>{opt}</Text>
+                                                                    {schemaProperties[editingField].type === 'multi_select' && (
+                                                                        <TouchableOpacity onPress={() => toggleOption(opt, true)}>
+                                                                            <X size={12} color="#4b5563" />
+                                                                        </TouchableOpacity>
+                                                                    )}
+                                                                </View>
+                                                            ))
+                                                        ) : (
+                                                            <Text style={styles.placeholderText}>값을 선택하세요</Text>
+                                                        )}
+                                                    </View>
+                                                    <ChevronDown size={20} color="#9ca3af" />
+                                                </TouchableOpacity>
+
+                                                {/* 옵션 드롭다운 */}
+                                                {(showOptions || optionSearchText) && (
+                                                    <View style={styles.dropdownContainer}>
+                                                        <View style={styles.optionSearch}>
+                                                            <Search size={16} color="#9ca3af" />
+                                                            <TextInput
+                                                                style={styles.optionSearchInput}
+                                                                value={optionSearchText}
+                                                                onChangeText={(text) => {
+                                                                    setOptionSearchText(text);
+                                                                    setShowOptions(true);
+                                                                    setHighlightedOptionIndex(0);
+                                                                }}
+                                                                placeholder="옵션 검색 또는 생성..."
+                                                                placeholderTextColor="#9ca3af"
+                                                                autoFocus
+                                                                onKeyPress={(e: any) => {
+                                                                    const key = e.nativeEvent?.key || e.key;
+                                                                    if (key === 'ArrowDown') {
+                                                                        setHighlightedOptionIndex(prev =>
+                                                                            Math.min(prev + 1, filteredOptions.length - 1)
+                                                                        );
+                                                                    } else if (key === 'ArrowUp') {
+                                                                        setHighlightedOptionIndex(prev => Math.max(prev - 1, 0));
+                                                                    } else if (key === 'Enter' && filteredOptions.length > 0) {
+                                                                        const selectedOpt = filteredOptions[highlightedOptionIndex];
+                                                                        if (selectedOpt) {
+                                                                            const isMulti = schemaProperties[editingField]?.type === 'multi_select';
+                                                                            toggleOption(selectedOpt.name, isMulti, !isMulti);
+                                                                            setOptionSearchText('');
+                                                                        }
+                                                                    } else if (key === 'Escape') {
+                                                                        setEditModalVisible(false);
+                                                                    }
+                                                                }}
+                                                            />
+                                                        </View>
+
+                                                        <ScrollView style={styles.optionsList} keyboardShouldPersistTaps="handled">
+                                                            {filteredOptions.map((opt, idx) => {
+                                                                const isSelected = selectedOptions.includes(opt.name);
+                                                                const isHighlighted = idx === highlightedOptionIndex;
+                                                                return (
+                                                                    <TouchableOpacity
+                                                                        key={opt.id}
+                                                                        style={[
+                                                                            styles.optionItem,
+                                                                            isSelected && styles.optionItemSelected,
+                                                                            isHighlighted && styles.optionItemHighlighted
+                                                                        ]}
+                                                                        onPress={() => {
+                                                                            const isMulti = schemaProperties[editingField].type === 'multi_select';
+                                                                            toggleOption(opt.name, isMulti, !isMulti);
+                                                                        }}
+                                                                    >
+                                                                        <Text style={[styles.optionText, isSelected && styles.optionTextSelected]}>
+                                                                            {opt.name}
+                                                                        </Text>
+                                                                        {isSelected && <Check size={16} color="#6366f1" />}
+                                                                    </TouchableOpacity>
+                                                                );
+                                                            })}
+
+                                                            {/* 결과 없음 & 생성 옵션 */}
+                                                            {optionSearchText && !filteredOptions.some(o => o.name.toLowerCase() === optionSearchText.toLowerCase()) && (
+                                                                <TouchableOpacity
+                                                                    style={styles.createOptionItem}
+                                                                    onPress={() => {
+                                                                        toggleOption(optionSearchText, schemaProperties[editingField].type === 'multi_select');
+                                                                        setOptionSearchText('');
+                                                                    }}
+                                                                >
+                                                                    <Plus size={16} color="#6366f1" />
+                                                                    <Text style={styles.createOptionText}>
+                                                                        "{optionSearchText}" 생성
+                                                                    </Text>
+                                                                </TouchableOpacity>
+                                                            )}
+                                                        </ScrollView>
+                                                    </View>
+                                                )}
+                                            </View>
+                                        ) : (
+                                            <View>
+                                                {editingField === 'Move' && nearestMoveValues && (
+                                                    <View style={styles.nearestMovesContainer}>
+                                                        <View style={styles.nearestMoveItem}>
+                                                            <Text style={styles.nearestMoveLabel}>Prev</Text>
+                                                            <Text style={styles.nearestMoveValue}>
+                                                                {nearestMoveValues.prev !== null ? nearestMoveValues.prev : '-'}
+                                                            </Text>
+                                                        </View>
+                                                        {nearestMoveValues.hasDuplicate && (
+                                                            <Text style={styles.duplicateWarning}>⚠️ 중복</Text>
+                                                        )}
+                                                        <View style={styles.nearestMoveItem}>
+                                                            <Text style={styles.nearestMoveLabel}>Next</Text>
+                                                            <Text style={styles.nearestMoveValue}>
+                                                                {nearestMoveValues.next !== null ? nearestMoveValues.next : '-'}
+                                                            </Text>
+                                                        </View>
+                                                    </View>
+                                                )}
+                                                <TextInput
+                                                    style={styles.textInput}
+                                                    value={editValue}
+                                                    onChangeText={setEditValue}
+                                                    placeholder="값을 입력하세요"
+                                                    multiline={false}
+                                                    autoFocus
+                                                    blurOnSubmit={true}
+                                                    returnKeyType="done"
+                                                    onSubmitEditing={handleSave}
+                                                />
+                                            </View>
+                                        )}
+                                    </View>
+                                )}
+
+                                <TouchableOpacity
+                                    style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
+                                    onPress={handleSave}
+                                    disabled={isSaving}
+                                >
+                                    <Text style={styles.saveButtonText}>
+                                        {isSaving ? '저장 중...' : '저장'}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </View>
+                </TouchableWithoutFeedback>
+            </KeyboardAvoidingView>
+        </Modal>
+    </View>
+);
 };
 
 const styles = StyleSheet.create({
@@ -1196,5 +1232,21 @@ const styles = StyleSheet.create({
         color: '#ef4444',
         fontSize: 13,
         fontWeight: '600',
+    },
+    locationHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 12,
+        paddingHorizontal: 16,
+        backgroundColor: '#f3f4f6',
+        borderBottomWidth: 1,
+        borderBottomColor: '#e5e7eb',
+        gap: 8,
+    },
+    locationHeaderText: {
+        flex: 1,
+        fontSize: 14,
+        color: '#4b5563',
+        fontWeight: '500',
     },
 });
