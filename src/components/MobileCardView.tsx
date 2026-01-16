@@ -341,7 +341,8 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
             if (propType === 'multi_select') {
                 valueToSave = selectedOptions.join(', ');
             } else if (propType === 'select') {
-                valueToSave = selectedOptions[0] || '';
+                // editValue를 사용 (selectedOptions는 비동기 상태 업데이트로 인해 타이밍 이슈 발생 가능)
+                valueToSave = editValue || selectedOptions[0] || '';
             }
 
             // Move 컬럼 특별 처리: 중복값이 있으면 Alert 표시 후 처리
