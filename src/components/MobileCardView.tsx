@@ -617,9 +617,75 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                     </View>
                 </View>
             </View>
-                    </TouchableWithoutFeedback >
-                </KeyboardAvoidingView >
-            </Modal >
+            {/* Edit Modal */ }
+        <Modal
+            visible={editModalVisible}
+            transparent={true}
+            animationType="slide"
+            onRequestClose={() => setEditModalVisible(false)} // Android back button
+        >
+            <TouchableWithoutFeedback onPress={() => setEditModalVisible(false)}>
+                <View style={styles.modalOverlay}>
+                    <KeyboardAvoidingView
+                        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+                        style={styles.modalSubOverlay}
+                    >
+                        <TouchableWithoutFeedback onPress={() => { }}>
+                            <View style={styles.modalContent}>
+                                <View style={styles.modalHeader}>
+                                    <Text style={styles.modalTitle}>{editingField}</Text>
+                                    <TouchableOpacity
+                                        onPress={() => setEditModalVisible(false)}
+                                        style={{ padding: 4 }}
+                                    >
+                                        <X size={24} color="#6b7280" />
+                                    </TouchableOpacity>
+                                </View>
+
+                                {/* Warnings and Nearest Moves */}
+                                {isMoveColumn(editingField || '') && (
+                                    <View style={styles.nearestMovesContainer}>
+                                        <View style={styles.nearestMoveItem}>
+                                            <Text style={styles.nearestMoveLabel}>Prev</Text>
+                                            <Text style={styles.nearestMoveValue}>{nearestMoveValues.prev || '-'}</Text>
+                                        </View>
+                                        {isDuplicateMove && (
+                                            <Text style={styles.duplicateWarning}>중복!</Text>
+                                        )}
+                                        <View style={styles.nearestMoveItem}>
+                                            <Text style={styles.nearestMoveLabel}>Next</Text>
+                                            <Text style={styles.nearestMoveValue}>{nearestMoveValues.next || '-'}</Text>
+                                        </View>
+                                    </View>
+                                )}
+
+                                {/* Input Area */}
+                                {renderEditInput()}
+
+                                {/* Save Button */}
+                                <TouchableOpacity
+                                    style={[
+                                        styles.saveButton,
+                                        (!editValue || editValue.length === 0) &&
+                                        editingField &&
+                                        schemaProperties[editingField]?.type !== 'checkbox' && // Checkbox allows empty (false)
+                                        styles.saveButtonDisabled
+                                    ]}
+                                    onPress={handleSave}
+                                    disabled={
+                                        (!editValue || editValue.length === 0) &&
+                                        editingField &&
+                                        schemaProperties[editingField]?.type !== 'checkbox'
+                                    }
+                                >
+                                    <Text style={styles.saveButtonText}>Save</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </TouchableWithoutFeedback>
+                    </KeyboardAvoidingView>
+                </View>
+            </TouchableWithoutFeedback>
+        </Modal>
         </View >
     );
 };
