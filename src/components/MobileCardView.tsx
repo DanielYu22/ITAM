@@ -817,15 +817,11 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                                                         value={editValue}
                                                         onChangeText={setEditValue}
                                                         placeholder="값을 입력하세요"
-                                                        multiline={schemaProperties[editingField]?.type === 'rich_text'}
+                                                        multiline={false}
                                                         autoFocus
-                                                        blurOnSubmit={!schemaProperties[editingField]?.type?.includes('rich_text')}
+                                                        blurOnSubmit={true}
                                                         returnKeyType="done"
-                                                        onSubmitEditing={() => {
-                                                            if (!schemaProperties[editingField]?.type?.includes('rich_text')) {
-                                                                handleSave();
-                                                            }
-                                                        }}
+                                                        onSubmitEditing={handleSave}
                                                     />
                                                 </View>
                                             )}
