@@ -351,6 +351,12 @@ export default function App() {
     setFieldWorkConfig(template.config);
     setLocationSelectedAssets([]);
     setLocationFilters({});
+
+    // 위치 계층이 설정된 템플릿이면 바로 현장 작업 모드로 전환
+    if (template.config.locationHierarchy && template.config.locationHierarchy.length > 0) {
+      setIsFieldWorkActive(true); // 필터 설정 화면 건너뛰기
+    }
+
     Alert.alert('템플릿 로드', `"${template.name}" 템플릿이 적용되었습니다.`);
   }, []);
 
