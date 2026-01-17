@@ -45,7 +45,7 @@ export default function App() {
   const [apiBaseUrl, setApiBaseUrl] = useState(API_BASE_URL);
 
   // 빌드 버전 (배포 확인용)
-  const BUILD_VERSION = '2026.01.17-1';
+  const BUILD_VERSION = '2026.01.17-2';
 
   // State
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -255,16 +255,34 @@ export default function App() {
       });
     }
 
-    // 정렬 적용
-    if (fieldWorkConfig.sortColumn) {
+    // 정렬 적용: 위치 계층 우선, 그 다음 Move (공백 우선, 오름차순)
+    if (fieldWorkConfig.locationHierarchy?.length || fieldWorkConfig.sortColumn) {
       result = [...result].sort((a, b) => {
-        const valA = a.values[fieldWorkConfig.sortColumn] || '';
-        const valB = b.values[fieldWorkConfig.sortColumn] || '';
+        // 1. 위치 계층 정렬 (건물 → 층 → 연구실)
+        if (fieldWorkConfig.locationHierarchy?.length) {
+          for (const col of fieldWorkConfig.locationHierarchy) {
+            const valA = a.values[col] || '';
+            const valB = b.values[col] || '';
+            const locCompare = String(valA).localeCompare(String(valB), undefined, { numeric: true, sensitivity: 'base' });
+            if (locCompare !== 0) return locCompare;
+          }
+        }
 
-        // 숫자, 문자열 혼합된 경우도 자연스럽게 정렬 (Natural Sort)
-        // 예: "Move 1", "Move 2", "Move 10" 순서 보장
-        const comparison = String(valA).localeCompare(String(valB), undefined, { numeric: true, sensitivity: 'base' });
-        return fieldWorkConfig.sortDirection === 'desc' ? -comparison : comparison;
+        // 2. Move 정렬 (공백 우선, 그 다음 오름차순)
+        if (fieldWorkConfig.sortColumn) {
+          const valA = a.values[fieldWorkConfig.sortColumn] || '';
+          const valB = b.values[fieldWorkConfig.sortColumn] || '';
+
+          // 공백 우선 처리
+          if (valA === '' && valB !== '') return -1;
+          if (valA !== '' && valB === '') return 1;
+
+          // 숫자, 문자열 혼합된 경우도 자연스럽게 정렬 (Natural Sort)
+          const comparison = String(valA).localeCompare(String(valB), undefined, { numeric: true, sensitivity: 'base' });
+          return fieldWorkConfig.sortDirection === 'desc' ? -comparison : comparison;
+        }
+
+        return 0;
       });
     }
 
