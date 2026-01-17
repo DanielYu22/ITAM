@@ -44,6 +44,9 @@ export default function App() {
   const [databaseId, setDatabaseId] = useState(NOTION_DATABASE_ID);
   const [apiBaseUrl, setApiBaseUrl] = useState(API_BASE_URL);
 
+  // 빌드 버전 (배포 확인용)
+  const BUILD_VERSION = '2026.01.17-1';
+
   // State
   const [assets, setAssets] = useState<Asset[]>([]);
   const [filteredAssets, setFilteredAssets] = useState<Asset[]>([]);
@@ -575,6 +578,8 @@ export default function App() {
               onRefresh={onRefresh}
             />
 
+            {/* 버전 표시 (배포 확인용) */}
+            <Text style={styles.versionText}>v{BUILD_VERSION}</Text>
             {/* 필터 설정 모달 */}
             <FieldWorkFilter
               visible={showFieldWorkFilter}
@@ -1121,5 +1126,13 @@ const styles = StyleSheet.create({
   },
   globalFloatingButtonActive: {
     backgroundColor: '#4f46e5',
+  },
+  versionText: {
+    position: 'absolute',
+    bottom: 8,
+    right: 12,
+    fontSize: 10,
+    color: '#9ca3af',
+    opacity: 0.7,
   },
 });

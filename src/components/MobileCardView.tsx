@@ -130,6 +130,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     const [currentIndex, setCurrentIndex] = useState(0);
     const flatListRef = useRef<FlatList>(null);
     const fieldScrollRef = useRef<ScrollView>(null);
+    const optionsScrollRef = useRef<ScrollView>(null); // 드롭다운 옵션 스크롤
 
     // 편집 상태
     const [editingField, setEditingField] = useState<string | null>(null);
@@ -146,6 +147,17 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     const titleField = useMemo(() => {
         return Object.keys(schemaProperties).find(k => schemaProperties[k].type === 'title') || 'Name';
     }, [schemaProperties]);
+
+    // 키보드 네비게이션 시 하이라이트된 옵션으로 자동 스크롤
+    useEffect(() => {
+        if (optionsScrollRef.current && showOptions && highlightedOptionIndex >= 0) {
+            const optionHeight = 44; // 옵션 아이템 높이
+            optionsScrollRef.current.scrollTo({
+                y: highlightedOptionIndex * optionHeight - optionHeight,
+                animated: true
+            });
+        }
+    }, [highlightedOptionIndex, showOptions]);
 
     // 현장 작업 진입 시 첫 번째 타겟 필드 자동 오픈 (조건에 해당하는 필드 우선, Title 제외)
     useEffect(() => {
@@ -776,7 +788,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                                                                 />
                                                             </View>
 
-                                                            <ScrollView style={styles.optionsList} keyboardShouldPersistTaps="handled">
+                                                            <ScrollView ref={optionsScrollRef} style={styles.optionsList} keyboardShouldPersistTaps="handled">
                                                                 {filteredOptions.map((opt, idx) => {
                                                                     const isSelected = selectedOptions.includes(opt.name);
                                                                     const isHighlighted = idx === highlightedOptionIndex;
