@@ -207,25 +207,28 @@ export class NotionClient {
 
     async updatePage(pageId: string, propertyName: string, value: string, type: string): Promise<void> {
         try {
+            // Ensure value is a string (prevent circular JSON errors from event objects)
+            const stringValue = typeof value === 'string' ? value : (value == null ? '' : String(value));
+
             const targetUrl = `${API_BASE_URL}/api/notion/v1/pages/${pageId}`;
             const properties: any = {};
             if (type === 'select') {
-                properties[propertyName] = value ? { select: { name: value } } : { select: null };
+                properties[propertyName] = stringValue ? { select: { name: stringValue } } : { select: null };
             } else if (type === 'date') {
-                properties[propertyName] = value ? { date: { start: value } } : { date: null };
+                properties[propertyName] = stringValue ? { date: { start: stringValue } } : { date: null };
             } else if (type === 'status') {
-                properties[propertyName] = value ? { status: { name: value } } : { status: null };
+                properties[propertyName] = stringValue ? { status: { name: stringValue } } : { status: null };
             } else if (type === 'multi_select') {
-                const names = value.split(',').map(v => v.trim()).filter(Boolean);
+                const names = stringValue.split(',').map(v => v.trim()).filter(Boolean);
                 properties[propertyName] = { multi_select: names.map(n => ({ name: n })) };
             } else if (type === 'title') {
-                properties[propertyName] = { title: [{ text: { content: value } }] };
+                properties[propertyName] = { title: [{ text: { content: stringValue } }] };
             } else if (type === 'rich_text') {
-                properties[propertyName] = { rich_text: [{ text: { content: value } }] };
+                properties[propertyName] = { rich_text: [{ text: { content: stringValue } }] };
             } else if (type === 'number') {
-                properties[propertyName] = { number: parseFloat(value) || null };
+                properties[propertyName] = { number: parseFloat(stringValue) || null };
             } else {
-                properties[propertyName] = { rich_text: [{ text: { content: value } }] };
+                properties[propertyName] = { rich_text: [{ text: { content: stringValue } }] };
             }
 
             if (Object.keys(properties).length === 0) return;
