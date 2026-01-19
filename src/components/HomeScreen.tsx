@@ -299,6 +299,29 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     </View>
                 </View>
 
+                {/* 달성률 */}
+                {hasFilter && assets.length > 0 && (
+                    <View style={styles.progressSection}>
+                        <View style={styles.progressHeader}>
+                            <Text style={styles.progressLabel}>달성률</Text>
+                            <Text style={styles.progressPercent}>
+                                {Math.round(((assets.length - filteredCount) / assets.length) * 100)}%
+                            </Text>
+                        </View>
+                        <View style={styles.progressBarBackground}>
+                            <View
+                                style={[
+                                    styles.progressBarFill,
+                                    { width: `${((assets.length - filteredCount) / assets.length) * 100}%` }
+                                ]}
+                            />
+                        </View>
+                        <Text style={styles.progressDetail}>
+                            {assets.length - filteredCount}개 완료 / {assets.length}개 전체
+                        </Text>
+                    </View>
+                )}
+
                 {/* 도구 섹션 */}
                 <View style={styles.toolsSection}>
                     <TouchableOpacity
@@ -716,6 +739,45 @@ const styles = StyleSheet.create({
     },
     statLabelHighlight: {
         color: '#c7d2fe',
+    },
+    progressSection: {
+        backgroundColor: '#ffffff',
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 16,
+    },
+    progressHeader: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 10,
+    },
+    progressLabel: {
+        fontSize: 15,
+        fontWeight: '600',
+        color: '#374151',
+    },
+    progressPercent: {
+        fontSize: 20,
+        fontWeight: 'bold',
+        color: '#10b981',
+    },
+    progressBarBackground: {
+        height: 12,
+        backgroundColor: '#e5e7eb',
+        borderRadius: 6,
+        overflow: 'hidden',
+    },
+    progressBarFill: {
+        height: '100%',
+        backgroundColor: '#10b981',
+        borderRadius: 6,
+    },
+    progressDetail: {
+        fontSize: 13,
+        color: '#6b7280',
+        textAlign: 'center',
+        marginTop: 8,
     },
     section: {
         backgroundColor: '#ffffff',

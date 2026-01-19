@@ -142,7 +142,7 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
         schema.forEach(col => {
             const set = new Set<string>();
             assets.forEach(asset => {
-                const val = asset.values[col];
+                const val = String(asset.values[col] ?? '');
                 if (val && val.trim()) {
                     set.add(val);
                 }

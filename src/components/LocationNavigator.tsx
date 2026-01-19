@@ -83,7 +83,7 @@ export const LocationNavigator: React.FC<LocationNavigatorProps> = ({
             const valueSet = new Set<string>();
 
             sortedAssets.forEach(asset => {
-                const val = asset.values[col];
+                const val = String(asset.values[col] ?? '');
                 if (val && val.trim() && !valueSet.has(val)) {
                     valueSet.add(val);
                     uniqueValues.push(val);
@@ -96,7 +96,7 @@ export const LocationNavigator: React.FC<LocationNavigatorProps> = ({
         // 정렬 컬럼이 없는 경우 기존처럼 알파벳 순 정렬
         const valueSet = new Set<string>();
         filteredAssets.forEach(asset => {
-            const val = asset.values[col];
+            const val = String(asset.values[col] ?? '');
             if (val && val.trim()) {
                 valueSet.add(val);
             }
