@@ -303,7 +303,7 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
         if (!assets || assets.length === 0) return 0;
 
         return assets.filter(asset => {
-            const val = (asset.values[cond.column] || '').toLowerCase();
+            const val = String(asset.values[cond.column] ?? '').toLowerCase();
             switch (cond.type) {
                 case 'is_empty':
                     return !val || val === '';
@@ -336,7 +336,7 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
 
         return assets.filter(asset => {
             const conditionMatches = group.conditions.map(cond => {
-                const val = (asset.values[cond.column] || '').toLowerCase();
+                const val = String(asset.values[cond.column] ?? '').toLowerCase();
                 switch (cond.type) {
                     case 'is_empty':
                         return !val || val === '';

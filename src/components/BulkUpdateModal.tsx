@@ -168,7 +168,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         return parsedRows.map(row => {
             // 룩업 컬럼으로 매칭되는 asset 찾기
             const matchedAsset = assets.find(asset =>
-                (asset.values[lookupColumn] || '').toLowerCase() === row.lookupValue.toLowerCase()
+                String(asset.values[lookupColumn] ?? '').toLowerCase() === row.lookupValue.toLowerCase()
             );
 
             if (!matchedAsset) {

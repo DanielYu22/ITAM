@@ -124,7 +124,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
                     const isGroupOr = group.operator === 'or';
                     const conditionMatches = group.conditions.map(cond => {
-                        const val = (asset.values[cond.column] || '').toLowerCase();
+                        const val = String(asset.values[cond.column] ?? '').toLowerCase();
                         switch (cond.type) {
                             case 'is_empty':
                                 return !val || val === '';
