@@ -368,18 +368,12 @@ export default function App() {
     }
   }, [notionClient, filterTemplates]);
 
-  // 템플릿 로드
+  // 템플릿 로드 (필터만 적용, 현장 작업은 별도로 시작해야 함)
   const loadTemplate = useCallback((template: FilterTemplate) => {
     setFieldWorkConfig(template.config);
     setLocationSelectedAssets([]);
     setLocationFilters({});
-
-    // 위치 계층이 설정된 템플릿이면 바로 현장 작업 모드로 전환
-    if (template.config.locationHierarchy && template.config.locationHierarchy.length > 0) {
-      setIsWorkMode(true); // 필터 설정 화면 건너뛰기
-      setSkipLocationSelection(true); // 위치 선택 화면 건너뛰기
-    }
-
+    // 현장 작업 모드로 자동 전환하지 않음 - 사용자가 "현장 작업 시작" 버튼 눌러야 함
     Alert.alert('템플릿 로드', `"${template.name}" 템플릿이 적용되었습니다.`);
   }, []);
 
@@ -651,6 +645,14 @@ export default function App() {
                 </View>
               </View>
             </Modal>
+
+            {/* 내보내기 모달 - 홈화면에서도 사용 가능 */}
+            <ExportPreviewModal
+              visible={showExportModal}
+              onClose={() => setShowExportModal(false)}
+              assets={fieldWorkConfig ? workFilteredAssets : assets}
+              schema={schema}
+            />
           </>
         ) : (
           /* 작업 모드 */
