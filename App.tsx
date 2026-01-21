@@ -652,6 +652,7 @@ export default function App() {
               onClose={() => setShowExportModal(false)}
               assets={fieldWorkConfig ? workFilteredAssets : assets}
               schema={schema}
+              schemaProperties={schemaProperties}
             />
           </>
         ) : (
@@ -788,6 +789,7 @@ export default function App() {
               onClose={() => setShowExportModal(false)}
               assets={workFilteredAssets}
               schema={schema}
+              schemaProperties={schemaProperties}
             />
           </>
         )}

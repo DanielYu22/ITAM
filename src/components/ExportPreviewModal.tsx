@@ -9,13 +9,14 @@ import {
     Platform,
 } from 'react-native';
 import { X, Copy, Download, Check, FileSpreadsheet } from 'lucide-react-native';
-import { Asset } from '../lib/notion';
+import { Asset, NotionProperty } from '../lib/notion';
 
 interface ExportPreviewModalProps {
     visible: boolean;
     onClose: () => void;
     assets: Asset[];
     schema: string[];
+    schemaProperties?: Record<string, NotionProperty>;
 }
 
 export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
@@ -23,15 +24,26 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     onClose,
     assets,
     schema,
+    schemaProperties,
 }) => {
     const [copied, setCopied] = useState(false);
     const [downloaded, setDownloaded] = useState(false);
 
-    // 'Name' 컬럼이 없으면 맨 앞에 추가
+    // 타이틀 컬럼을 맨 앞으로 정렬
     const fullSchema = useMemo(() => {
-        if (schema.includes('Name')) return schema;
-        return ['Name', ...schema];
-    }, [schema]);
+        // schemaProperties에서 title 타입 컬럼 찾기
+        let titleColumn = 'Name'; // 기본값
+        if (schemaProperties) {
+            const titleProp = Object.entries(schemaProperties).find(([_, prop]) => prop.type === 'title');
+            if (titleProp) {
+                titleColumn = titleProp[0];
+            }
+        }
+
+        // 타이틀 컬럼을 맨 앞으로 정렬
+        const otherColumns = schema.filter(col => col !== titleColumn);
+        return [titleColumn, ...otherColumns];
+    }, [schema, schemaProperties]);
 
     // 미리보기용 데이터 (최대 10행)
     const previewData = useMemo(() => assets.slice(0, 10), [assets]);
