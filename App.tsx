@@ -813,6 +813,10 @@ export default function App() {
             if (!notionClient) return false;
             return await notionClient.archivePage(pageId);
           }}
+          onCreateProperty={async (propertyName, type) => {
+            if (!notionClient) return false;
+            return await notionClient.createDatabaseProperty(propertyName, type || 'rich_text');
+          }}
         />
 
         {/* 글로벌 플로팅 버튼 - 홈, 새로고침 */}

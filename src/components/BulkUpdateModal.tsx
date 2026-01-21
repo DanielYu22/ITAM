@@ -10,7 +10,7 @@ import {
     Platform,
     Alert,
 } from 'react-native';
-import { X, Upload, Check, AlertTriangle, ChevronRight, ChevronLeft, ChevronDown, Search, RefreshCw, Edit2, RotateCcw } from 'lucide-react-native';
+import { X, Upload, Check, AlertTriangle, ChevronRight, ChevronLeft, ChevronDown, Search, RefreshCw, Edit2, RotateCcw, Plus } from 'lucide-react-native';
 import { Asset, NotionProperty } from '../lib/notion';
 
 interface BulkUpdateModalProps {
@@ -22,6 +22,7 @@ interface BulkUpdateModalProps {
     onUpdate: (id: string, field: string, value: string, type: string) => Promise<void>;
     onCreatePage?: (values: Record<string, string>) => Promise<string | null>;
     onDeletePage?: (pageId: string) => Promise<boolean>;
+    onCreateProperty?: (propertyName: string, type?: string) => Promise<boolean>;  // 신규 컬럼 생성
 }
 
 // 다중 컬럼용 파싱된 행
@@ -70,6 +71,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
     onUpdate,
     onCreatePage,
     onDeletePage,
+    onCreateProperty,
 }) => {
     // Steps: 1=룩업 선택, 2=데이터 붙여넣기(헤더 포함), 3=미리보기, 4=실행중/완료
     const [step, setStep] = useState(1);
@@ -117,16 +119,31 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         return values;
     }, [schema, assets]);
 
-    // TSV 헤더에서 컬럼 자동 감지
-    const detectedColumns = useMemo((): string[] => {
+    // TSV 헤더에서 모든 컬럼 파싱 (첫 번째 컬럼 = lookup, 나머지 = update columns)
+    const allHeaderColumns = useMemo((): string[] => {
         if (!pastedData.trim()) return [];
         const lines = pastedData.trim().split('\n');
         if (lines.length < 1) return [];
 
         const headerParts = lines[0].split('\t').map(h => h.trim());
-        // 첫 번째 컬럼은 lookup column, 나머지가 update columns (스키마에 있는 것만)
-        return headerParts.slice(1).filter(h => h && schema.includes(h));
-    }, [pastedData, schema]);
+        // 첫 번째 컬럼은 lookup column, 나머지가 update columns
+        return headerParts.slice(1).filter(h => h);
+    }, [pastedData]);
+
+    // 신규 컬럼 감지 (스키마에 없는 컬럼)
+    const newColumns = useMemo((): string[] => {
+        return allHeaderColumns.filter(col => !schema.includes(col));
+    }, [allHeaderColumns, schema]);
+
+    // 기존 컬럼 (스키마에 있는 컬럼)
+    const existingColumns = useMemo((): string[] => {
+        return allHeaderColumns.filter(col => schema.includes(col));
+    }, [allHeaderColumns, schema]);
+
+    // 모든 감지된 컬럼 (기존 + 신규)
+    const detectedColumns = useMemo((): string[] => {
+        return [...existingColumns, ...newColumns];
+    }, [existingColumns, newColumns]);
 
     // TSV 파싱 (헤더에서 자동 감지된 컬럼 사용) - 원본 인덱스 유지
     const parsedRows = useMemo((): ParsedRow[] => {
@@ -239,6 +256,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         return {
             matchedCount: matched.length,
             newCount: newItems.length,
+            newColumnsCount: newColumns.length,  // 신규 컬럼 수
             totalUpdates,
             totalOverwrites,
             itemsWithUpdates,
@@ -247,7 +265,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
             itemsWithActualChanges: matched.length - itemsWithNoChange,
             total: matchResults.length
         };
-    }, [matchResults]);
+    }, [matchResults, newColumns]);
 
     // 필터링된 미리보기 결과
     const filteredMatchResults = useMemo(() => {
@@ -333,58 +351,88 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         setUndoHistory(historyItems);
         setUndoComplete(false);
 
-        setIsProcessing(true);
-        setTotalCount(totalOperations);
-        setProcessedCount(0);
-        setResults({ success: 0, failed: 0 });
-
-        let success = 0;
-        let failed = 0;
-        let processedSoFar = 0;
-
-        // 기존 항목 업데이트
-        for (let i = 0; i < updates.length; i++) {
-            const { assetId, column, value, propType } = updates[i];
-            try {
-                await onUpdate(assetId, column, value, propType);
-                success++;
-            } catch (error) {
-                console.error('Update failed:', error);
-                failed++;
-            }
-            processedSoFar++;
-            setProcessedCount(processedSoFar);
+        // 신규 컬럼 먼저 생성
+        if (newColumns.length > 0 && onCreateProperty) {
+            Alert.alert(
+                '신규 컬럼 생성',
+                `${newColumns.length}개의 새 컬럼을 DB에 생성합니다: ${newColumns.join(', ')}`,
+                [
+                    { text: '취소', style: 'cancel' },
+                    {
+                        text: '생성 후 계속',
+                        onPress: async () => {
+                            for (const col of newColumns) {
+                                const success = await onCreateProperty(col, 'rich_text');
+                                if (!success) {
+                                    Alert.alert('오류', `컬럼 "${col}" 생성에 실패했습니다.`);
+                                }
+                            }
+                            // 컬럼 생성 후 실행 계속
+                            executeUpdates();
+                        }
+                    }
+                ]
+            );
+            return;
         }
 
-        // 신규 항목 생성
-        const newlyCreatedIds: string[] = [];
-        for (let i = 0; i < newItemsToCreate.length; i++) {
-            const newItem = newItemsToCreate[i];
-            try {
-                // 모든 컬럼 값 합치기: lookupColumn + inputColumns + otherColumns
-                const allValues: Record<string, string> = {
-                    [lookupColumn]: newItem.lookupValue,
-                    ...newItem.inputColumns,
-                    ...newItem.otherColumns,
-                };
-                const pageId = await onCreatePage!(allValues);
-                if (pageId) {
-                    newlyCreatedIds.push(pageId); // Undo용 페이지 ID 저장
+        // 신규 컬럼이 없으면 바로 실행
+        executeUpdates();
+
+        async function executeUpdates() {
+            setIsProcessing(true);
+            setTotalCount(totalOperations);
+            setProcessedCount(0);
+            setResults({ success: 0, failed: 0 });
+
+            let success = 0;
+            let failed = 0;
+            let processedSoFar = 0;
+
+            // 기존 항목 업데이트
+            for (let i = 0; i < updates.length; i++) {
+                const { assetId, column, value, propType } = updates[i];
+                try {
+                    await onUpdate(assetId, column, value, propType);
+                    success++;
+                } catch (error) {
+                    console.error('Update failed:', error);
+                    failed++;
                 }
-                success++;
-            } catch (error) {
-                console.error('Create failed:', error);
-                failed++;
+                processedSoFar++;
+                setProcessedCount(processedSoFar);
             }
-            processedSoFar++;
-            setProcessedCount(processedSoFar);
-        }
-        setCreatedPageIds(newlyCreatedIds);
 
-        setResults({ success, failed });
-        setIsProcessing(false);
-        setStep(4);
-    }, [matchResults, allowOverwrite, allowNew, detectedColumns, schemaProperties, onUpdate, onCreatePage, newItemsData, lookupColumn]);
+            // 신규 항목 생성
+            const newlyCreatedIds: string[] = [];
+            for (let i = 0; i < newItemsToCreate.length; i++) {
+                const newItem = newItemsToCreate[i];
+                try {
+                    // 모든 컬럼 값 합치기: lookupColumn + inputColumns + otherColumns
+                    const allValues: Record<string, string> = {
+                        [lookupColumn]: newItem.lookupValue,
+                        ...newItem.inputColumns,
+                        ...newItem.otherColumns,
+                    };
+                    const pageId = await onCreatePage!(allValues);
+                    if (pageId) {
+                        newlyCreatedIds.push(pageId); // Undo용 페이지 ID 저장
+                    }
+                    success++;
+                } catch (error) {
+                    console.error('Create failed:', error);
+                    failed++;
+                }
+                processedSoFar++;
+                setProcessedCount(processedSoFar);
+            }
+            setCreatedPageIds(newlyCreatedIds);
+
+            setResults({ success, failed });
+            setIsProcessing(false);
+            setStep(4);
+        }
+    }, [matchResults, allowOverwrite, allowNew, detectedColumns, schemaProperties, onUpdate, onCreatePage, newItemsData, lookupColumn, newColumns, onCreateProperty]);
 
     // Undo 실행 (이전 값으로 복원 + 신규 생성 삭제)
     const executeUndo = useCallback(async () => {
@@ -585,8 +633,17 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                 <View style={styles.parseResult}>
                                     <Check size={18} color="#10b981" />
                                     <Text style={styles.parseResultText}>
-                                        {detectedColumns.length}개 컬럼 감지: {detectedColumns.slice(0, 3).join(', ')}
-                                        {detectedColumns.length > 3 ? ` 외 ${detectedColumns.length - 3}개` : ''}
+                                        {existingColumns.length}개 기존 컬럼: {existingColumns.slice(0, 3).join(', ')}
+                                        {existingColumns.length > 3 ? ` 외 ${existingColumns.length - 3}개` : ''}
+                                    </Text>
+                                </View>
+                            )}
+
+                            {newColumns.length > 0 && (
+                                <View style={[styles.parseResult, { backgroundColor: '#dcfce7', borderColor: '#86efac' }]}>
+                                    <Plus size={18} color="#16a34a" />
+                                    <Text style={[styles.parseResultText, { color: '#15803d' }]}>
+                                        {newColumns.length}개 신규 컬럼: {newColumns.join(', ')} (DB에 생성됨)
                                     </Text>
                                 </View>
                             )}
@@ -644,6 +701,12 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                     <Text style={styles.statValue}>{stats.itemsWithNoChange}</Text>
                                     <Text style={styles.statLabel}>변경없음</Text>
                                 </TouchableOpacity>
+                                {stats.newColumnsCount > 0 && (
+                                    <View style={[styles.statItem, { backgroundColor: '#dcfce7', borderColor: '#86efac', borderWidth: 2 }]}>
+                                        <Text style={[styles.statValue, { color: '#15803d' }]}>{stats.newColumnsCount}</Text>
+                                        <Text style={[styles.statLabel, { color: '#16a34a' }]}>신규컬럼</Text>
+                                    </View>
+                                )}
                             </View>
 
                             {/* 필터 결과 요약 */}
