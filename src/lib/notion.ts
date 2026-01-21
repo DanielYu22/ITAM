@@ -346,6 +346,68 @@ export class NotionClient {
         }
     }
 
+    // 데이터베이스에 새 속성(컬럼) 생성
+    async createDatabaseProperty(propertyName: string, type: string = 'rich_text'): Promise<boolean> {
+        try {
+            const targetUrl = `${API_BASE_URL}/api/notion/v1/databases/${this.databaseId}`;
+
+            // 속성 타입에 따른 기본 구조
+            let propertyConfig: any = {};
+            switch (type) {
+                case 'select':
+                    propertyConfig = { select: { options: [] } };
+                    break;
+                case 'multi_select':
+                    propertyConfig = { multi_select: { options: [] } };
+                    break;
+                case 'number':
+                    propertyConfig = { number: { format: 'number' } };
+                    break;
+                case 'date':
+                    propertyConfig = { date: {} };
+                    break;
+                case 'checkbox':
+                    propertyConfig = { checkbox: {} };
+                    break;
+                case 'url':
+                    propertyConfig = { url: {} };
+                    break;
+                case 'email':
+                    propertyConfig = { email: {} };
+                    break;
+                case 'phone_number':
+                    propertyConfig = { phone_number: {} };
+                    break;
+                case 'rich_text':
+                default:
+                    propertyConfig = { rich_text: {} };
+                    break;
+            }
+
+            const response = await fetch(targetUrl, {
+                method: 'PATCH',
+                headers: this.getHeaders(),
+                body: JSON.stringify({
+                    properties: {
+                        [propertyName]: propertyConfig
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                const errorText = await response.text();
+                console.error(`[Notion] Create property failed: ${response.status}`, errorText);
+                return false;
+            }
+
+            console.log(`[Notion] Created new property: ${propertyName} (${type})`);
+            return true;
+        } catch (error) {
+            console.error("Notion Create Property Error:", error);
+            return false;
+        }
+    }
+
     private readonly SETTINGS_MARKER = '🔧_NEXUS_SETTINGS_';
 
     async loadSettings(): Promise<{ templates?: any[], fieldConfig?: string } | null> {
