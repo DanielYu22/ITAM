@@ -42,9 +42,9 @@ interface MobileCardViewProps {
 }
 
 // 필터 조건 평가 함수
-// 필터 조건 평가 함수
 const evaluateCondition = (asset: Asset, cond: TargetCondition): boolean => {
-    const val = String(asset.values[cond.column] ?? '').toLowerCase();
+    const columnKey = String(cond.column ?? '');
+    const val = String(asset.values[columnKey] ?? '').toLowerCase();
     switch (cond.type) {
         case 'is_empty':
             return !val || val === '';
