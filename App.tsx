@@ -45,7 +45,7 @@ export default function App() {
   const [apiBaseUrl, setApiBaseUrl] = useState(API_BASE_URL);
 
   // 빌드 버전 (배포 확인용)
-  const BUILD_VERSION = '2026.01.19-1';
+  const BUILD_VERSION = '2026.01.23-1';
 
   // State
   const [assets, setAssets] = useState<Asset[]>([]);

@@ -64,8 +64,8 @@ export const evaluateFilter = (asset: Asset, filter: FilterCondition): boolean =
 
     if (!filter.field || !filter.operator) return true;
 
-    const value = String(asset.values[filter.field] || '').toLowerCase();
-    const target = String(filter.value || '').toLowerCase();
+    const value = String(asset.values[filter.field] ?? '').toLowerCase();
+    const target = String(filter.value ?? '').toLowerCase();
 
     switch (filter.operator) {
         case 'equals': return value === target;
