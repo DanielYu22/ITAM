@@ -311,17 +311,17 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                     return val && val !== '';
                 case 'contains':
                     if (cond.values && cond.values.length > 0) {
-                        return cond.values.some(v => val.includes(v.toLowerCase()));
+                        return cond.values.some(v => val.includes(String(v ?? '').toLowerCase()));
                     }
                     return true;
                 case 'not_contains':
                     if (cond.values && cond.values.length > 0) {
-                        return !cond.values.some(v => val.includes(v.toLowerCase()));
+                        return !cond.values.some(v => val.includes(String(v ?? '').toLowerCase()));
                     }
                     return true;
                 case 'equals':
                     if (cond.values && cond.values.length > 0) {
-                        return cond.values.some(v => val === v.toLowerCase());
+                        return cond.values.some(v => val === String(v ?? '').toLowerCase());
                     }
                     return true;
                 default:
@@ -344,17 +344,17 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                         return val && val !== '';
                     case 'contains':
                         if (cond.values && cond.values.length > 0) {
-                            return cond.values.some(v => val.includes(v.toLowerCase()));
+                            return cond.values.some(v => val.includes(String(v ?? '').toLowerCase()));
                         }
                         return true;
                     case 'not_contains':
                         if (cond.values && cond.values.length > 0) {
-                            return !cond.values.some(v => val.includes(v.toLowerCase()));
+                            return !cond.values.some(v => val.includes(String(v ?? '').toLowerCase()));
                         }
                         return true;
                     case 'equals':
                         if (cond.values && cond.values.length > 0) {
-                            return cond.values.some(v => val === v.toLowerCase());
+                            return cond.values.some(v => val === String(v ?? '').toLowerCase());
                         }
                         return true;
                     default:
