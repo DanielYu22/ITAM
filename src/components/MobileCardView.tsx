@@ -42,8 +42,9 @@ interface MobileCardViewProps {
 }
 
 // 필터 조건 평가 함수
+// 필터 조건 평가 함수
 const evaluateCondition = (asset: Asset, cond: TargetCondition): boolean => {
-    const val = String(asset.values[cond.column] || '').toLowerCase();
+    const val = String(asset.values[cond.column] ?? '').toLowerCase();
     switch (cond.type) {
         case 'is_empty':
             return !val || val === '';
@@ -51,17 +52,17 @@ const evaluateCondition = (asset: Asset, cond: TargetCondition): boolean => {
             return val !== '';
         case 'contains':
             if (cond.values && cond.values.length > 0) {
-                return cond.values.some(v => val.includes(String(v || '').toLowerCase()));
+                return cond.values.some(v => val.includes(String(v ?? '').toLowerCase()));
             }
             return true;
         case 'not_contains':
             if (cond.values && cond.values.length > 0) {
-                return !cond.values.some(v => val.includes(String(v || '').toLowerCase()));
+                return !cond.values.some(v => val.includes(String(v ?? '').toLowerCase()));
             }
             return true;
         case 'equals':
             if (cond.values && cond.values.length > 0) {
-                return cond.values.some(v => val === String(v || '').toLowerCase());
+                return cond.values.some(v => val === String(v ?? '').toLowerCase());
             }
             return true;
         default:
@@ -198,7 +199,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     const handleEdit = (asset: Asset, field: string) => {
         setSelectedAsset(asset);
         setEditingField(field);
-        const currentValue = asset.values[field] || '';
+        const currentValue = asset.values[field] ?? ''; // Use ?? for safety
         setEditValue(currentValue);
 
         const propType = schemaProperties[field]?.type;
@@ -224,7 +225,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
 
         const checkAssets = allAssets || assets;
         const moveValues = checkAssets
-            .map((a: Asset) => parseInt(a.values['Move'] || '0', 10))
+            .map((a: Asset) => parseInt(a.values['Move'] ?? '0', 10))
             .filter((v: number) => !isNaN(v) && v > 0)
             .sort((a: number, b: number) => a - b);
 
@@ -264,7 +265,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
             // 전체 자산에서 중복 체크 (allAssets 우선, 없으면 assets 사용)
             const checkAssets = allAssets || assets;
             const duplicateAsset = checkAssets.find(
-                a => a.id !== assetId && parseInt(a.values['Move'] || '0', 10) === moveValue
+                a => a.id !== assetId && parseInt(a.values['Move'] ?? '0', 10) === moveValue
             );
 
             if (duplicateAsset) {
@@ -276,19 +277,19 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                         // 1. 해당 값 이상인 모든 자산의 Move 값을 +1
                         const assetsToShift = checkAssets
                             .filter(a => {
-                                const existingMove = parseInt(a.values['Move'] || '0', 10);
+                                const existingMove = parseInt(a.values['Move'] ?? '0', 10);
                                 return a.id !== assetId && existingMove >= moveValue && !isNaN(existingMove);
                             })
                             .sort((a, b) => {
                                 // 역순으로 정렬하여 큰 값부터 업데이트 (충돌 방지)
-                                const aMove = parseInt(a.values['Move'] || '0', 10);
-                                const bMove = parseInt(b.values['Move'] || '0', 10);
+                                const aMove = parseInt(a.values['Move'] ?? '0', 10);
+                                const bMove = parseInt(b.values['Move'] ?? '0', 10);
                                 return bMove - aMove;
                             });
 
                         // 2. 각 자산의 Move 값을 +1
                         for (const asset of assetsToShift) {
-                            const currentMove = parseInt(asset.values['Move'] || '0', 10);
+                            const currentMove = parseInt(asset.values['Move'] ?? '0', 10);
                             const newMove = (currentMove + 1).toString();
                             await onUpdateAsset(asset.id, 'Move', newMove, propType);
                             if (onLocalUpdate) {
@@ -370,7 +371,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                 // 중복 체크
                 const checkAssets = allAssets || assets;
                 const duplicateAsset = checkAssets.find(
-                    a => a.id !== selectedAsset.id && parseInt(a.values['Move'] || '0', 10) === moveValue
+                    a => a.id !== selectedAsset.id && parseInt(a.values['Move'] ?? '0', 10) === moveValue
                 );
 
                 if (duplicateAsset) {
@@ -559,7 +560,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                     <View style={styles.card}>
                         <View style={styles.cardHeader}>
                             <Text style={styles.cardTitle}>
-                                {asset.values[titleField] || 'Untitled'}
+                                {asset.values[titleField] ?? 'Untitled'}
                             </Text>
                         </View>
 
@@ -621,7 +622,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                                                     styles.fieldValue,
                                                     isHighlighted && styles.fieldValueHighlighted
                                                 ]}>
-                                                    {asset.values[field] || '-'}
+                                                    {asset.values[field] ?? '-'}
                                                 </Text>
                                             </View>
                                         </TouchableOpacity>
