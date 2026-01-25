@@ -864,7 +864,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                                                         autoFocus
                                                         blurOnSubmit={true}
                                                         returnKeyType="done"
-                                                        onSubmitEditing={handleSave}
+                                                        onSubmitEditing={() => handleSave()}
                                                     />
                                                 </View>
                                             )}
@@ -874,7 +874,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                                     {/* Save Button */}
                                     <TouchableOpacity
                                         style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
-                                        onPress={handleSave}
+                                        onPress={() => handleSave()}
                                         disabled={isSaving}
                                     >
                                         <Text style={styles.saveButtonText}>
