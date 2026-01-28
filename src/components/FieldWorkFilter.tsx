@@ -760,6 +760,44 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                                 return null;
                             })()}
 
+                            {/* 전체 선택/해제 버튼 */}
+                            <View style={styles.selectAllEditableContainer}>
+                                <Text style={styles.selectedEditableCount}>
+                                    {editableFields.length}개 선택됨
+                                </Text>
+                                <TouchableOpacity
+                                    onPress={() => {
+                                        const filtered = schema.filter(col => {
+                                            if (editableSearchText) {
+                                                return col.toLowerCase().includes(editableSearchText.toLowerCase());
+                                            }
+                                            return true;
+                                        });
+
+                                        // 이미 검색된 결과가 모두 선택되어 있는지 확인
+                                        const allSelected = filtered.every(col => editableFields.includes(col));
+
+                                        if (allSelected) {
+                                            // 모두 선택 해제
+                                            setEditableFields(prev => prev.filter(col => !filtered.includes(col)));
+                                        } else {
+                                            // 검색된 것 모두 선택 (기존 선택 유지)
+                                            setEditableFields(prev => {
+                                                const next = [...prev];
+                                                filtered.forEach(col => {
+                                                    if (!next.includes(col)) next.push(col);
+                                                });
+                                                return next;
+                                            });
+                                        }
+                                    }}
+                                    style={styles.selectAllEditableButton}
+                                >
+                                    <Check size={14} color="#6366f1" />
+                                    <Text style={styles.selectAllEditableText}>전체 선택/해제</Text>
+                                </TouchableOpacity>
+                            </View>
+
                             <View style={styles.editableList}>
                                 {schema
                                     .filter(col => {
@@ -1764,5 +1802,30 @@ const styles = StyleSheet.create({
     valueItemTextStale: {
         color: '#b91c1c',
         textDecorationLine: 'line-through',
+    },
+    selectAllEditableContainer: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: 12,
+        paddingHorizontal: 4,
+    },
+    selectedEditableCount: {
+        fontSize: 13,
+        color: '#6b7280',
+    },
+    selectAllEditableButton: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        backgroundColor: '#eef2ff',
+        borderRadius: 6,
+        gap: 4,
+    },
+    selectAllEditableText: {
+        fontSize: 13,
+        color: '#6366f1',
+        fontWeight: '500',
     },
 });
