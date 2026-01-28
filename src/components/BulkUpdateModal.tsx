@@ -368,7 +368,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                 }
                             }
                             // 컬럼 생성 후 실행 계속
-                            executeUpdates();
+                            await performUpdates();
                         }
                     }
                 ]
@@ -377,9 +377,9 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         }
 
         // 신규 컬럼이 없으면 바로 실행
-        executeUpdates();
+        await performUpdates();
 
-        async function executeUpdates() {
+        async function performUpdates() {
             setIsProcessing(true);
             setTotalCount(totalOperations);
             setProcessedCount(0);
