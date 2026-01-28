@@ -299,6 +299,8 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
 
     // 실행 (다중 컬럼 + 신규 생성)
     const executeUpdates = useCallback(async () => {
+        console.log('[BulkUpdate] executeUpdates called');
+
         const matchedToProcess = matchResults.filter(r => r.type === 'matched');
 
         // 업데이트할 변경사항 수집
@@ -328,6 +330,8 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         const newItemsToCreate = allowNew && onCreatePage ? newItemsData : [];
         const totalOperations = updates.length + newItemsToCreate.length;
 
+        console.log('[BulkUpdate] updates:', updates.length, 'newItems:', newItemsToCreate.length, 'total:', totalOperations);
+
         if (totalOperations === 0) {
             Alert.alert('알림', '업데이트할 항목이 없습니다.');
             return;
@@ -351,88 +355,73 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         setUndoHistory(historyItems);
         setUndoComplete(false);
 
-        // 신규 컬럼 먼저 생성
+        // 신규 컬럼이 있으면 먼저 생성
         if (newColumns.length > 0 && onCreateProperty) {
-            Alert.alert(
-                '신규 컬럼 생성',
-                `${newColumns.length}개의 새 컬럼을 DB에 생성합니다: ${newColumns.join(', ')}`,
-                [
-                    { text: '취소', style: 'cancel' },
-                    {
-                        text: '생성 후 계속',
-                        onPress: async () => {
-                            for (const col of newColumns) {
-                                const success = await onCreateProperty(col, 'rich_text');
-                                if (!success) {
-                                    Alert.alert('오류', `컬럼 "${col}" 생성에 실패했습니다.`);
-                                }
-                            }
-                            // 컬럼 생성 후 실행 계속
-                            await performUpdates();
-                        }
-                    }
-                ]
-            );
-            return;
+            console.log('[BulkUpdate] Creating new columns:', newColumns);
+            for (const col of newColumns) {
+                const success = await onCreateProperty(col, 'rich_text');
+                if (!success) {
+                    Alert.alert('오류', `컬럼 "${col}" 생성에 실패했습니다.`);
+                    return;
+                }
+            }
         }
 
-        // 신규 컬럼이 없으면 바로 실행
-        await performUpdates();
+        // 실행 시작
+        console.log('[BulkUpdate] Starting processing...');
+        setIsProcessing(true);
+        setTotalCount(totalOperations);
+        setProcessedCount(0);
+        setResults({ success: 0, failed: 0 });
 
-        async function performUpdates() {
-            setIsProcessing(true);
-            setTotalCount(totalOperations);
-            setProcessedCount(0);
-            setResults({ success: 0, failed: 0 });
+        let successCount = 0;
+        let failedCount = 0;
+        let processedSoFar = 0;
 
-            let success = 0;
-            let failed = 0;
-            let processedSoFar = 0;
-
-            // 기존 항목 업데이트
-            for (let i = 0; i < updates.length; i++) {
-                const { assetId, column, value, propType } = updates[i];
-                try {
-                    await onUpdate(assetId, column, value, propType);
-                    success++;
-                } catch (error) {
-                    console.error('Update failed:', error);
-                    failed++;
-                }
-                processedSoFar++;
-                setProcessedCount(processedSoFar);
+        // 기존 항목 업데이트
+        for (let i = 0; i < updates.length; i++) {
+            const { assetId, column, value, propType } = updates[i];
+            try {
+                await onUpdate(assetId, column, value, propType);
+                successCount++;
+            } catch (error) {
+                console.error('Update failed:', error);
+                failedCount++;
             }
-
-            // 신규 항목 생성
-            const newlyCreatedIds: string[] = [];
-            for (let i = 0; i < newItemsToCreate.length; i++) {
-                const newItem = newItemsToCreate[i];
-                try {
-                    // 모든 컬럼 값 합치기: lookupColumn + inputColumns + otherColumns
-                    const allValues: Record<string, string> = {
-                        [lookupColumn]: newItem.lookupValue,
-                        ...newItem.inputColumns,
-                        ...newItem.otherColumns,
-                    };
-                    const pageId = await onCreatePage!(allValues);
-                    if (pageId) {
-                        newlyCreatedIds.push(pageId); // Undo용 페이지 ID 저장
-                    }
-                    success++;
-                } catch (error) {
-                    console.error('Create failed:', error);
-                    failed++;
-                }
-                processedSoFar++;
-                setProcessedCount(processedSoFar);
-            }
-            setCreatedPageIds(newlyCreatedIds);
-
-            setResults({ success, failed });
-            setIsProcessing(false);
-            setStep(4);
+            processedSoFar++;
+            setProcessedCount(processedSoFar);
         }
-    }, [matchResults, allowOverwrite, allowNew, detectedColumns, schemaProperties, onUpdate, onCreatePage, newItemsData, lookupColumn, newColumns, onCreateProperty]);
+
+        // 신규 항목 생성
+        const newlyCreatedIds: string[] = [];
+        for (let i = 0; i < newItemsToCreate.length; i++) {
+            const newItem = newItemsToCreate[i];
+            try {
+                // 모든 컬럼 값 합치기: lookupColumn + inputColumns + otherColumns
+                const allValues: Record<string, string> = {
+                    [lookupColumn]: newItem.lookupValue,
+                    ...newItem.inputColumns,
+                    ...newItem.otherColumns,
+                };
+                const pageId = await onCreatePage!(allValues);
+                if (pageId) {
+                    newlyCreatedIds.push(pageId); // Undo용 페이지 ID 저장
+                }
+                successCount++;
+            } catch (error) {
+                console.error('Create failed:', error);
+                failedCount++;
+            }
+            processedSoFar++;
+            setProcessedCount(processedSoFar);
+        }
+        setCreatedPageIds(newlyCreatedIds);
+
+        console.log('[BulkUpdate] Completed. Success:', successCount, 'Failed:', failedCount);
+        setResults({ success: successCount, failed: failedCount });
+        setIsProcessing(false);
+        setStep(4);
+    }, [matchResults, allowOverwrite, allowNew, schemaProperties, onUpdate, onCreatePage, newItemsData, lookupColumn, newColumns, onCreateProperty]);
 
     // Undo 실행 (이전 값으로 복원 + 신규 생성 삭제)
     const executeUndo = useCallback(async () => {
