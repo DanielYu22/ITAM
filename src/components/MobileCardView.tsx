@@ -790,6 +790,35 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                                                             </View>
 
                                                             <ScrollView ref={optionsScrollRef} style={styles.optionsList} keyboardShouldPersistTaps="handled">
+                                                                {/* 공백 옵션 (빈 값 설정) */}
+                                                                <TouchableOpacity
+                                                                    style={[
+                                                                        styles.optionItem,
+                                                                        styles.emptyOptionItem,
+                                                                        selectedOptions.length === 0 && styles.optionItemSelected
+                                                                    ]}
+                                                                    onPress={() => {
+                                                                        const isMulti = schemaProperties[editingField].type === 'multi_select';
+                                                                        // 공백 선택 시 빈 배열로 설정
+                                                                        setSelectedOptions([]);
+                                                                        if (!isMulti) {
+                                                                            setEditValue('');
+                                                                            setShowOptions(false);
+                                                                            // Select 타입에서 공백 선택 시 즉시 저장
+                                                                            if (selectedAsset && editingField) {
+                                                                                setTimeout(() => {
+                                                                                    handleSave(''); // 빈 문자열로 저장
+                                                                                }, 50);
+                                                                            }
+                                                                        }
+                                                                    }}
+                                                                >
+                                                                    <Text style={[styles.optionText, styles.emptyOptionText]}>
+                                                                        공백
+                                                                    </Text>
+                                                                    {selectedOptions.length === 0 && <Check size={16} color="#6366f1" />}
+                                                                </TouchableOpacity>
+
                                                                 {filteredOptions.map((opt, idx) => {
                                                                     const isSelected = selectedOptions.includes(opt.name);
                                                                     const isHighlighted = idx === highlightedOptionIndex;
@@ -1185,6 +1214,15 @@ const styles = StyleSheet.create({
     optionTextSelected: {
         color: '#6366f1',
         fontWeight: '500',
+    },
+    emptyOptionItem: {
+        backgroundColor: '#fafafa',
+        borderBottomWidth: 2,
+        borderBottomColor: '#e5e7eb',
+    },
+    emptyOptionText: {
+        color: '#9ca3af',
+        fontStyle: 'italic',
     },
     createOptionItem: {
         flexDirection: 'row',

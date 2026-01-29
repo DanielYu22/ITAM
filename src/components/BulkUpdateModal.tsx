@@ -928,6 +928,18 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                                             {/* 드롭다운 옵션 */}
                                                             {showDropdown?.key === item.lookupValue && showDropdown?.column === col && (
                                                                 <View style={styles.dropdownOptionsCard}>
+                                                                    {/* select/multi_select 타입일 경우 공백 옵션 추가 */}
+                                                                    {(schemaProperties[col]?.type === 'select' || schemaProperties[col]?.type === 'multi_select') && (
+                                                                        <TouchableOpacity
+                                                                            style={styles.dropdownOption}
+                                                                            onPress={() => {
+                                                                                updateNewItemField(item.lookupValue, col, '');
+                                                                                setShowDropdown(null);
+                                                                            }}
+                                                                        >
+                                                                            <Text style={[styles.dropdownOptionText, { color: '#9ca3af', fontStyle: 'italic' }]}>공백</Text>
+                                                                        </TouchableOpacity>
+                                                                    )}
                                                                     <TouchableOpacity
                                                                         style={styles.dropdownOption}
                                                                         onPress={() => {
