@@ -31,6 +31,7 @@ import {
 } from 'lucide-react-native';
 import { FilterConfig } from './FieldWorkFilter';
 import { Asset, NotionProperty } from '../lib/notion';
+import { APP_VERSION } from '../lib/version';
 
 interface HomeScreenProps {
     assets: Asset[];
@@ -480,6 +481,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         {hasFilter ? `${filteredCount}개 장비` : '먼저 필터를 설정하세요'}
                     </Text>
                 </TouchableOpacity>
+
+                {/* 버전 정보 */}
+                <View style={styles.versionBadge}>
+                    <Text style={styles.versionText}>{APP_VERSION}</Text>
+                </View>
             </ScrollView>
 
             {/* 검색 결과 모달 */}
@@ -1066,5 +1072,20 @@ const styles = StyleSheet.create({
     },
     menuItemTextDanger: {
         color: '#ef4444',
+    },
+    versionBadge: {
+        alignSelf: 'flex-end',
+        backgroundColor: '#f3f4f6',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
+        borderRadius: 8,
+        marginTop: 12,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+    },
+    versionText: {
+        fontSize: 11,
+        fontWeight: '500',
+        color: '#6b7280',
     },
 });
