@@ -40,7 +40,7 @@ export interface TargetGroup {
 export interface TargetCondition {
     id: string;
     column: string;
-    type: 'is_empty' | 'is_not_empty' | 'contains' | 'not_contains' | 'equals';
+    type: 'is_empty' | 'is_not_empty' | 'contains' | 'not_contains' | 'equals' | 'text_contains' | 'text_not_contains';
     values: string[]; // 다중 선택 지원
 }
 
@@ -304,25 +304,85 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
 
         return assets.filter(asset => {
             const columnKey = String(cond.column ?? '');
-            const val = String(asset.values[columnKey] ?? '').toLowerCase();
+            const val = String(asset.values[columnKey] ?? '');
+            const valLower = val.toLowerCase();
+
             switch (cond.type) {
                 case 'is_empty':
                     return !val || val === '';
                 case 'is_not_empty':
                     return val && val !== '';
-                case 'contains':
+                case 'contains': {
                     if (cond.values && cond.values.length > 0) {
-                        return cond.values.some(v => val.includes(String(v ?? '').toLowerCase()));
+                        // select/multi_select 타입: 아이템 기반 매칭
+                        const propType = schemaProperties[columnKey]?.type;
+                        if (propType === 'select' || propType === 'multi_select') {
+                            // 공백 체크
+                            if (cond.values.includes('') && (!val || val === '')) {
+                                return true;
+                            }
+                            // multi_select는 콤마로 구분된 아이템들
+                            const items = val.split(',').map(v => v.trim().toLowerCase());
+                            return cond.values.some(v => {
+                                if (v === '') return false; // 이미 위에서 처리
+                                return items.includes(String(v ?? '').toLowerCase());
+                            });
+                        }
+                        // 일반 텍스트: 부분 일치 (하위 호환성)
+                        return cond.values.some(v => {
+                            if (v === '') return !val || val === '';
+                            return valLower.includes(String(v ?? '').toLowerCase());
+                        });
                     }
                     return true;
-                case 'not_contains':
+                }
+                case 'not_contains': {
                     if (cond.values && cond.values.length > 0) {
-                        return !cond.values.some(v => val.includes(String(v ?? '').toLowerCase()));
+                        // select/multi_select 타입: 아이템 기반 매칭
+                        const propType = schemaProperties[columnKey]?.type;
+                        if (propType === 'select' || propType === 'multi_select') {
+                            // 공백 체크
+                            if (cond.values.includes('') && (!val || val === '')) {
+                                return false;
+                            }
+                            // multi_select는 콤마로 구분된 아이템들
+                            const items = val.split(',').map(v => v.trim().toLowerCase());
+                            return !cond.values.some(v => {
+                                if (v === '') return !val || val === '';
+                                return items.includes(String(v ?? '').toLowerCase());
+                            });
+                        }
+                        // 일반 텍스트: 부분 일치 (하위 호환성)
+                        return !cond.values.some(v => {
+                            if (v === '') return !val || val === '';
+                            return valLower.includes(String(v ?? '').toLowerCase());
+                        });
                     }
                     return true;
+                }
+                case 'text_contains': {
+                    // 항상 텍스트 부분 일치
+                    if (cond.values && cond.values.length > 0) {
+                        return cond.values.some(v => {
+                            if (v === '') return !val || val === '';
+                            return valLower.includes(String(v ?? '').toLowerCase());
+                        });
+                    }
+                    return true;
+                }
+                case 'text_not_contains': {
+                    // 항상 텍스트 부분 불일치
+                    if (cond.values && cond.values.length > 0) {
+                        return !cond.values.some(v => {
+                            if (v === '') return !val || val === '';
+                            return valLower.includes(String(v ?? '').toLowerCase());
+                        });
+                    }
+                    return true;
+                }
                 case 'equals':
                     if (cond.values && cond.values.length > 0) {
-                        return cond.values.some(v => val === String(v ?? '').toLowerCase());
+                        return cond.values.some(v => valLower === String(v ?? '').toLowerCase());
                     }
                     return true;
                 default:
@@ -338,25 +398,85 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
         return assets.filter(asset => {
             const conditionMatches = group.conditions.map(cond => {
                 const columnKey = String(cond.column ?? '');
-                const val = String(asset.values[columnKey] ?? '').toLowerCase();
+                const val = String(asset.values[columnKey] ?? '');
+                const valLower = val.toLowerCase();
+
                 switch (cond.type) {
                     case 'is_empty':
                         return !val || val === '';
                     case 'is_not_empty':
                         return val && val !== '';
-                    case 'contains':
+                    case 'contains': {
                         if (cond.values && cond.values.length > 0) {
-                            return cond.values.some(v => val.includes(String(v ?? '').toLowerCase()));
+                            // select/multi_select 타입: 아이템 기반 매칭
+                            const propType = schemaProperties[columnKey]?.type;
+                            if (propType === 'select' || propType === 'multi_select') {
+                                // 공백 체크
+                                if (cond.values.includes('') && (!val || val === '')) {
+                                    return true;
+                                }
+                                // multi_select는 콤마로 구분된 아이템들
+                                const items = val.split(',').map(v => v.trim().toLowerCase());
+                                return cond.values.some(v => {
+                                    if (v === '') return false; // 이미 위에서 처리
+                                    return items.includes(String(v ?? '').toLowerCase());
+                                });
+                            }
+                            // 일반 텍스트: 부분 일치 (하위 호환성)
+                            return cond.values.some(v => {
+                                if (v === '') return !val || val === '';
+                                return valLower.includes(String(v ?? '').toLowerCase());
+                            });
                         }
                         return true;
-                    case 'not_contains':
+                    }
+                    case 'not_contains': {
                         if (cond.values && cond.values.length > 0) {
-                            return !cond.values.some(v => val.includes(String(v ?? '').toLowerCase()));
+                            // select/multi_select 타입: 아이템 기반 매칭
+                            const propType = schemaProperties[columnKey]?.type;
+                            if (propType === 'select' || propType === 'multi_select') {
+                                // 공백 체크
+                                if (cond.values.includes('') && (!val || val === '')) {
+                                    return false;
+                                }
+                                // multi_select는 콤마로 구분된 아이템들
+                                const items = val.split(',').map(v => v.trim().toLowerCase());
+                                return !cond.values.some(v => {
+                                    if (v === '') return !val || val === '';
+                                    return items.includes(String(v ?? '').toLowerCase());
+                                });
+                            }
+                            // 일반 텍스트: 부분 일치 (하위 호환성)
+                            return !cond.values.some(v => {
+                                if (v === '') return !val || val === '';
+                                return valLower.includes(String(v ?? '').toLowerCase());
+                            });
                         }
                         return true;
+                    }
+                    case 'text_contains': {
+                        // 항상 텍스트 부분 일치
+                        if (cond.values && cond.values.length > 0) {
+                            return cond.values.some(v => {
+                                if (v === '') return !val || val === '';
+                                return valLower.includes(String(v ?? '').toLowerCase());
+                            });
+                        }
+                        return true;
+                    }
+                    case 'text_not_contains': {
+                        // 항상 텍스트 부분 불일치
+                        if (cond.values && cond.values.length > 0) {
+                            return !cond.values.some(v => {
+                                if (v === '') return !val || val === '';
+                                return valLower.includes(String(v ?? '').toLowerCase());
+                            });
+                        }
+                        return true;
+                    }
                     case 'equals':
                         if (cond.values && cond.values.length > 0) {
-                            return cond.values.some(v => val === String(v ?? '').toLowerCase());
+                            return cond.values.some(v => valLower === String(v ?? '').toLowerCase());
                         }
                         return true;
                     default:
@@ -388,6 +508,8 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
         contains: '포함',
         not_contains: '포함하지 않음',
         equals: '정확히 일치',
+        text_contains: '텍스트 포함',
+        text_not_contains: '텍스트 미포함',
     };
 
     const hierarchyLabels = ['건물', '층', '연구실', '추가'];
@@ -649,7 +771,7 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                                             </View>
 
                                             {/* 값 선택 (다중 선택 지원) */}
-                                            {(cond.type === 'contains' || cond.type === 'not_contains' || cond.type === 'equals') && (
+                                            {(cond.type === 'contains' || cond.type === 'not_contains' || cond.type === 'equals' || cond.type === 'text_contains' || cond.type === 'text_not_contains') && (
                                                 <View style={styles.valueSection}>
                                                     <TouchableOpacity
                                                         style={styles.valuePickerButton}
@@ -671,7 +793,7 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                                                         <View style={styles.selectedValues}>
                                                             {cond.values.map(val => (
                                                                 <View key={val} style={styles.selectedValueChip}>
-                                                                    <Text style={styles.selectedValueText}>{val}</Text>
+                                                                    <Text style={styles.selectedValueText}>{val || '공백'}</Text>
                                                                     <TouchableOpacity
                                                                         onPress={() => toggleConditionValue(cond.id, val)}
                                                                     >
@@ -1075,6 +1197,28 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
 
                                     return (
                                         <>
+                                            {/* 공백 옵션 (contains/not_contains/text 타입에만 표시) */}
+                                            {(cond.type === 'contains' || cond.type === 'not_contains' || cond.type === 'text_contains' || cond.type === 'text_not_contains') && (
+                                                <TouchableOpacity
+                                                    style={[
+                                                        styles.valueItem,
+                                                        cond.values.includes('') && styles.valueItemActive,
+                                                    ]}
+                                                    onPress={() => toggleConditionValue(activeConditionId, '')}
+                                                >
+                                                    <Text style={[
+                                                        styles.valueItemText,
+                                                        { color: '#9ca3af', fontStyle: 'italic' },
+                                                        cond.values.includes('') && styles.valueItemTextActive,
+                                                    ]}>
+                                                        공백
+                                                    </Text>
+                                                    {cond.values.includes('') && (
+                                                        <Check size={18} color="#6366f1" />
+                                                    )}
+                                                </TouchableOpacity>
+                                            )}
+
                                             {/* 유효하지 않은 선택값 (경고 표시) */}
                                             {filteredStaleValues.length > 0 && (
                                                 <>
