@@ -337,9 +337,9 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                     return true;
                 }
                 case 'not_contains': {
-                    // 빈 값은 기본적으로 제외 (공백 선택 시에만 포함)
+                    // 빈 값 처리: "공백"을 포함하지 않음으로 선택했으면 빈 값 제외
                     if (!val || val === '') {
-                        return cond.values && cond.values.includes('');
+                        return !(cond.values && cond.values.includes(''));
                     }
 
                     if (cond.values && cond.values.length > 0) {
@@ -372,9 +372,9 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                     return true;
                 }
                 case 'text_not_contains': {
-                    // 빈 값은 기본적으로 제외 (공백 선택 시에만 포함)
+                    // 빈 값 처리: "공백"을 포함하지 않음으로 선택했으면 빈 값 제외
                     if (!val || val === '') {
-                        return cond.values && cond.values.includes('');
+                        return !(cond.values && cond.values.includes(''));
                     }
 
                     // 항상 텍스트 부분 불일치
@@ -437,9 +437,9 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                         return true;
                     }
                     case 'not_contains': {
-                        // 빈 값은 기본적으로 제외 (공백 선택 시에만 포함)
+                        // 빈 값 처리: "공백"을 포함하지 않음으로 선택했으면 빈 값 제외
                         if (!val || val === '') {
-                            return cond.values && cond.values.includes('');
+                            return !(cond.values && cond.values.includes(''));
                         }
 
                         if (cond.values && cond.values.length > 0) {
@@ -472,9 +472,9 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                         return true;
                     }
                     case 'text_not_contains': {
-                        // 빈 값은 기본적으로 제외 (공백 선택 시에만 포함)
+                        // 빈 값 처리: "공백"을 포함하지 않음으로 선택했으면 빈 값 제외
                         if (!val || val === '') {
-                            return cond.values && cond.values.includes('');
+                            return !(cond.values && cond.values.includes(''));
                         }
 
                         // 항상 텍스트 부분 불일치
