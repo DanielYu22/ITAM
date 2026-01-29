@@ -337,24 +337,25 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                     return true;
                 }
                 case 'not_contains': {
+                    // 빈 값은 기본적으로 제외 (공백 선택 시에만 포함)
+                    if (!val || val === '') {
+                        return cond.values && cond.values.includes('');
+                    }
+
                     if (cond.values && cond.values.length > 0) {
                         // select/multi_select 타입: 아이템 기반 매칭
                         const propType = schemaProperties[columnKey]?.type;
                         if (propType === 'select' || propType === 'multi_select') {
-                            // 공백 체크
-                            if (cond.values.includes('') && (!val || val === '')) {
-                                return false;
-                            }
                             // multi_select는 콤마로 구분된 아이템들
                             const items = val.split(',').map(v => v.trim().toLowerCase());
                             return !cond.values.some(v => {
-                                if (v === '') return !val || val === '';
+                                if (v === '') return false; // 공백 선택은 무시
                                 return items.includes(String(v ?? '').toLowerCase());
                             });
                         }
                         // 일반 텍스트: 부분 일치 (하위 호환성)
                         return !cond.values.some(v => {
-                            if (v === '') return !val || val === '';
+                            if (v === '') return false; // 공백 선택은 무시
                             return valLower.includes(String(v ?? '').toLowerCase());
                         });
                     }
@@ -371,10 +372,15 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                     return true;
                 }
                 case 'text_not_contains': {
+                    // 빈 값은 기본적으로 제외 (공백 선택 시에만 포함)
+                    if (!val || val === '') {
+                        return cond.values && cond.values.includes('');
+                    }
+
                     // 항상 텍스트 부분 불일치
                     if (cond.values && cond.values.length > 0) {
                         return !cond.values.some(v => {
-                            if (v === '') return !val || val === '';
+                            if (v === '') return false; // 공백 선택은 무시
                             return valLower.includes(String(v ?? '').toLowerCase());
                         });
                     }
@@ -431,24 +437,25 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                         return true;
                     }
                     case 'not_contains': {
+                        // 빈 값은 기본적으로 제외 (공백 선택 시에만 포함)
+                        if (!val || val === '') {
+                            return cond.values && cond.values.includes('');
+                        }
+
                         if (cond.values && cond.values.length > 0) {
                             // select/multi_select 타입: 아이템 기반 매칭
                             const propType = schemaProperties[columnKey]?.type;
                             if (propType === 'select' || propType === 'multi_select') {
-                                // 공백 체크
-                                if (cond.values.includes('') && (!val || val === '')) {
-                                    return false;
-                                }
                                 // multi_select는 콤마로 구분된 아이템들
                                 const items = val.split(',').map(v => v.trim().toLowerCase());
                                 return !cond.values.some(v => {
-                                    if (v === '') return !val || val === '';
+                                    if (v === '') return false; // 공백 선택은 무시
                                     return items.includes(String(v ?? '').toLowerCase());
                                 });
                             }
                             // 일반 텍스트: 부분 일치 (하위 호환성)
                             return !cond.values.some(v => {
-                                if (v === '') return !val || val === '';
+                                if (v === '') return false; // 공백 선택은 무시
                                 return valLower.includes(String(v ?? '').toLowerCase());
                             });
                         }
@@ -465,10 +472,15 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                         return true;
                     }
                     case 'text_not_contains': {
+                        // 빈 값은 기본적으로 제외 (공백 선택 시에만 포함)
+                        if (!val || val === '') {
+                            return cond.values && cond.values.includes('');
+                        }
+
                         // 항상 텍스트 부분 불일치
                         if (cond.values && cond.values.length > 0) {
                             return !cond.values.some(v => {
-                                if (v === '') return !val || val === '';
+                                if (v === '') return false; // 공백 선택은 무시
                                 return valLower.includes(String(v ?? '').toLowerCase());
                             });
                         }
