@@ -213,7 +213,9 @@ export class NotionClient {
             const targetUrl = `${API_BASE_URL}/api/notion/v1/pages/${pageId}`;
             const properties: any = {};
             if (type === 'select') {
-                properties[propertyName] = stringValue ? { select: { name: stringValue } } : { select: null };
+                // Select 옵션에는 쉼표가 들어갈 수 없으므로 전각 쉼표로 대체
+                const safeValue = stringValue ? stringValue.replace(/,/g, '，') : null;
+                properties[propertyName] = safeValue ? { select: { name: safeValue } } : { select: null };
             } else if (type === 'date') {
                 properties[propertyName] = stringValue ? { date: { start: stringValue } } : { date: null };
             } else if (type === 'status') {
@@ -260,7 +262,9 @@ export class NotionClient {
                 const type = propInfo?.type || 'rich_text';
 
                 if (type === 'select') {
-                    properties[propName] = { select: { name: value } };
+                    // Select 옵션에는 쉼표가 들어갈 수 없으므로 전각 쉼표로 대체
+                    const safeValue = value.replace(/,/g, '，');
+                    properties[propName] = { select: { name: safeValue } };
                 } else if (type === 'date') {
                     properties[propName] = { date: { start: value } };
                 } else if (type === 'status') {
