@@ -182,4 +182,91 @@ Respond with JSON only. Match field names exactly to the available fields listed
             return { filter: null, explanation: 'AI 서비스 연결 실패' };
         }
     }
+    async generateReport(
+        templateImages: string[],
+        contextImages: string[],
+        contextAssets: any[], // Asset[] but avoiding circular dependency if possible, or just use any
+        contextTexts: string[],
+        userInstruction: string
+    ): Promise<{ report: string; error?: string }> {
+        try {
+            const parts: any[] = [];
+
+            // 1. System Prompt
+            parts.push({
+                text: `You are an expert reporter. Your task is to generate a comprehensive report based on the provided "Template" and "Context" materials.
+
+INSTRUCTIONS:
+1. Analyze the "Template" images (if provided) to understand the required format, structure, tone, and visual layout.
+2. Synthesize the "Context" materials (images, data, texts) to extract relevant facts, figures, and insights.
+3. Write the report following the "Template" format EXACTLY, filling the content with the information from "Context".
+4. If a specific data point is missing in the context but required by the template, indicate it clearly or make a reasonable inference based on available data (stating it's an inference).
+5. Output the result in Markdown format.
+${userInstruction ? `\nUSER EXTRA INSTRUCTION: ${userInstruction}` : ''}`
+            });
+
+            // 2. Add Template Images
+            templateImages.forEach((base64, index) => {
+                parts.push({ text: `[Template Image ${index + 1}] This is the required report format/style:` });
+                parts.push({
+                    inline_data: {
+                        mime_type: 'image/jpeg',
+                        data: base64
+                    }
+                });
+            });
+
+            // 3. Add Context Images
+            contextImages.forEach((base64, index) => {
+                parts.push({ text: `[Context Image ${index + 1}] Reference material:` });
+                parts.push({
+                    inline_data: {
+                        mime_type: 'image/jpeg',
+                        data: base64
+                    }
+                });
+            });
+
+            // 4. Add Context Data (Assets)
+            if (contextAssets.length > 0) {
+                const assetsText = contextAssets.map(a => JSON.stringify(a.values)).join('\n');
+                parts.push({ text: `[Context Data] Database Records:\n${assetsText}` });
+            }
+
+            // 5. Add Context Texts
+            contextTexts.forEach((text, index) => {
+                parts.push({ text: `[Context Text ${index + 1}] Reference document:\n${text}` });
+            });
+
+            // Call Gemini 1.5 Flash
+            const response = await fetch(`${API_BASE_URL}/api/gemini/v1beta/models/gemini-2.0-flash:generateContent`, {
+                method: 'POST',
+                headers: this.getHeaders(),
+                body: JSON.stringify({
+                    contents: [{ parts }],
+                    generationConfig: {
+                        temperature: 0.3,
+                        maxOutputTokens: 8192 // Long output for full reports
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                const errText = await response.text();
+                // If 429, we might want to suggest waiting, but for now just error
+                console.error('[Gemini Report] API Error:', response.status, errText);
+                return { report: '', error: `API Error: ${response.status} - ${errText.slice(0, 100)}` };
+            }
+
+            const data = await response.json();
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+            return { report: text };
+
+        } catch (error) {
+            console.error('[Gemini Report] Error:', error);
+            return { report: '', error: 'Failed to generate report' };
+        }
+    }
 }
+

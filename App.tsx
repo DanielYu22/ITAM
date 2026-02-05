@@ -29,6 +29,7 @@ import {
   Upload
 } from 'lucide-react-native';
 import { NotionClient, Asset, NotionProperty } from './src/lib/notion';
+import { GeminiClient } from './src/lib/gemini';
 import { NOTION_API_KEY, NOTION_DATABASE_ID, API_BASE_URL } from './src/config';
 import { MobileCardView } from './src/components/MobileCardView';
 import { evaluateFilter, FilterCondition, DEFAULT_FILTER } from './src/lib/utils';
@@ -45,7 +46,7 @@ export default function App() {
   const [apiBaseUrl, setApiBaseUrl] = useState(API_BASE_URL);
 
   // 빌드 버전 (배포 확인용)
-  const BUILD_VERSION = '2026.01.23-1';
+  const BUILD_VERSION = '2026.02.05-1';
 
   // State
   const [assets, setAssets] = useState<Asset[]>([]);
@@ -75,12 +76,18 @@ export default function App() {
 
   // Notion Client
   const [notionClient, setNotionClient] = useState<NotionClient | null>(null);
+  const [geminiClient, setGeminiClient] = useState<GeminiClient | null>(null);
 
   // Initialize Notion client
   useEffect(() => {
     if (databaseId) {
       const client = new NotionClient({ apiKey, databaseId });
       setNotionClient(client);
+
+      // Initialize Gemini Client
+      const gClient = new GeminiClient({ apiKey }); // Assuming same key or add separate config if needed
+      setGeminiClient(gClient);
+
       setLoading(true); // Start loading when client is ready
     } else {
       setNotionClient(null);
@@ -576,6 +583,7 @@ export default function App() {
               filterConfig={fieldWorkConfig}
               templates={filterTemplates}
               schemaProperties={schemaProperties}
+              geminiClient={geminiClient}
               onStartWork={startWork}
               onOpenFilter={() => setShowFieldWorkFilter(true)}
               onLoadTemplate={loadTemplate}

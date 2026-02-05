@@ -27,17 +27,21 @@ import {
     Edit,
     Download,
     Upload,
+    Zap,
     RefreshCw,
 } from 'lucide-react-native';
 import { FilterConfig } from './FieldWorkFilter';
 import { Asset, NotionProperty } from '../lib/notion';
+import { GeminiClient } from '../lib/gemini';
 import { APP_VERSION } from '../lib/version';
+import { ReportGeneratorModal } from './ReportGeneratorModal';
 
 interface HomeScreenProps {
     assets: Asset[];
     filterConfig: FilterConfig | null;
     templates: FilterTemplate[];
     schemaProperties: Record<string, NotionProperty>;
+    geminiClient: GeminiClient | null;
     onStartWork: () => void;
     onOpenFilter: () => void;
     onLoadTemplate: (template: FilterTemplate) => void;
@@ -71,9 +75,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     onExport,
     onBulkUpdate,
     onRefresh,
+    geminiClient,
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [showSearchResults, setShowSearchResults] = useState(false);
+    const [showReportModal, setShowReportModal] = useState(false);
 
     // 템플릿 관리 상태
     const [showSaveModal, setShowSaveModal] = useState(false);
@@ -326,6 +332,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
                 {/* 도구 섹션 */}
                 <View style={styles.toolsSection}>
+                    <TouchableOpacity
+                        style={styles.toolCard}
+                        onPress={() => setShowReportModal(true)}
+                    >
+                        <View style={[styles.toolIconContainer, { backgroundColor: '#f3e8ff' }]}>
+                            <Zap size={28} color="#9333ea" />
+                        </View>
+                        <Text style={styles.toolLabel}>특수 보고서</Text>
+                    </TouchableOpacity>
+
                     <TouchableOpacity
                         style={styles.toolCard}
                         onPress={onExport}
@@ -629,6 +645,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     </View>
                 </TouchableOpacity>
             </Modal>
+
+            <ReportGeneratorModal
+                visible={showReportModal}
+                onClose={() => setShowReportModal(false)}
+                geminiClient={geminiClient}
+                assets={assets}
+            />
         </>
     );
 };
