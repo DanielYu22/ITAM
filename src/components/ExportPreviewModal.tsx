@@ -42,6 +42,9 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
 
         // 타이틀 컬럼을 맨 앞으로 정렬
         const otherColumns = schema.filter(col => col !== titleColumn);
+        // 나머지 컬럼들을 오름차순 정렬
+        otherColumns.sort((a, b) => a.localeCompare(b));
+        
         return [titleColumn, ...otherColumns];
     }, [schema, schemaProperties]);
 
