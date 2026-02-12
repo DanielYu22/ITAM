@@ -119,16 +119,79 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         return values;
     }, [schema, assets]);
 
+    // CSV/TSV 파서 (따옴표, 줄바꿈 처리)
+    const parseCSV = useCallback((text: string): string[][] => {
+        if (!text.trim()) return [];
+
+        // 1. 구분자 감지 (첫 줄 기준)
+        const firstLine = text.split('\n')[0];
+        const tabCount = (firstLine.match(/\t/g) || []).length;
+        // 탭이 하나라도 있으면 무조건 TSV로 간주 (엑셀 붙여넣기 우선)
+        // 쉼표가 아무리 많아도 탭이 있으면 탭 구분자로 처리하여 텍스트 내 쉼표 오작동 방지
+        const delimiter = tabCount > 0 ? '\t' : ',';
+
+        const rows: string[][] = [];
+        let currentRow: string[] = [];
+        let currentField = '';
+        let insideQuote = false;
+
+        for (let i = 0; i < text.length; i++) {
+            const char = text[i];
+            const nextChar = text[i + 1];
+
+            if (char === '"') {
+                if (insideQuote && nextChar === '"') {
+                    // Escaped quote ("") -> "
+                    currentField += '"';
+                    i++; // Skip next quote
+                } else {
+                    // Toggle quote state
+                    insideQuote = !insideQuote;
+                }
+            } else if (char === delimiter && !insideQuote) {
+                // End of field
+                currentRow.push(currentField);
+                currentField = '';
+            } else if ((char === '\n' || (char === '\r' && nextChar === '\n')) && !insideQuote) {
+                // End of row
+                currentRow.push(currentField);
+                rows.push(currentRow);
+                currentRow = [];
+                currentField = '';
+                if (char === '\r') i++; // Skip \n
+            } else {
+                // Normal character
+                if (char !== '\r') { // Ignore \r if not part of \r\n (or handle strictly)
+                    currentField += char;
+                }
+            }
+        }
+
+        // Last field/row
+        if (currentField || currentRow.length > 0) {
+            currentRow.push(currentField);
+            rows.push(currentRow);
+        }
+
+        // Remove empty last row if exists (often happens with trailing newline)
+        if (rows.length > 0 && rows[rows.length - 1].length <= 1 && !rows[rows.length - 1][0]) {
+            rows.pop();
+        }
+
+        return rows;
+    }, []);
+
     // TSV 헤더에서 모든 컬럼 파싱 (첫 번째 컬럼 = lookup, 나머지 = update columns)
     const allHeaderColumns = useMemo((): string[] => {
         if (!pastedData.trim()) return [];
-        const lines = pastedData.trim().split('\n');
-        if (lines.length < 1) return [];
 
-        const headerParts = lines[0].split('\t').map(h => h.trim());
+        const rows = parseCSV(pastedData);
+        if (rows.length < 1) return [];
+
+        const headerParts = rows[0].map(h => h.trim());
         // 첫 번째 컬럼은 lookup column, 나머지가 update columns
         return headerParts.slice(1).filter(h => h);
-    }, [pastedData]);
+    }, [pastedData, parseCSV]);
 
     // 신규 컬럼 감지 (스키마에 없는 컬럼)
     const newColumns = useMemo((): string[] => {
@@ -149,10 +212,10 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
     const parsedRows = useMemo((): ParsedRow[] => {
         if (!pastedData.trim()) return [];
 
-        const lines = pastedData.trim().split('\n');
-        if (lines.length < 2) return []; // 헤더 + 최소 1행 필요
+        const rows = parseCSV(pastedData);
+        if (rows.length < 2) return []; // 헤더 + 최소 1행 필요
 
-        const headerParts = lines[0].split('\t').map(h => h.trim());
+        const headerParts = rows[0].map(h => h.trim());
 
         // 각 컬럼의 원본 인덱스를 함께 저장
         const columnIndexMap: { col: string; originalIndex: number }[] = [];
@@ -162,13 +225,22 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
             }
         });
 
-        return lines.slice(1).map(line => {
-            const parts = line.split('\t');
+        // 신규 컬럼도 매핑에 추가 (값이 있는 경우 처리 위해)
+        headerParts.forEach((h, idx) => {
+            if (idx > 0 && h && !schema.includes(h)) {
+                columnIndexMap.push({ col: h, originalIndex: idx });
+            }
+        });
+
+        return rows.slice(1).map(parts => {
             const columnValues: Record<string, string> = {};
 
             // 원본 인덱스를 사용하여 올바른 값 매핑
             columnIndexMap.forEach(({ col, originalIndex }) => {
-                columnValues[col] = (parts[originalIndex] || '').trim();
+                let val = (parts[originalIndex] || '').trim();
+                // 엑셀에서 붙여넣을 때 따옴표로 감싸진 경우 제거 (파서가 이미 처리했으므로 불필요할 수 있으나, 안전장치)
+                // 파서가 이미 처리했으므로 trim만 수행
+                columnValues[col] = val;
             });
 
             return {
@@ -176,7 +248,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                 columnValues,
             };
         }).filter(row => row.lookupValue); // 빈 룩업값 제외
-    }, [pastedData, schema]);
+    }, [pastedData, schema, parseCSV]);
 
     // 매칭 결과 계산 (다중 컬럼)
     const matchResults = useMemo((): MatchResult[] => {
@@ -601,9 +673,9 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                         <View>
                             <Text style={styles.stepTitle}>2. Excel 데이터 붙여넣기</Text>
                             <Text style={styles.stepDesc}>
-                                헤더 행을 포함하여 데이터를 붙여넣으세요.{'\n'}
+                                엑셀에서 데이터를 복사하여 붙여넣으세요 (탭 구분).{'\n'}
                                 첫 번째 열: {lookupColumn} (기준 컬럼){'\n'}
-                                나머지 열: 업데이트할 컬럼들 (헤더에서 자동 인식)
+                                나머지 열: 업데이트할 컬럼들 (자동 인식)
                             </Text>
 
                             <View style={styles.pasteArea}>
