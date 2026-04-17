@@ -80,8 +80,9 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
     const [searchText, setSearchText] = useState('');
 
     // 옵션
+    const [allowUpdate, setAllowUpdate] = useState(true);
     const [allowOverwrite, setAllowOverwrite] = useState(true);
-    const [allowNew, setAllowNew] = useState(false);
+    const [allowNew, setAllowNew] = useState(true);
     const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
 
     // 신규 항목 편집 데이터
@@ -341,10 +342,28 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
 
     // 필터링된 미리보기 결과
     const filteredMatchResults = useMemo(() => {
-        // 기본적으로 변경이 있는 항목만 표시
-        let results = matchResults.filter(r => {
+        // 체크된 타입 기준으로 "실제로 반영될 변경"만 남긴 결과를 만든다.
+        const effective = matchResults
+            .map((r): MatchResult | null => {
+                if (r.type === 'new') {
+                    // 신규 생성이 꺼져있으면 미리보기/실행에서 제외
+                    return allowNew ? r : null;
+                }
+
+                // matched인 경우: 허용되지 않는 changeType은 same 취급
+                const effectiveChanges: ColumnChange[] = r.columnChanges.map(c => {
+                    if (c.changeType === 'update' && !allowUpdate) return { ...c, changeType: 'same' };
+                    if (c.changeType === 'overwrite' && !allowOverwrite) return { ...c, changeType: 'same' };
+                    return c;
+                });
+
+                return { ...r, columnChanges: effectiveChanges };
+            })
+            .filter(Boolean) as MatchResult[];
+
+        // 기본적으로 변경이 있는 항목만 표시 (effective 기준)
+        let results = effective.filter(r => {
             if (r.type === 'new') return true;
-            // 변경이 있는 항목만 (update 또는 overwrite)
             return r.columnChanges.some(c => c.changeType !== 'same');
         });
 
@@ -361,13 +380,41 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
             results = results.filter(r => r.type === 'new');
         } else if (previewFilter === 'noChange') {
             // 변경 없는 항목 표시
-            results = matchResults.filter(r =>
+            results = effective.filter(r =>
                 r.type === 'matched' && r.columnChanges.every(c => c.changeType === 'same')
             );
         }
 
         return results;
-    }, [matchResults, previewFilter]);
+    }, [matchResults, previewFilter, allowNew, allowOverwrite, allowUpdate]);
+
+    // 미리보기에서 실제로 "반영될 행위"가 존재하는 컬럼만 표시
+    const previewColumns = useMemo(() => {
+        if (detectedColumns.length === 0) return [];
+
+        const hasAnyActionForColumn = (col: string) => {
+            // 신규 생성이 켜져 있으면: 신규 항목 입력값에 이 컬럼이 실제 값으로 포함되어 있는지
+            if (allowNew) {
+                const anyNewHasValue = newItemsData.some(item => {
+                    const v = item.inputColumns[col] ?? '';
+                    return String(v).trim() !== '';
+                });
+                if (anyNewHasValue) return true;
+            }
+
+            // 매칭 항목에서: 허용된(update/overwrite) 변경이 실제로 있는지
+            return filteredMatchResults.some(r => {
+                if (r.type !== 'matched') return false;
+                const change = r.columnChanges.find(c => c.column === col);
+                if (!change) return false;
+                if (change.changeType === 'update') return allowUpdate;
+                if (change.changeType === 'overwrite') return allowOverwrite;
+                return false;
+            });
+        };
+
+        return detectedColumns.filter(hasAnyActionForColumn);
+    }, [detectedColumns, filteredMatchResults, newItemsData, allowNew, allowOverwrite, allowUpdate]);
 
     // 실행 (다중 컬럼 + 신규 생성)
     const executeUpdates = useCallback(async () => {
@@ -380,7 +427,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         matchedToProcess.forEach(r => {
             if (!r.asset) return;
             r.columnChanges.forEach(c => {
-                if (c.changeType === 'update') {
+                if (c.changeType === 'update' && allowUpdate) {
                     updates.push({
                         assetId: r.asset!.id,
                         column: c.column,
@@ -414,7 +461,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         matchedToProcess.forEach(r => {
             if (!r.asset) return;
             r.columnChanges.forEach(c => {
-                if (c.changeType === 'update' || (c.changeType === 'overwrite' && allowOverwrite)) {
+                if ((c.changeType === 'update' && allowUpdate) || (c.changeType === 'overwrite' && allowOverwrite)) {
                     historyItems.push({
                         assetId: r.asset!.id,
                         column: c.column,
@@ -493,7 +540,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         setResults({ success: successCount, failed: failedCount });
         setIsProcessing(false);
         setStep(4);
-    }, [matchResults, allowOverwrite, allowNew, schemaProperties, onUpdate, onCreatePage, newItemsData, lookupColumn, newColumns, onCreateProperty]);
+    }, [matchResults, allowOverwrite, allowNew, allowUpdate, schemaProperties, onUpdate, onCreatePage, newItemsData, lookupColumn, newColumns, onCreateProperty]);
 
     // Undo 실행 (이전 값으로 복원 + 신규 생성 삭제)
     const executeUndo = useCallback(async () => {
@@ -599,8 +646,9 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         setLookupColumn('');
         setPastedData('');
         setSearchText('');
+        setAllowUpdate(true);
         setAllowOverwrite(true);
-        setAllowNew(false);
+        setAllowNew(true);
         setNewItemsData([]);
         setIsProcessing(false);
         setProcessedCount(0);
@@ -779,6 +827,10 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                 : {filteredMatchResults.length}건
                             </Text>
 
+                            <Text style={styles.applyHint}>
+                                체크된 타입의 항목만 반영됩니다.
+                            </Text>
+
                             {/* 뷰모드 토글 */}
                             <View style={styles.viewModeToggle}>
                                 <TouchableOpacity
@@ -808,7 +860,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                                 <View style={[styles.tableCell, styles.tableHeaderCell, { width: 140 }]}>
                                                     <Text style={styles.tableHeaderText}>{lookupColumn}</Text>
                                                 </View>
-                                                {detectedColumns.map((col: string) => (
+                                                {previewColumns.map((col: string) => (
                                                     <View key={col} style={[styles.tableCell, styles.tableHeaderCell, { width: 140 }]}>
                                                         <Text style={styles.tableHeaderText}>{col}</Text>
                                                     </View>
@@ -830,7 +882,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                                         <View style={[styles.tableCell, styles.tableCellKey, { width: 140 }]}>
                                                             <Text style={styles.tableCellText} numberOfLines={2}>{r.lookupValue}</Text>
                                                         </View>
-                                                        {detectedColumns.map((col: string) => {
+                                                        {previewColumns.map((col: string) => {
                                                             const change = r.columnChanges.find(c => c.column === col);
                                                             const newItemData = newItemsData.find(item => item.lookupValue === r.lookupValue);
                                                             const newValue = r.type === 'new'
@@ -873,6 +925,15 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                     {/* 테이블 범례 */}
                                     <View style={styles.tableLegend}>
                                         <View style={styles.legendItem}>
+                                            <View style={[styles.legendDot, { backgroundColor: '#ecfdf5' }]} />
+                                            <Text style={styles.legendText}>업데이트</Text>
+                                            <TouchableOpacity onPress={() => setAllowUpdate(!allowUpdate)}>
+                                                <View style={[styles.checkboxSmall, allowUpdate && styles.checkboxSmallCheckedUpdate]}>
+                                                    {allowUpdate && <Check size={10} color="#fff" />}
+                                                </View>
+                                            </TouchableOpacity>
+                                        </View>
+                                        <View style={styles.legendItem}>
                                             <View style={[styles.legendDot, { backgroundColor: '#fef3c7' }]} />
                                             <Text style={styles.legendText}>덮어쓰기</Text>
                                             <TouchableOpacity onPress={() => setAllowOverwrite(!allowOverwrite)}>
@@ -899,15 +960,26 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                 <View style={styles.previewSection}>
                                     <View style={styles.sectionHeader}>
                                         <Text style={styles.previewTitle}>📝 변경 내역 ({filteredMatchResults.filter(r => r.type === 'matched').length}건)</Text>
-                                        <TouchableOpacity
-                                            style={styles.sectionCheckbox}
-                                            onPress={() => setAllowOverwrite(!allowOverwrite)}
-                                        >
-                                            <View style={[styles.checkboxSmall, allowOverwrite && styles.checkboxSmallChecked]}>
-                                                {allowOverwrite && <Check size={10} color="#fff" />}
-                                            </View>
-                                            <Text style={styles.sectionCheckboxText}>덮어쓰기 ({stats.itemsWithOverwrites})</Text>
-                                        </TouchableOpacity>
+                                        <View style={{ flexDirection: 'row', gap: 8 }}>
+                                            <TouchableOpacity
+                                                style={styles.sectionCheckbox}
+                                                onPress={() => setAllowUpdate(!allowUpdate)}
+                                            >
+                                                <View style={[styles.checkboxSmall, allowUpdate && styles.checkboxSmallCheckedUpdate]}>
+                                                    {allowUpdate && <Check size={10} color="#fff" />}
+                                                </View>
+                                                <Text style={styles.sectionCheckboxText}>업데이트</Text>
+                                            </TouchableOpacity>
+                                            <TouchableOpacity
+                                                style={styles.sectionCheckbox}
+                                                onPress={() => setAllowOverwrite(!allowOverwrite)}
+                                            >
+                                                <View style={[styles.checkboxSmall, allowOverwrite && styles.checkboxSmallChecked]}>
+                                                    {allowOverwrite && <Check size={10} color="#fff" />}
+                                                </View>
+                                                <Text style={styles.sectionCheckboxText}>덮어쓰기</Text>
+                                            </TouchableOpacity>
+                                        </View>
                                     </View>
                                     <ScrollView style={styles.previewScrollList} nestedScrollEnabled>
                                         {filteredMatchResults.filter(r => r.type === 'matched').map((r, i) => (
@@ -1107,7 +1179,7 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                             >
                                 <Upload size={20} color="#fff" />
                                 <Text style={styles.nextButtonText}>
-                                    {stats.totalUpdates + (allowOverwrite ? stats.totalOverwrites : 0)}건 업데이트 실행
+                                            {((allowUpdate ? stats.totalUpdates : 0) + (allowOverwrite ? stats.totalOverwrites : 0) + (allowNew ? stats.newCount : 0))}건 실행
                                 </Text>
                             </TouchableOpacity>
                         ) : (
@@ -1398,6 +1470,10 @@ const styles = StyleSheet.create({
         backgroundColor: '#f59e0b',
         borderColor: '#f59e0b',
     },
+    checkboxSmallCheckedUpdate: {
+        backgroundColor: '#10b981',
+        borderColor: '#10b981',
+    },
     checkboxSmallCheckedGreen: {
         backgroundColor: '#22c55e',
         borderColor: '#22c55e',
@@ -1510,6 +1586,12 @@ const styles = StyleSheet.create({
         fontSize: 11,
         color: '#6b7280',
         marginRight: 4,
+    },
+    applyHint: {
+        fontSize: 12,
+        color: '#6b7280',
+        textAlign: 'center',
+        marginBottom: 12,
     },
     previewTitle: {
         fontSize: 14,
