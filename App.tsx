@@ -32,7 +32,7 @@ import { NotionClient, Asset, NotionProperty } from './src/lib/notion';
 import { NOTION_API_KEY, NOTION_DATABASE_ID, API_BASE_URL } from './src/config';
 import { MobileCardView } from './src/components/MobileCardView';
 import { evaluateFilter, FilterCondition, DEFAULT_FILTER } from './src/lib/utils';
-import { FieldWorkFilter, FilterConfig } from './src/components/FieldWorkFilter';
+import { FieldWorkFilter, FilterConfig, AiFilterSession } from './src/components/FieldWorkFilter';
 import { LocationNavigator } from './src/components/LocationNavigator';
 import { HomeScreen, FilterTemplate } from './src/components/HomeScreen';
 import { ExportPreviewModal } from './src/components/ExportPreviewModal';
@@ -72,6 +72,7 @@ export default function App() {
   const [skipLocationSelection, setSkipLocationSelection] = useState(false);
   const [appSettings, setAppSettings] = useState<Record<string, any>>({});
   const [bulkLookupColumn, setBulkLookupColumn] = useState<string>('');
+  const [fieldFilterAiSession, setFieldFilterAiSession] = useState<AiFilterSession | undefined>(undefined);
 
   // Notion Client
   const [notionClient, setNotionClient] = useState<NotionClient | null>(null);
@@ -120,6 +121,10 @@ export default function App() {
         if (typeof lastLookup === 'string') {
           setBulkLookupColumn(lastLookup);
         }
+        const session = settings?.aiFilter?.fieldWorkSession;
+        if (session?.messages) {
+          setFieldFilterAiSession(session as AiFilterSession);
+        }
       }
       if (settings?.templates) {
         setFilterTemplates(settings.templates as FilterTemplate[]);
@@ -150,6 +155,25 @@ export default function App() {
       await notionClient.saveSettings(merged);
     } catch (e) {
       console.warn('[App] Failed to persist bulk update lookup column:', e);
+    }
+  }, [appSettings, notionClient]);
+
+  const persistFieldFilterAiSession = useCallback(async (session: AiFilterSession) => {
+    setFieldFilterAiSession(session);
+    if (!notionClient) return;
+
+    const merged = {
+      ...(appSettings || {}),
+      aiFilter: {
+        ...((appSettings || {}).aiFilter || {}),
+        fieldWorkSession: session,
+      },
+    };
+    setAppSettings(merged);
+    try {
+      await notionClient.saveSettings(merged);
+    } catch (e) {
+      console.warn('[App] Failed to persist AI filter session:', e);
     }
   }, [appSettings, notionClient]);
 
@@ -633,6 +657,8 @@ export default function App() {
               schemaProperties={schemaProperties}
               assets={assets}
               currentConfig={fieldWorkConfig || undefined}
+              initialAiSession={fieldFilterAiSession}
+              onPersistAiSession={persistFieldFilterAiSession}
             />
 
             {/* 템플릿 저장 모달 */}
@@ -810,6 +836,8 @@ export default function App() {
               schemaProperties={schemaProperties}
               assets={assets}
               currentConfig={fieldWorkConfig || undefined}
+              initialAiSession={fieldFilterAiSession}
+              onPersistAiSession={persistFieldFilterAiSession}
             />
 
             <ExportPreviewModal

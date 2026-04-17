@@ -8,9 +8,11 @@ import {
     Modal,
     TextInput,
     FlatList,
+    ActivityIndicator,
 } from 'react-native';
-import { ChevronRight, ChevronDown, Check, Filter, MapPin, Target, X, Edit3, ArrowUpDown } from 'lucide-react-native';
+import { ChevronRight, ChevronDown, Check, Filter, MapPin, Target, X, Edit3, ArrowUpDown, Sparkles, SendHorizontal } from 'lucide-react-native';
 import { NotionProperty } from '../lib/notion';
+import { API_BASE_URL } from '../config';
 
 // 필터 설정 인터페이스
 export interface FilterConfig {
@@ -52,6 +54,21 @@ interface FieldWorkFilterProps {
     schemaProperties: Record<string, NotionProperty>;
     assets: Array<{ values: Record<string, string> }>;
     currentConfig?: FilterConfig;
+    initialAiSession?: AiFilterSession;
+    onPersistAiSession?: (session: AiFilterSession) => void;
+}
+
+export interface AiChatMessage {
+    id: string;
+    role: 'user' | 'assistant';
+    content: string;
+    createdAt: string;
+}
+
+export interface AiFilterSession {
+    messages: AiChatMessage[];
+    lastDraft?: Partial<FilterConfig>;
+    updatedAt: string;
 }
 
 export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
@@ -62,8 +79,10 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
     schemaProperties,
     assets,
     currentConfig,
+    initialAiSession,
+    onPersistAiSession,
 }) => {
-    const [step, setStep] = useState<'hierarchy' | 'sort' | 'target' | 'editable'>('hierarchy');
+    const [step, setStep] = useState<'hierarchy' | 'sort' | 'target' | 'editable' | 'ai'>('hierarchy');
 
     // 위치 계층 (건물 → 층 → 연구실)
     const [locationHierarchy, setLocationHierarchy] = useState<string[]>(
@@ -135,6 +154,32 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
             setEditableFields(currentConfig.editableFields || []);
         }
     }, [visible, currentConfig]);
+
+    // AI 세션 상태
+    const [aiMessages, setAiMessages] = useState<AiChatMessage[]>([]);
+    const [aiInput, setAiInput] = useState('');
+    const [aiLoading, setAiLoading] = useState(false);
+    const [aiDraft, setAiDraft] = useState<Partial<FilterConfig> | null>(null);
+
+    useEffect(() => {
+        if (!visible) return;
+        if (initialAiSession?.messages) {
+            setAiMessages(initialAiSession.messages);
+            setAiDraft(initialAiSession.lastDraft || null);
+        } else {
+            setAiMessages([]);
+            setAiDraft(null);
+        }
+    }, [visible, initialAiSession]);
+
+    const persistAiSession = (next: { messages?: AiChatMessage[]; lastDraft?: Partial<FilterConfig> | null }) => {
+        const session: AiFilterSession = {
+            messages: next.messages ?? aiMessages,
+            lastDraft: next.lastDraft ?? (aiDraft || undefined),
+            updatedAt: new Date().toISOString(),
+        };
+        onPersistAiSession?.(session);
+    };
 
     // 각 컬럼의 고유 값 추출
     const columnValues = useMemo(() => {
@@ -526,6 +571,186 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
 
     const hierarchyLabels = ['건물', '층', '연구실', '추가'];
 
+    const extractJsonObject = (text: string): any | null => {
+        const start = text.indexOf('{');
+        const end = text.lastIndexOf('}');
+        if (start === -1 || end === -1 || end <= start) return null;
+        const slice = text.slice(start, end + 1);
+        try {
+            return JSON.parse(slice);
+        } catch {
+            return null;
+        }
+    };
+
+    const buildAiSchemaContext = () => {
+        // 값은 너무 많을 수 있어 Top 8만 포함
+        const valuesPreview: Record<string, string[]> = {};
+        schema.forEach(col => {
+            const propType = schemaProperties[col]?.type;
+            const uniques = columnValues[col] || [];
+            const top = uniques.slice(0, 8);
+            if (top.length > 0) {
+                valuesPreview[col] = top;
+            } else if (propType === 'select' || propType === 'multi_select' || propType === 'status') {
+                const opts = schemaProperties[col]?.options?.map(o => o.name).slice(0, 8) || [];
+                if (opts.length > 0) valuesPreview[col] = opts;
+            }
+        });
+
+        const fields = schema.map(col => `${col} (${schemaProperties[col]?.type || 'unknown'})`).join('\n');
+        return { fields, valuesPreview };
+    };
+
+    const sendAiMessage = async () => {
+        const prompt = aiInput.trim();
+        if (!prompt || aiLoading) return;
+
+        const userMsg: AiChatMessage = {
+            id: `u_${Date.now()}`,
+            role: 'user',
+            content: prompt,
+            createdAt: new Date().toISOString(),
+        };
+        const nextMessages = [...aiMessages, userMsg];
+        setAiMessages(nextMessages);
+        setAiInput('');
+        persistAiSession({ messages: nextMessages });
+
+        setAiLoading(true);
+        try {
+            const { fields, valuesPreview } = buildAiSchemaContext();
+            const current = {
+                locationHierarchy,
+                sortColumn,
+                sortDirection,
+                targetGroups,
+                globalLogicalOperator,
+                editableFields,
+            };
+
+            const systemPrompt = `너는 현장 작업용 ITAM 앱에서 "작업 대상 필터"를 설계하는 도우미다.
+목표는 사용자가 현장에서 값을 수정/점검하면 작업 대상(필터 결과)에서 자연스럽게 빠져서 0이 되도록(완료 시 탈락) 논리적으로 안전한 조건을 만드는 것이다.
+
+DB 컬럼(이름/타입):
+${fields}
+
+일부 컬럼의 값 예시(참고용):
+${JSON.stringify(valuesPreview)}
+
+현재 설정(참고용):
+${JSON.stringify(current)}
+
+규칙:
+- 출력은 JSON만. 마크다운/설명문 금지.
+- 컬럼 이름은 위 목록과 정확히 일치해야 함.
+- 조건 타입은 아래 중 하나만 사용:
+  - is_empty, is_not_empty, contains, not_contains, equals, text_contains, text_not_contains
+- 결과 JSON 형식:
+{
+  "summary": "한국어 한줄 요약",
+  "configPatch": {
+    "globalLogicalOperator": "and|or",
+    "targetGroups": [
+      { "operator": "and|or", "conditions": [
+        { "column": "컬럼명", "type": "is_empty|...", "values": ["값"] }
+      ]}
+    ],
+    "editableFields": ["컬럼명"...]
+  }
+}
+
+대화 히스토리를 반영해서, 방금 사용자의 수정 요청에 맞게 기존안을 '수정'해라.`;
+
+            const body = {
+                contents: [{
+                    parts: [{ text: systemPrompt + `\n\n사용자 요청: ${prompt}` }]
+                }],
+                generationConfig: { temperature: 0.2, maxOutputTokens: 1200 }
+            };
+
+            const resp = await fetch(`${API_BASE_URL}/api/gemini/v1beta/models/gemini-2.0-flash:generateContent`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+
+            const raw = await resp.text();
+            if (!resp.ok) {
+                throw new Error(`AI 요청 실패 (${resp.status}): ${raw}`);
+            }
+
+            let data: any;
+            try { data = JSON.parse(raw); } catch { data = null; }
+            const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || raw || '';
+            const json = extractJsonObject(text);
+
+            if (!json?.configPatch) {
+                const assistantMsg: AiChatMessage = {
+                    id: `a_${Date.now()}`,
+                    role: 'assistant',
+                    content: '필터 JSON을 생성하지 못했습니다. 문장을 더 구체적으로 말해 주세요(예: 어떤 컬럼을 기준으로, 완료 기준은 무엇인지).',
+                    createdAt: new Date().toISOString(),
+                };
+                const msgs = [...nextMessages, assistantMsg];
+                setAiMessages(msgs);
+                persistAiSession({ messages: msgs });
+                return;
+            }
+
+            // Patch → Draft(FilterConfig 일부)로 변환
+            const patch = json.configPatch as Partial<FilterConfig>;
+            const normalizedGroups: TargetGroup[] = (patch.targetGroups || []).map((g: any, idx: number) => ({
+                id: `ai-group-${Date.now()}-${idx}`,
+                operator: (g.operator === 'or' ? 'or' : 'and') as 'and' | 'or',
+                conditions: (g.conditions || []).map((c: any, j: number) => ({
+                    id: `ai-cond-${Date.now()}-${idx}-${j}`,
+                    column: String(c.column || ''),
+                    type: c.type,
+                    values: Array.isArray(c.values) ? c.values.map((v: any) => String(v ?? '')) : [],
+                }))
+            })).filter(g => g.conditions.length > 0);
+
+            const draftNext: Partial<FilterConfig> = {
+                globalLogicalOperator: patch.globalLogicalOperator === 'or' ? 'or' : 'and',
+                targetGroups: normalizedGroups.length > 0 ? normalizedGroups : targetGroups,
+                editableFields: Array.isArray(patch.editableFields) ? patch.editableFields : editableFields,
+            };
+            setAiDraft(draftNext);
+            persistAiSession({ messages: nextMessages, lastDraft: draftNext });
+
+            const assistantMsg: AiChatMessage = {
+                id: `a_${Date.now()}`,
+                role: 'assistant',
+                content: String(json.summary || '필터안을 생성했습니다. 아래에서 검토 후 적용하세요.'),
+                createdAt: new Date().toISOString(),
+            };
+            const msgs = [...nextMessages, assistantMsg];
+            setAiMessages(msgs);
+            persistAiSession({ messages: msgs, lastDraft: draftNext });
+        } catch (e: any) {
+            const assistantMsg: AiChatMessage = {
+                id: `a_${Date.now()}`,
+                role: 'assistant',
+                content: `AI 연결 오류: ${e?.message || String(e)}`,
+                createdAt: new Date().toISOString(),
+            };
+            const msgs = [...nextMessages, assistantMsg];
+            setAiMessages(msgs);
+            persistAiSession({ messages: msgs });
+        } finally {
+            setAiLoading(false);
+        }
+    };
+
+    const applyAiDraftToUi = () => {
+        if (!aiDraft) return;
+        if (aiDraft.globalLogicalOperator) setGlobalLogicalOperator(aiDraft.globalLogicalOperator);
+        if (aiDraft.targetGroups) setTargetGroups(aiDraft.targetGroups);
+        if (aiDraft.editableFields) setEditableFields(aiDraft.editableFields);
+        setStep('target');
+    };
+
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
             <View style={styles.container}>
@@ -577,6 +802,15 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                             <Edit3 size={16} color={step === 'editable' ? '#ffffff' : '#6b7280'} />
                             <Text style={[styles.stepText, step === 'editable' && styles.stepTextActive]}>
                                 편집 필드
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.stepTab, step === 'ai' && styles.stepTabActive]}
+                            onPress={() => setStep('ai')}
+                        >
+                            <Sparkles size={16} color={step === 'ai' ? '#ffffff' : '#6b7280'} />
+                            <Text style={[styles.stepText, step === 'ai' && styles.stepTextActive]}>
+                                AI
                             </Text>
                         </TouchableOpacity>
                     </View>
@@ -961,6 +1195,68 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
                                             )}
                                         </TouchableOpacity>
                                     ))}
+                            </View>
+                        </View>
+                    )}
+
+                    {/* Step 5: AI 필터 생성/수정 */}
+                    {step === 'ai' && (
+                        <View>
+                            <Text style={styles.sectionTitle}>AI로 작업 대상 필터 만들기</Text>
+                            <Text style={styles.sectionDesc}>
+                                자연어로 설명하면, 현장에서 작업이 끝나면 대상에서 빠지도록(완료 시 탈락) 논리적인 조건을 제안합니다.
+                                아래 대화는 세션으로 저장되어 다음에도 이어서 수정 요청을 할 수 있습니다.
+                            </Text>
+
+                            <View style={styles.aiChatBox}>
+                                <ScrollView style={{ maxHeight: 260 }} nestedScrollEnabled>
+                                    {aiMessages.length === 0 ? (
+                                        <Text style={styles.aiEmptyText}>
+                                            예: “IP가 비어있거나 0.0.0.0 인 장비를 작업 대상으로 잡고, 현장에서 IP를 정상값으로 입력하면 대상에서 빠지게 해줘”
+                                        </Text>
+                                    ) : (
+                                        aiMessages.map(m => (
+                                            <View key={m.id} style={[styles.aiMsg, m.role === 'user' ? styles.aiMsgUser : styles.aiMsgAssistant]}>
+                                                <Text style={styles.aiMsgRole}>{m.role === 'user' ? '나' : 'AI'}</Text>
+                                                <Text style={styles.aiMsgText}>{m.content}</Text>
+                                            </View>
+                                        ))
+                                    )}
+                                </ScrollView>
+                            </View>
+
+                            {!!aiDraft && (
+                                <View style={styles.aiDraftCard}>
+                                    <Text style={styles.aiDraftTitle}>제안된 필터(초안)</Text>
+                                    <Text style={styles.aiDraftDesc}>
+                                        적용하면 “작업 대상/편집 필드” 설정이 이 초안으로 업데이트됩니다.
+                                    </Text>
+                                    <TouchableOpacity style={styles.aiApplyDraftBtn} onPress={applyAiDraftToUi}>
+                                        <Text style={styles.aiApplyDraftText}>초안 적용하기</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            )}
+
+                            <View style={styles.aiComposer}>
+                                <TextInput
+                                    style={styles.aiInput}
+                                    placeholder="요청을 입력하세요… (예: 완료 기준, 작업 방법, 예외 조건 포함)"
+                                    value={aiInput}
+                                    onChangeText={setAiInput}
+                                    multiline
+                                    placeholderTextColor="#9ca3af"
+                                />
+                                <TouchableOpacity
+                                    style={[styles.aiSendBtn, (!aiInput.trim() || aiLoading) && styles.aiSendBtnDisabled]}
+                                    disabled={!aiInput.trim() || aiLoading}
+                                    onPress={sendAiMessage}
+                                >
+                                    {aiLoading ? (
+                                        <ActivityIndicator size="small" color="#ffffff" />
+                                    ) : (
+                                        <SendHorizontal size={18} color="#ffffff" />
+                                    )}
+                                </TouchableOpacity>
                             </View>
                         </View>
                     )}
@@ -1983,5 +2279,104 @@ const styles = StyleSheet.create({
         fontSize: 13,
         color: '#6366f1',
         fontWeight: '500',
+    },
+    aiChatBox: {
+        backgroundColor: '#ffffff',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        padding: 12,
+        marginBottom: 12,
+    },
+    aiEmptyText: {
+        fontSize: 13,
+        color: '#9ca3af',
+        lineHeight: 18,
+    },
+    aiMsg: {
+        borderRadius: 10,
+        padding: 10,
+        marginBottom: 8,
+        borderWidth: 1,
+    },
+    aiMsgUser: {
+        backgroundColor: '#eef2ff',
+        borderColor: '#c7d2fe',
+        alignSelf: 'flex-end',
+    },
+    aiMsgAssistant: {
+        backgroundColor: '#f9fafb',
+        borderColor: '#e5e7eb',
+        alignSelf: 'flex-start',
+    },
+    aiMsgRole: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#6b7280',
+        marginBottom: 4,
+    },
+    aiMsgText: {
+        fontSize: 13,
+        color: '#111827',
+        lineHeight: 18,
+    },
+    aiDraftCard: {
+        backgroundColor: '#f0fdf4',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#bbf7d0',
+        padding: 12,
+        marginBottom: 12,
+    },
+    aiDraftTitle: {
+        fontSize: 14,
+        fontWeight: '700',
+        color: '#166534',
+        marginBottom: 4,
+    },
+    aiDraftDesc: {
+        fontSize: 12,
+        color: '#15803d',
+        marginBottom: 10,
+    },
+    aiApplyDraftBtn: {
+        backgroundColor: '#16a34a',
+        paddingVertical: 10,
+        borderRadius: 10,
+        alignItems: 'center',
+    },
+    aiApplyDraftText: {
+        color: '#ffffff',
+        fontWeight: '700',
+        fontSize: 14,
+    },
+    aiComposer: {
+        flexDirection: 'row',
+        gap: 10,
+        alignItems: 'flex-end',
+    },
+    aiInput: {
+        flex: 1,
+        minHeight: 44,
+        maxHeight: 120,
+        backgroundColor: '#ffffff',
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        borderRadius: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        fontSize: 14,
+        color: '#111827',
+    },
+    aiSendBtn: {
+        width: 44,
+        height: 44,
+        borderRadius: 12,
+        backgroundColor: '#6366f1',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    aiSendBtnDisabled: {
+        backgroundColor: '#a5b4fc',
     },
 });
