@@ -414,7 +414,7 @@ export class NotionClient {
 
     private readonly SETTINGS_MARKER = '🔧_NEXUS_SETTINGS_';
 
-    async loadSettings(): Promise<{ templates?: any[], fieldConfig?: string } | null> {
+    async loadSettings(): Promise<Record<string, any> | null> {
         try {
             const schemaProps = await this.getDatabaseSchema();
             const titlePropName = Object.keys(schemaProps).find(k => schemaProps[k].type === 'title') || 'Name';
@@ -461,7 +461,7 @@ export class NotionClient {
         }
     }
 
-    async saveSettings(settings: { templates?: any[], fieldConfig?: string }): Promise<boolean> {
+    async saveSettings(settings: Record<string, any>): Promise<boolean> {
         try {
             const settingsJson = JSON.stringify(settings);
             const schemaProps = await this.getDatabaseSchema();

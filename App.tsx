@@ -70,6 +70,8 @@ export default function App() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false);
   const [skipLocationSelection, setSkipLocationSelection] = useState(false);
+  const [appSettings, setAppSettings] = useState<Record<string, any>>({});
+  const [bulkLookupColumn, setBulkLookupColumn] = useState<string>('');
 
   // Notion Client
   const [notionClient, setNotionClient] = useState<NotionClient | null>(null);
@@ -112,6 +114,13 @@ export default function App() {
 
       // 설정/템플릿 로드
       const settings = await notionClient.loadSettings();
+      if (settings) {
+        setAppSettings(settings);
+        const lastLookup = settings?.bulkUpdate?.lastLookupColumn;
+        if (typeof lastLookup === 'string') {
+          setBulkLookupColumn(lastLookup);
+        }
+      }
       if (settings?.templates) {
         setFilterTemplates(settings.templates as FilterTemplate[]);
         console.log(`[App] Loaded ${settings.templates.length} filter templates`);
@@ -124,6 +133,25 @@ export default function App() {
       setRefreshing(false);
     }
   }, [notionClient]);
+
+  const persistBulkLookupColumn = useCallback(async (col: string) => {
+    setBulkLookupColumn(col);
+    if (!notionClient) return;
+
+    const merged = {
+      ...(appSettings || {}),
+      bulkUpdate: {
+        ...((appSettings || {}).bulkUpdate || {}),
+        lastLookupColumn: col,
+      },
+    };
+    setAppSettings(merged);
+    try {
+      await notionClient.saveSettings(merged);
+    } catch (e) {
+      console.warn('[App] Failed to persist bulk update lookup column:', e);
+    }
+  }, [appSettings, notionClient]);
 
   // 스키마 기반 필터 설정 정리 - 존재하지 않는 컬럼 제거
   const cleanFilterConfig = useCallback((config: FilterConfig | null, currentSchema: string[]): FilterConfig | null => {
@@ -805,6 +833,8 @@ export default function App() {
           schema={schema}
           schemaProperties={schemaProperties}
           onUpdate={handleUpdateAsset}
+          initialLookupColumn={bulkLookupColumn}
+          onPersistLookupColumn={persistBulkLookupColumn}
           onCreatePage={async (values) => {
             if (!notionClient) return null;
             return await notionClient.createPage(values, schemaProperties);

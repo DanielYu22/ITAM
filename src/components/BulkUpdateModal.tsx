@@ -23,6 +23,8 @@ interface BulkUpdateModalProps {
     onCreatePage?: (values: Record<string, string>) => Promise<string | null>;
     onDeletePage?: (pageId: string) => Promise<boolean>;
     onCreateProperty?: (propertyName: string, type?: string) => Promise<boolean>;  // 신규 컬럼 생성
+    initialLookupColumn?: string;
+    onPersistLookupColumn?: (col: string) => void;
 }
 
 // 다중 컬럼용 파싱된 행
@@ -72,10 +74,21 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
     onCreatePage,
     onDeletePage,
     onCreateProperty,
+    initialLookupColumn,
+    onPersistLookupColumn,
 }) => {
     // Steps: 1=룩업 선택, 2=데이터 붙여넣기(헤더 포함), 3=미리보기, 4=실행중/완료
     const [step, setStep] = useState(1);
     const [lookupColumn, setLookupColumn] = useState('');
+    // 마지막으로 사용한 룩업 컬럼 복원 (Notion Settings)
+    useEffect(() => {
+        if (!visible) return;
+        if (lookupColumn) return;
+        if (initialLookupColumn && schema.includes(initialLookupColumn)) {
+            setLookupColumn(initialLookupColumn);
+        }
+    }, [visible, initialLookupColumn, schema, lookupColumn]);
+
     const [pastedData, setPastedData] = useState('');
     const [searchText, setSearchText] = useState('');
 
@@ -83,7 +96,11 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
     const [allowUpdate, setAllowUpdate] = useState(true);
     const [allowOverwrite, setAllowOverwrite] = useState(true);
     const [allowNew, setAllowNew] = useState(true);
-    const [viewMode, setViewMode] = useState<'card' | 'table'>('card');
+    const [viewMode, setViewMode] = useState<'card' | 'table'>('table');
+    const [tableSort, setTableSort] = useState<{ column: string | null; direction: 'asc' | 'desc' }>({
+        column: null,
+        direction: 'asc',
+    });
 
     // 신규 항목 편집 데이터
     const [newItemsData, setNewItemsData] = useState<NewItemData[]>([]);
@@ -416,6 +433,50 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
         return detectedColumns.filter(hasAnyActionForColumn);
     }, [detectedColumns, filteredMatchResults, newItemsData, allowNew, allowOverwrite, allowUpdate]);
 
+    const getColumnActionInfo = useCallback((r: MatchResult, col: string) => {
+        if (r.type === 'new') {
+            if (!allowNew) return { hasAction: false, kind: 'none' as const };
+            const item = newItemsData.find(i => i.lookupValue === r.lookupValue);
+            const v = String(item?.inputColumns[col] ?? '').trim();
+            return v ? { hasAction: true, kind: 'new' as const } : { hasAction: false, kind: 'none' as const };
+        }
+
+        const change = r.columnChanges.find(c => c.column === col);
+        if (!change) return { hasAction: false, kind: 'none' as const };
+        if (change.changeType === 'update') return allowUpdate ? { hasAction: true, kind: 'update' as const } : { hasAction: false, kind: 'none' as const };
+        if (change.changeType === 'overwrite') return allowOverwrite ? { hasAction: true, kind: 'overwrite' as const } : { hasAction: false, kind: 'none' as const };
+        return { hasAction: false, kind: 'none' as const };
+    }, [allowNew, allowOverwrite, allowUpdate, newItemsData]);
+
+    const sortedMatchResultsForTable = useMemo(() => {
+        if (viewMode !== 'table' || !tableSort.column) return filteredMatchResults;
+
+        const col = tableSort.column;
+        const dirMul = tableSort.direction === 'asc' ? 1 : -1;
+        const kindRank = (kind: 'overwrite' | 'update' | 'new' | 'none') => {
+            // "검토 우선순위"를 위해 overwrite > update > new
+            if (kind === 'overwrite') return 0;
+            if (kind === 'update') return 1;
+            if (kind === 'new') return 2;
+            return 9;
+        };
+
+        return [...filteredMatchResults].sort((a, b) => {
+            const ai = getColumnActionInfo(a, col);
+            const bi = getColumnActionInfo(b, col);
+
+            // 1) 반영될 변경이 있는 행을 위로
+            if (ai.hasAction !== bi.hasAction) return (ai.hasAction ? -1 : 1) * dirMul;
+
+            // 2) 변경 종류 우선순위
+            const kr = kindRank(ai.kind) - kindRank(bi.kind);
+            if (kr !== 0) return kr * dirMul;
+
+            // 3) 마지막으로 lookupValue 정렬
+            return String(a.lookupValue).localeCompare(String(b.lookupValue), undefined, { numeric: true, sensitivity: 'base' }) * dirMul;
+        });
+    }, [filteredMatchResults, getColumnActionInfo, tableSort, viewMode]);
+
     // 실행 (다중 컬럼 + 신규 생성)
     const executeUpdates = useCallback(async () => {
         console.log('[BulkUpdate] executeUpdates called');
@@ -704,7 +765,10 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                     <TouchableOpacity
                                         key={col}
                                         style={[styles.columnItem, lookupColumn === col && styles.columnItemSelected]}
-                                        onPress={() => setLookupColumn(col)}
+                                        onPress={() => {
+                                            setLookupColumn(col);
+                                            onPersistLookupColumn?.(col);
+                                        }}
                                     >
                                         <Text style={[styles.columnText, lookupColumn === col && styles.columnTextSelected]}>
                                             {col}
@@ -861,15 +925,27 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                                     <Text style={styles.tableHeaderText}>{lookupColumn}</Text>
                                                 </View>
                                                 {previewColumns.map((col: string) => (
-                                                    <View key={col} style={[styles.tableCell, styles.tableHeaderCell, { width: 140 }]}>
-                                                        <Text style={styles.tableHeaderText}>{col}</Text>
-                                                    </View>
+                                                    <TouchableOpacity
+                                                        key={col}
+                                                        style={[styles.tableCell, styles.tableHeaderCell, { width: 140 }]}
+                                                        onPress={() => {
+                                                            setTableSort(prev => {
+                                                                if (prev.column !== col) return { column: col, direction: 'asc' };
+                                                                return { column: col, direction: prev.direction === 'asc' ? 'desc' : 'asc' };
+                                                            });
+                                                        }}
+                                                    >
+                                                        <Text style={styles.tableHeaderText}>
+                                                            {col}
+                                                            {tableSort.column === col ? (tableSort.direction === 'asc' ? ' ↑' : ' ↓') : ''}
+                                                        </Text>
+                                                    </TouchableOpacity>
                                                 ))}
                                             </View>
 
                                             {/* 테이블 본문 */}
                                             <ScrollView style={{ maxHeight: 350 }} nestedScrollEnabled>
-                                                {filteredMatchResults.map((r, i) => (
+                                                {sortedMatchResultsForTable.map((r, i) => (
                                                     <View key={i} style={styles.tableRow}>
                                                         <View style={[styles.tableCell, { width: 80 }]}>
                                                             <Text style={[
@@ -952,6 +1028,10 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
                                             </TouchableOpacity>
                                         </View>
                                     </View>
+
+                                    <Text style={styles.tableSortHint}>
+                                        컬럼 헤더를 누르면 해당 컬럼의 변경 대상이 위로 정렬됩니다.
+                                    </Text>
                                 </View>
                             )}
 
@@ -1571,6 +1651,12 @@ const styles = StyleSheet.create({
         borderTopWidth: 1,
         borderTopColor: '#f3f4f6',
         gap: 16,
+    },
+    tableSortHint: {
+        fontSize: 11,
+        color: '#9ca3af',
+        textAlign: 'center',
+        paddingBottom: 10,
     },
     legendItem: {
         flexDirection: 'row',
