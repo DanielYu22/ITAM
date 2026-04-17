@@ -5,10 +5,13 @@
   "type": "module",
   "main": "index.ts",
   "scripts": {
+    "prestart": "node scripts/write-build-info.cjs",
     "start": "expo start",
+    "predev": "node scripts/write-build-info.cjs",
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "prebuild:web": "node scripts/write-build-info.cjs",
     "build:web": "npx expo export --platform web",
     "lint": "eslint .",
     "dev": "expo start",
