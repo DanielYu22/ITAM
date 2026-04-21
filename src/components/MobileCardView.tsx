@@ -65,6 +65,17 @@ const evaluateCondition = (asset: Asset, cond: TargetCondition): boolean => {
                 return cond.values.some(v => val === String(v ?? '').toLowerCase());
             }
             return true;
+        case 'text_contains':
+            if (cond.values && cond.values.length > 0) {
+                return cond.values.some(v => val.includes(String(v ?? '').toLowerCase()));
+            }
+            return true;
+        case 'text_not_contains':
+            if (!val || val === '') return true;
+            if (cond.values && cond.values.length > 0) {
+                return !cond.values.some(v => val.includes(String(v ?? '').toLowerCase()));
+            }
+            return true;
         default:
             return true;
     }
@@ -97,6 +108,10 @@ const getConditionText = (cond: TargetCondition): string => {
             return `${cond.column} 미포함: ${cond.values.join(', ')}`;
         case 'equals':
             return `${cond.column} = ${cond.values.join(', ')}`;
+        case 'text_contains':
+            return `${cond.column} 텍스트 포함: ${cond.values.join(', ')}`;
+        case 'text_not_contains':
+            return `${cond.column} 텍스트 미포함: ${cond.values.join(', ')}`;
         default:
             return cond.column;
     }

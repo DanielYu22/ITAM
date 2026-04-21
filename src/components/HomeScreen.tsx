@@ -147,6 +147,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                     return cond.values.some(v => val === String(v ?? '').toLowerCase());
                                 }
                                 return true;
+                            case 'text_contains':
+                                if (cond.values && cond.values.length > 0) {
+                                    return cond.values.some(v => val.includes(String(v ?? '').toLowerCase()));
+                                }
+                                return true;
+                            case 'text_not_contains':
+                                if (!val || val === '') return true;
+                                if (cond.values && cond.values.length > 0) {
+                                    return !cond.values.some(v => val.includes(String(v ?? '').toLowerCase()));
+                                }
+                                return true;
                             default:
                                 return true;
                         }
