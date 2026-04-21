@@ -118,8 +118,7 @@ export default function App() {
       const ensureDefaultWorkQueueTemplate = async (baseSettings: Record<string, any> | null) => {
         const TEMPLATE_NAME = '4월 POC/알약 작업큐';
         const currentTemplates: FilterTemplate[] = Array.isArray(baseSettings?.templates) ? baseSettings!.templates : [];
-        const exists = currentTemplates.some(t => String(t?.name || '').trim() === TEMPLATE_NAME);
-        if (exists) return { ensuredSettings: baseSettings, templates: currentTemplates, created: false };
+        const existingIndex = currentTemplates.findIndex(t => String(t?.name || '').trim() === TEMPLATE_NAME);
 
         const now = Date.now();
         const defaultConfig: FilterConfig = {
@@ -132,11 +131,14 @@ export default function App() {
               id: `group-${now}`,
               operator: 'or',
               conditions: [
-                { id: `c-${now}-1`, column: 'M)알약 현장조치', type: 'equals', values: ['폐쇄망조치필요'] },
-                { id: `c-${now}-2`, column: 'M)알약 현장조치', type: 'equals', values: ['알약대상인지 현장확인'] },
+                // 멀티셀렉트에서도 동작하도록 contains 사용 (아이템 단위 매칭)
+                { id: `c-${now}-1`, column: 'M)알약 현장조치', type: 'contains', values: ['폐쇄망조치필요'] },
+                { id: `c-${now}-2`, column: 'M)알약 현장조치', type: 'contains', values: ['알약대상인지 현장확인'] },
                 { id: `c-${now}-3`, column: 'OS type', type: 'equals', values: ['확인필요'] },
                 { id: `c-${now}-4`, column: 'PC Hostname', type: 'equals', values: ['POC업데이트 필요'] },
                 { id: `c-${now}-5`, column: '*4월조치', type: 'equals', values: ['IT/현장백업'] },
+                // "*4월조치"에 "2025Q)"로 시작/포함된 값이 있으면 작업 대상
+                { id: `c-${now}-7`, column: '*4월조치', type: 'text_contains', values: ['2025Q)'] },
                 { id: `c-${now}-6`, column: 'M)알약 온라인구분', type: 'equals', values: ['정보없음'] },
               ],
             },
@@ -150,15 +152,23 @@ export default function App() {
           ],
         };
 
-        const nextTemplates: FilterTemplate[] = [
-          ...currentTemplates,
-          {
-            id: `tmpl-${now}`,
-            name: TEMPLATE_NAME,
-            config: defaultConfig,
-            createdAt: new Date().toISOString().slice(0, 10),
-          },
-        ];
+        const nextTemplates: FilterTemplate[] =
+          existingIndex >= 0
+            ? currentTemplates.map((t, idx) => idx === existingIndex ? ({
+              ...t,
+              name: TEMPLATE_NAME,
+              config: defaultConfig,
+              createdAt: new Date().toISOString().slice(0, 10),
+            }) : t)
+            : [
+              ...currentTemplates,
+              {
+                id: `tmpl-${now}`,
+                name: TEMPLATE_NAME,
+                config: defaultConfig,
+                createdAt: new Date().toISOString().slice(0, 10),
+              },
+            ];
 
         const merged = {
           ...(baseSettings || {}),
@@ -167,7 +177,7 @@ export default function App() {
 
         try {
           await notionClient.saveSettings(merged);
-          return { ensuredSettings: merged, templates: nextTemplates, created: true };
+          return { ensuredSettings: merged, templates: nextTemplates, created: existingIndex === -1 };
         } catch (e) {
           console.warn('[App] Failed to auto-create default template:', e);
           return { ensuredSettings: baseSettings, templates: currentTemplates, created: false };
