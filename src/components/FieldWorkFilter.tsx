@@ -160,6 +160,7 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
     const [aiInput, setAiInput] = useState('');
     const [aiLoading, setAiLoading] = useState(false);
     const [aiDraft, setAiDraft] = useState<Partial<FilterConfig> | null>(null);
+    const [aiLastError, setAiLastError] = useState<string>('');
 
     useEffect(() => {
         if (!visible) return;
@@ -179,6 +180,55 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
             updatedAt: new Date().toISOString(),
         };
         onPersistAiSession?.(session);
+    };
+
+    // Gemini 쿼터/장애 상황에서도 "작업 큐 OR(equals)" 정도는 로컬에서 바로 만들어 쓸 수 있게 한다.
+    // 패턴: 컬럼명/컬럼 "X" ... 값이/값은/== "Y" 형태를 최대한 많이 수집한다.
+    const buildLocalWorkQueueDraft = (text: string): Partial<FilterConfig> | null => {
+        const pairs: Array<{ column: string; value: string }> = [];
+
+        const colAndValueRegexes: RegExp[] = [
+            /컬럼명\s*[:：]\s*["“](.+?)["”][\s\S]*?["“]([^"”]+?)["”]\s*인\s*값/g,
+            /컬럼\s*["“](.+?)["”][\s\S]*?값[이은]?\s*["“]([^"”]+?)["”]/g,
+            /["“](.+?)["”]\s*(?:==|=)\s*["“]([^"”]+?)["”]/g,
+        ];
+
+        for (const rx of colAndValueRegexes) {
+            let m: RegExpExecArray | null;
+            while ((m = rx.exec(text)) !== null) {
+                const column = String(m[1] || '').trim();
+                const value = String(m[2] || '').trim();
+                if (!column || !value) continue;
+                if (!schema.includes(column)) continue;
+                pairs.push({ column, value });
+            }
+        }
+
+        // 중복 제거
+        const uniq = new Map<string, { column: string; value: string }>();
+        for (const p of pairs) {
+            uniq.set(`${p.column}::${p.value}`, p);
+        }
+        const list = Array.from(uniq.values());
+        if (list.length === 0) return null;
+
+        const group: TargetGroup = {
+            id: `local-group-${Date.now()}`,
+            operator: 'or',
+            conditions: list.map((p, idx) => ({
+                id: `local-cond-${Date.now()}-${idx}`,
+                column: p.column,
+                type: 'equals',
+                values: [p.value],
+            })),
+        };
+
+        const editable = Array.from(new Set(list.map(p => p.column)));
+        return {
+            globalLogicalOperator: 'or',
+            targetGroups: [group],
+            editableFields: editable,
+        };
     };
 
     // 각 컬럼의 고유 값 추출
@@ -606,6 +656,7 @@ export const FieldWorkFilter: React.FC<FieldWorkFilterProps> = ({
         const prompt = aiInput.trim();
         if (!prompt || aiLoading) return;
 
+        setAiLastError('');
         const userMsg: AiChatMessage = {
             id: `u_${Date.now()}`,
             role: 'user',
@@ -729,6 +780,28 @@ ${JSON.stringify(current)}
             setAiMessages(msgs);
             persistAiSession({ messages: msgs, lastDraft: draftNext });
         } catch (e: any) {
+            const msg = e?.message || String(e);
+            setAiLastError(msg);
+
+            // 429(쿼터)일 때: 입력 텍스트로 로컬 초안 생성 시도
+            if (String(msg).includes('(429)') || String(msg).includes('RESOURCE_EXHAUSTED') || String(msg).includes('"code":429')) {
+                const local = buildLocalWorkQueueDraft(prompt);
+                if (local) {
+                    setAiDraft(local);
+                    persistAiSession({ messages: nextMessages, lastDraft: local });
+
+                    const assistantMsg: AiChatMessage = {
+                        id: `a_${Date.now()}`,
+                        role: 'assistant',
+                        content: 'AI 쿼터(429)로 응답을 못 받아서, 입력 내용에서 작업 큐 초안을 로컬로 생성했어요. 아래에서 “초안 적용하기”로 바로 사용할 수 있습니다.',
+                        createdAt: new Date().toISOString(),
+                    };
+                    const msgs = [...nextMessages, assistantMsg];
+                    setAiMessages(msgs);
+                    persistAiSession({ messages: msgs, lastDraft: local });
+                    return;
+                }
+            }
             const assistantMsg: AiChatMessage = {
                 id: `a_${Date.now()}`,
                 role: 'assistant',
@@ -1224,6 +1297,16 @@ ${JSON.stringify(current)}
                                     )}
                                 </ScrollView>
                             </View>
+
+                            {!!aiLastError && (
+                                <View style={styles.aiErrorBox}>
+                                    <Text style={styles.aiErrorTitle}>마지막 오류</Text>
+                                    <Text style={styles.aiErrorText}>{aiLastError}</Text>
+                                    <Text style={styles.aiErrorHint}>
+                                        429(RESOURCE_EXHAUSTED)은 AI 쿼터/한도 문제입니다. 잠시 후 다시 시도하거나, 아래처럼 “플래그 값 작업 큐” 형태로 입력하면 로컬 초안을 생성할 수 있어요.
+                                    </Text>
+                                </View>
+                            )}
 
                             {!!aiDraft && (
                                 <View style={styles.aiDraftCard}>
@@ -2287,6 +2370,30 @@ const styles = StyleSheet.create({
         borderColor: '#e5e7eb',
         padding: 12,
         marginBottom: 12,
+    },
+    aiErrorBox: {
+        backgroundColor: '#fef2f2',
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: '#fecaca',
+        padding: 12,
+        marginBottom: 12,
+    },
+    aiErrorTitle: {
+        fontSize: 13,
+        fontWeight: '800',
+        color: '#991b1b',
+        marginBottom: 6,
+    },
+    aiErrorText: {
+        fontSize: 12,
+        color: '#7f1d1d',
+        marginBottom: 6,
+    },
+    aiErrorHint: {
+        fontSize: 12,
+        color: '#9f1239',
+        lineHeight: 16,
     },
     aiEmptyText: {
         fontSize: 13,
