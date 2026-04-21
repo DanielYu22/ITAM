@@ -115,18 +115,87 @@ export default function App() {
 
       // 설정/템플릿 로드
       const settings = await notionClient.loadSettings();
-      if (settings) {
-        setAppSettings(settings);
-        const lastLookup = settings?.bulkUpdate?.lastLookupColumn;
+      const ensureDefaultWorkQueueTemplate = async (baseSettings: Record<string, any> | null) => {
+        const TEMPLATE_NAME = '4월 POC/알약 작업큐';
+        const currentTemplates: FilterTemplate[] = Array.isArray(baseSettings?.templates) ? baseSettings!.templates : [];
+        const exists = currentTemplates.some(t => String(t?.name || '').trim() === TEMPLATE_NAME);
+        if (exists) return { ensuredSettings: baseSettings, templates: currentTemplates, created: false };
+
+        const now = Date.now();
+        const defaultConfig: FilterConfig = {
+          locationHierarchy: [],
+          sortColumn: '',
+          sortDirection: 'asc',
+          globalLogicalOperator: 'or',
+          targetGroups: [
+            {
+              id: `group-${now}`,
+              operator: 'or',
+              conditions: [
+                { id: `c-${now}-1`, column: 'M)알약 현장조치', type: 'equals', values: ['폐쇄망조치필요'] },
+                { id: `c-${now}-2`, column: 'M)알약 현장조치', type: 'equals', values: ['알약대상인지 현장확인'] },
+                { id: `c-${now}-3`, column: 'OS type', type: 'equals', values: ['확인필요'] },
+                { id: `c-${now}-4`, column: 'PC Hostname', type: 'equals', values: ['POC업데이트 필요'] },
+                { id: `c-${now}-5`, column: '*4월조치', type: 'equals', values: ['IT/현장백업'] },
+                { id: `c-${now}-6`, column: 'M)알약 온라인구분', type: 'equals', values: ['정보없음'] },
+              ],
+            },
+          ],
+          editableFields: [
+            'M)알약 현장조치',
+            'OS type',
+            'PC Hostname',
+            '*4월조치',
+            'M)알약 온라인구분',
+          ],
+        };
+
+        const nextTemplates: FilterTemplate[] = [
+          ...currentTemplates,
+          {
+            id: `tmpl-${now}`,
+            name: TEMPLATE_NAME,
+            config: defaultConfig,
+            createdAt: new Date().toISOString().slice(0, 10),
+          },
+        ];
+
+        const merged = {
+          ...(baseSettings || {}),
+          templates: nextTemplates,
+        };
+
+        try {
+          await notionClient.saveSettings(merged);
+          return { ensuredSettings: merged, templates: nextTemplates, created: true };
+        } catch (e) {
+          console.warn('[App] Failed to auto-create default template:', e);
+          return { ensuredSettings: baseSettings, templates: currentTemplates, created: false };
+        }
+      };
+
+      const ensured = await ensureDefaultWorkQueueTemplate(settings as any);
+      const ensuredSettings = ensured.ensuredSettings || settings;
+
+      if (ensuredSettings) {
+        setAppSettings(ensuredSettings);
+        const lastLookup = ensuredSettings?.bulkUpdate?.lastLookupColumn;
         if (typeof lastLookup === 'string') {
           setBulkLookupColumn(lastLookup);
         }
-        const session = settings?.aiFilter?.fieldWorkSession;
+        const session = ensuredSettings?.aiFilter?.fieldWorkSession;
         if (session?.messages) {
           setFieldFilterAiSession(session as AiFilterSession);
         }
       }
-      if (settings?.templates) {
+
+      if (ensured.templates && ensured.templates.length > 0) {
+        setFilterTemplates(ensured.templates as FilterTemplate[]);
+        if (ensured.created) {
+          console.log('[App] Created default work queue template:', '4월 POC/알약 작업큐');
+        }
+        console.log(`[App] Loaded ${ensured.templates.length} filter templates`);
+      } else if (settings?.templates) {
         setFilterTemplates(settings.templates as FilterTemplate[]);
         console.log(`[App] Loaded ${settings.templates.length} filter templates`);
       }
