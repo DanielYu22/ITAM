@@ -80,13 +80,14 @@ export const BulkUpdateModal: React.FC<BulkUpdateModalProps> = ({
     // Steps: 1=룩업 선택, 2=데이터 붙여넣기(헤더 포함), 3=미리보기, 4=실행중/완료
     const [step, setStep] = useState(1);
     const [lookupColumn, setLookupColumn] = useState('');
-    // 마지막으로 사용한 룩업 컬럼 복원 (Notion Settings)
+    // 룩업 컬럼: 저장값 복원, 없으면 기본 Name(스키마에 있을 때)
     useEffect(() => {
         if (!visible) return;
         if (lookupColumn) return;
-        if (initialLookupColumn && schema.includes(initialLookupColumn)) {
-            setLookupColumn(initialLookupColumn);
-        }
+        const fromSettings =
+            initialLookupColumn && schema.includes(initialLookupColumn) ? initialLookupColumn : null;
+        const pick = fromSettings ?? (schema.includes('Name') ? 'Name' : schema[0] ?? '');
+        if (pick) setLookupColumn(pick);
     }, [visible, initialLookupColumn, schema, lookupColumn]);
 
     const [pastedData, setPastedData] = useState('');

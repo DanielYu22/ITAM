@@ -72,7 +72,7 @@ export default function App() {
   const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false);
   const [skipLocationSelection, setSkipLocationSelection] = useState(false);
   const [appSettings, setAppSettings] = useState<Record<string, any>>({});
-  const [bulkLookupColumn, setBulkLookupColumn] = useState<string>('');
+  const [bulkLookupColumn, setBulkLookupColumn] = useState<string>('Name');
   const [fieldFilterAiSession, setFieldFilterAiSession] = useState<AiFilterSession | undefined>(undefined);
 
   // Notion Client
@@ -196,8 +196,15 @@ export default function App() {
       if (ensuredSettings) {
         setAppSettings(ensuredSettings);
         const lastLookup = ensuredSettings?.bulkUpdate?.lastLookupColumn;
-        if (typeof lastLookup === 'string') {
+        const schemaCols = result.schema;
+        if (typeof lastLookup === 'string' && schemaCols.includes(lastLookup)) {
           setBulkLookupColumn(lastLookup);
+        } else if (schemaCols.includes('Name')) {
+          setBulkLookupColumn('Name');
+        } else {
+          setBulkLookupColumn(
+            schemaCols.includes(titlePropName) ? titlePropName : schemaCols[0] || 'Name'
+          );
         }
         const session = ensuredSettings?.aiFilter?.fieldWorkSession;
         if (session?.messages) {
