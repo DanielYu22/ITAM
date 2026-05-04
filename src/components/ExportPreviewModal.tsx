@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { X, Copy, Download, Check, FileSpreadsheet } from 'lucide-react-native';
 import { Asset, NotionProperty } from '../lib/notion';
+import { filterUserFacingAssets } from '../lib/ghostAssets';
 
 interface ExportPreviewModalProps {
     visible: boolean;
@@ -48,8 +49,14 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
         return [titleColumn, ...otherColumns];
     }, [schema, schemaProperties]);
 
+    const titleColumn = fullSchema[0] || 'Name';
+    const userFacingAssets = useMemo(
+        () => filterUserFacingAssets(assets, titleColumn),
+        [assets, titleColumn]
+    );
+
     // 미리보기용 데이터 (최대 10행)
-    const previewData = useMemo(() => assets.slice(0, 10), [assets]);
+    const previewData = useMemo(() => userFacingAssets.slice(0, 10), [userFacingAssets]);
 
     // CSV 문자열 생성 (콤마 구분)
     const generateCSV = (): string => {
@@ -61,7 +68,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
         };
 
         const header = fullSchema.map(escapeCSV).join(',');
-        const rows = assets.map(asset =>
+        const rows = userFacingAssets.map(asset =>
             fullSchema.map(col => escapeCSV(asset.values[col] || '')).join(',')
         );
 
@@ -76,7 +83,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
         };
 
         const headerRow = fullSchema.map(col => escapeTSV(col)).join('\t');
-        const dataRows = assets.map(asset => {
+        const dataRows = userFacingAssets.map(asset => {
             return fullSchema.map(col => escapeTSV(asset.values[col] || '')).join('\t');
         });
 
@@ -161,7 +168,7 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                     {/* Summary */}
                     <View style={styles.summary}>
                         <Text style={styles.summaryText}>
-                            <Text style={styles.summaryHighlight}>{assets.length}개</Text> 항목 • {fullSchema.length}개 컬럼
+                            <Text style={styles.summaryHighlight}>{userFacingAssets.length}개</Text> 항목 • {fullSchema.length}개 컬럼
                         </Text>
                     </View>
 
@@ -201,10 +208,10 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                                         )}
                                     </View>
                                 ))}
-                                {assets.length > 10 && (
+                                {userFacingAssets.length > 10 && (
                                     <View style={styles.moreRows}>
                                         <Text style={styles.moreRowsText}>
-                                            ... 외 {assets.length - 10}개 항목
+                                            ... 외 {userFacingAssets.length - 10}개 항목
                                         </Text>
                                     </View>
                                 )}

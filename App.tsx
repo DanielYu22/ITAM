@@ -29,6 +29,7 @@ import {
   Upload
 } from 'lucide-react-native';
 import { NotionClient, Asset, NotionProperty } from './src/lib/notion';
+import { filterUserFacingAssets } from './src/lib/ghostAssets';
 import { NOTION_API_KEY, NOTION_DATABASE_ID, API_BASE_URL } from './src/config';
 import { MobileCardView } from './src/components/MobileCardView';
 import { evaluateFilter, FilterCondition, DEFAULT_FILTER } from './src/lib/utils';
@@ -107,11 +108,16 @@ export default function App() {
 
       // 전체 데이터베이스 로드 (100개 제한 없음)
       const result = await notionClient.fetchAllDatabase();
-      setAssets(result.assets);
+      const titlePropName =
+        Object.keys(schemaProps).find(k => schemaProps[k].type === 'title') || 'Name';
+      const visibleAssets = filterUserFacingAssets(result.assets, titlePropName);
+      setAssets(visibleAssets);
       setSchema(result.schema);
-      setFilteredAssets(result.assets);
+      setFilteredAssets(visibleAssets);
 
-      console.log(`[App] Loaded ${result.assets.length} assets (all)`);
+      console.log(
+        `[App] Loaded ${visibleAssets.length} assets (ghost rows excluded, raw=${result.assets.length})`
+      );
 
       // 설정/템플릿 로드
       const settings = await notionClient.loadSettings();
