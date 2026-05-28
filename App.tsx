@@ -39,6 +39,12 @@ import { HomeScreen, FilterTemplate } from './src/components/HomeScreen';
 import { ExportPreviewModal } from './src/components/ExportPreviewModal';
 import { BulkUpdateModal } from './src/components/BulkUpdateModal';
 import { APP_VERSION } from './src/lib/version';
+import {
+  QuickTaskDef,
+  HISTORY_FIELD_NAME,
+  computeClearUpdates,
+  appendHistoryLine,
+} from './src/lib/quickTasks';
 
 export default function App() {
   // Settings state for configuration - check these first
@@ -74,6 +80,8 @@ export default function App() {
   const [appSettings, setAppSettings] = useState<Record<string, any>>({});
   const [bulkLookupColumn, setBulkLookupColumn] = useState<string>('Name');
   const [fieldFilterAiSession, setFieldFilterAiSession] = useState<AiFilterSession | undefined>(undefined);
+  // 현재 활성화된 Quick Task (홈에서 카드 누른 후 워크모드에 진입한 경우)
+  const [activeQuickTask, setActiveQuickTask] = useState<QuickTaskDef | null>(null);
 
   // Notion Client
   const [notionClient, setNotionClient] = useState<NotionClient | null>(null);
@@ -103,7 +111,21 @@ export default function App() {
       console.log('[App] Loading all data...');
 
       // Get schema first
-      const schemaProps = await notionClient.getDatabaseSchema();
+      let schemaProps = await notionClient.getDatabaseSchema();
+
+      // 처리이력 필드가 없으면 자동 생성 (Rich Text)
+      if (!schemaProps[HISTORY_FIELD_NAME]) {
+        try {
+          const created = await notionClient.createDatabaseProperty(HISTORY_FIELD_NAME, 'rich_text');
+          if (created) {
+            console.log(`[App] '${HISTORY_FIELD_NAME}' 필드를 Notion DB에 자동 생성했습니다.`);
+            schemaProps = await notionClient.getDatabaseSchema();
+          }
+        } catch (e) {
+          console.warn(`[App] '${HISTORY_FIELD_NAME}' 필드 자동 생성 실패 (수동으로 만들어 주세요):`, e);
+        }
+      }
+
       setSchemaProperties(schemaProps);
 
       // 전체 데이터베이스 로드 (100개 제한 없음)
@@ -543,6 +565,67 @@ export default function App() {
     }
   }, [fieldWorkConfig]);
 
+  // Quick Task 핸들러: 정기/현장 업무를 즉시 시작
+  const handleQuickTask = useCallback((task: QuickTaskDef) => {
+    const now = new Date();
+    const config = task.buildConfig({ now });
+    setActiveQuickTask(task);
+    setFieldWorkConfig(config);
+    setLocationSelectedAssets([]);
+    setLocationFilters({});
+    setIsWorkMode(true);
+    if (config.locationHierarchy && config.locationHierarchy.length > 0) {
+      setSkipLocationSelection(true);
+    }
+  }, []);
+
+  // Quick Task 완료 처리: 사전값 클리어 + 처리이력 append
+  // 자산 카드의 "완료" 체크박스에서 호출됨
+  const handleCompleteQuickTask = useCallback(async (asset: Asset, task: QuickTaskDef) => {
+    if (!notionClient) return;
+
+    // 1) 처리이력 한 줄 prepend
+    const now = new Date();
+    const historyLabel = task.buildHistoryLabel({ now });
+    const existingHistory = asset.values[HISTORY_FIELD_NAME] ?? '';
+    const nextHistory = appendHistoryLine(existingHistory, historyLabel, now);
+
+    // 2) 사전값 클리어 (멀티셀렉트는 해당 옵션만 제거)
+    const schemaTypes: Record<string, string> = {};
+    Object.entries(schemaProperties).forEach(([k, v]) => {
+      schemaTypes[k] = v.type;
+    });
+    const clearUpdates = computeClearUpdates(task, asset.values, schemaTypes);
+
+    // 3) Notion 업데이트 (병렬)
+    try {
+      await Promise.all([
+        notionClient.updatePage(asset.id, HISTORY_FIELD_NAME, nextHistory, 'rich_text'),
+        ...clearUpdates.map(u =>
+          notionClient.updatePage(asset.id, u.field, u.newValue, u.type)
+        ),
+      ]);
+
+      // 4) 로컬 상태 동기화 (Optimistic)
+      const updatedValues: Record<string, string> = {
+        ...asset.values,
+        [HISTORY_FIELD_NAME]: nextHistory,
+      };
+      for (const u of clearUpdates) {
+        updatedValues[u.field] = u.newValue;
+      }
+      setAssets(prev => prev.map(a =>
+        a.id === asset.id ? { ...a, values: updatedValues } : a
+      ));
+      setLocationSelectedAssets(prev => prev.map(a =>
+        a.id === asset.id ? { ...a, values: updatedValues } : a
+      ));
+    } catch (error) {
+      console.error('[QuickTask] 완료 처리 실패:', error);
+      Alert.alert('오류', '처리 중 문제가 발생했습니다.');
+    }
+  }, [notionClient, schemaProperties]);
+
   // 홈으로 돌아가기
   const handleBackToLocation = () => {
     if (!fieldWorkConfig?.locationHierarchy) return;
@@ -566,6 +649,7 @@ export default function App() {
     setIsWorkMode(false);
     setLocationSelectedAssets([]);
     setLocationFilters({});
+    setActiveQuickTask(null);
   }, []);
 
   // Settings screen
@@ -735,6 +819,7 @@ export default function App() {
               onLoadTemplate={loadTemplate}
               onSaveTemplate={saveTemplate}
               onDeleteTemplate={deleteTemplate}
+              onQuickTask={handleQuickTask}
               onEditAsset={(asset) => {
                 // 검색에서 선택한 자산을 편집하기 위해 작업 모드로 전환
                 setLocationSelectedAssets([asset]);
@@ -901,6 +986,8 @@ export default function App() {
                   onUpdateAsset={handleUpdateAsset}
                   editableFields={fieldWorkConfig?.editableFields}
                   filterConfig={fieldWorkConfig}
+                  activeQuickTask={activeQuickTask}
+                  onCompleteQuickTask={handleCompleteQuickTask}
                   locationHierarchy={fieldWorkConfig?.locationHierarchy}
                   locationFilters={locationFilters}
                   onRequestChangeLocation={() => {

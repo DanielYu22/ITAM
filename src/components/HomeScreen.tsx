@@ -32,6 +32,7 @@ import {
 import { FilterConfig } from './FieldWorkFilter';
 import { Asset, NotionProperty } from '../lib/notion';
 import { APP_VERSION } from '../lib/version';
+import { QUICK_TASKS, QuickTaskDef } from '../lib/quickTasks';
 
 interface HomeScreenProps {
     assets: Asset[];
@@ -44,6 +45,8 @@ interface HomeScreenProps {
     onSaveTemplate: (name: string, overwriteId?: string) => void;
     onDeleteTemplate: (templateId: string) => void;
     onEditAsset: (asset: Asset) => void;
+    // Quick Task: 정기/현장 업무를 한 번에 시작
+    onQuickTask?: (task: QuickTaskDef) => void;
     // Tool section callbacks
     onExport?: () => void;
     onBulkUpdate?: () => void;
@@ -68,6 +71,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     onSaveTemplate,
     onDeleteTemplate,
     onEditAsset,
+    onQuickTask,
     onExport,
     onBulkUpdate,
     onRefresh,
@@ -370,6 +374,33 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         <Text style={styles.toolLabel}>새로고침</Text>
                     </TouchableOpacity>
                 </View>
+
+                {/* Quick Task — 정기/현장 업무 바로 시작 */}
+                {onQuickTask && (
+                    <View style={styles.section}>
+                        <View style={styles.sectionHeader}>
+                            <Text style={styles.sectionTitle}>정기 / 현장 업무</Text>
+                        </View>
+                        <View style={styles.quickTaskGrid}>
+                            {QUICK_TASKS.map(task => (
+                                <TouchableOpacity
+                                    key={task.id}
+                                    style={[styles.quickTaskCard, { backgroundColor: task.bgColor }]}
+                                    onPress={() => onQuickTask(task)}
+                                    activeOpacity={0.7}
+                                >
+                                    <Text style={styles.quickTaskEmoji}>{task.emoji}</Text>
+                                    <Text style={[styles.quickTaskName, { color: task.color }]} numberOfLines={2}>
+                                        {task.name}
+                                    </Text>
+                                    <Text style={styles.quickTaskDesc} numberOfLines={2}>
+                                        {task.description}
+                                    </Text>
+                                </TouchableOpacity>
+                            ))}
+                        </View>
+                    </View>
+                )}
 
                 {/* 현재 필터 요약 */}
                 <View style={styles.section}>
@@ -700,6 +731,32 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         gap: 12,
         marginBottom: 20,
+    },
+    quickTaskGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 10,
+    },
+    quickTaskCard: {
+        width: '48%',
+        borderRadius: 14,
+        padding: 14,
+        minHeight: 110,
+        justifyContent: 'space-between',
+    },
+    quickTaskEmoji: {
+        fontSize: 28,
+        marginBottom: 4,
+    },
+    quickTaskName: {
+        fontSize: 14,
+        fontWeight: '700',
+        marginBottom: 2,
+    },
+    quickTaskDesc: {
+        fontSize: 11,
+        color: '#475569',
+        lineHeight: 14,
     },
     toolCard: {
         flex: 1,

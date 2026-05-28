@@ -17,9 +17,10 @@ import {
     NativeSyntheticEvent,
     NativeScrollEvent,
 } from 'react-native';
-import { Edit2, X, Check, Search, Plus, ChevronDown, ChevronRight, ChevronLeft, AlertCircle, CheckCircle, MapPin } from 'lucide-react-native';
+import { Edit2, X, Check, Search, Plus, ChevronDown, ChevronRight, ChevronLeft, AlertCircle, CheckCircle, MapPin, ClipboardCheck, History } from 'lucide-react-native';
 import { Asset, NotionProperty } from '../lib/notion';
 import { FilterConfig, TargetCondition } from './FieldWorkFilter';
+import { QuickTaskDef, HISTORY_FIELD_NAME } from '../lib/quickTasks';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 // Explicit height calculation for web compatibility
@@ -35,6 +36,9 @@ interface MobileCardViewProps {
     editableFields?: string[];
     filterConfig?: FilterConfig | null;
     onLocalUpdate?: (assetId: string, field: string, value: string) => void;
+    // Quick Task 활성 시: 카드에 "완료" 버튼이 뜨고, 누르면 onCompleteQuickTask 호출
+    activeQuickTask?: QuickTaskDef | null;
+    onCompleteQuickTask?: (asset: Asset, task: QuickTaskDef) => Promise<void>;
     // Location Navigation
     locationHierarchy?: string[];
     locationFilters?: Record<string, string>;
@@ -126,11 +130,17 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     editableFields = [],
     filterConfig = null,
     onLocalUpdate,
+    activeQuickTask = null,
+    onCompleteQuickTask,
     locationHierarchy,
     locationFilters,
     onRequestChangeLocation,
 }) => {
     const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
+    // 처리이력 펼침 상태 (assetId별)
+    const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({});
+    // 완료 처리 진행중 (assetId)
+    const [completingId, setCompletingId] = useState<string | null>(null);
 
     // Location Text Generation
     const locationText = useMemo(() => {
@@ -402,6 +412,29 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
             return matchedConditions.find(c => c.column === fieldName) || null;
         };
 
+        const historyValue = asset.values[HISTORY_FIELD_NAME] ?? '';
+        const isHistoryExpanded = !!expandedHistory[asset.id];
+        const isCompleting = completingId === asset.id;
+
+        const handleCompletePress = async () => {
+            if (!activeQuickTask || !onCompleteQuickTask || isCompleting) return;
+            setCompletingId(asset.id);
+            try {
+                await onCompleteQuickTask(asset, activeQuickTask);
+                // 모든 조건이 해결되어 자동 이동되지 않을 수도 있으니, 다음 카드로 시도
+                if (currentIndex < assets.length - 1) {
+                    setTimeout(() => {
+                        flatListRef.current?.scrollToIndex({
+                            index: currentIndex + 1,
+                            animated: true,
+                        });
+                    }, 400);
+                }
+            } finally {
+                setCompletingId(null);
+            }
+        };
+
         return (
             <View style={styles.cardContainer}>
                 <View style={styles.cardWrapper}>
@@ -412,6 +445,38 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                             </Text>
                         </View>
 
+                        {/* Quick Task 활성 시: 완료 처리 배너 */}
+                        {activeQuickTask && (
+                            <View style={[styles.quickTaskBanner, { backgroundColor: activeQuickTask.bgColor }]}>
+                                <View style={styles.quickTaskBannerInfo}>
+                                    <Text style={styles.quickTaskBannerEmoji}>{activeQuickTask.emoji}</Text>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={[styles.quickTaskBannerName, { color: activeQuickTask.color }]} numberOfLines={1}>
+                                            {activeQuickTask.name}
+                                        </Text>
+                                        <Text style={styles.quickTaskBannerDesc} numberOfLines={1}>
+                                            완료 시 사전값 자동 클리어 + 이력 누적
+                                        </Text>
+                                    </View>
+                                </View>
+                                <TouchableOpacity
+                                    style={[
+                                        styles.quickTaskCompleteBtn,
+                                        { backgroundColor: activeQuickTask.color },
+                                        isCompleting && styles.quickTaskCompleteBtnDisabled,
+                                    ]}
+                                    onPress={handleCompletePress}
+                                    disabled={isCompleting}
+                                    activeOpacity={0.7}
+                                >
+                                    <ClipboardCheck size={18} color="#ffffff" />
+                                    <Text style={styles.quickTaskCompleteBtnText}>
+                                        {isCompleting ? '처리 중…' : activeQuickTask.shortLabel}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                        )}
+
                         <ScrollView
                             ref={fieldScrollRef}
                             style={styles.cardBody}
@@ -420,7 +485,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                             keyboardShouldPersistTaps="handled"
                         >
                             {(editableFields.length > 0 ? editableFields : schema)
-                                .filter((field: string) => field !== titleField)
+                                .filter((field: string) => field !== titleField && field !== HISTORY_FIELD_NAME)
                                 .sort((a: string, b: string) => {
                                     // 조건 매칭 필드를 상단으로 정렬
                                     const aMatched = !!getFieldCondition(a);
@@ -476,6 +541,47 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                                         </TouchableOpacity>
                                     );
                                 })}
+
+                            {/* 처리이력 (기기별 누적 내역) */}
+                            {schemaProperties[HISTORY_FIELD_NAME] && (
+                                <View style={styles.historySection}>
+                                    <TouchableOpacity
+                                        style={styles.historyHeader}
+                                        onPress={() => setExpandedHistory(prev => ({
+                                            ...prev,
+                                            [asset.id]: !prev[asset.id],
+                                        }))}
+                                        activeOpacity={0.7}
+                                    >
+                                        <History size={14} color="#6366f1" />
+                                        <Text style={styles.historyHeaderText}>
+                                            처리이력 {historyValue ? `(${historyValue.split('\n').filter(Boolean).length}건)` : '(없음)'}
+                                        </Text>
+                                        {isHistoryExpanded
+                                            ? <ChevronDown size={14} color="#6b7280" />
+                                            : <ChevronRight size={14} color="#6b7280" />}
+                                    </TouchableOpacity>
+                                    {isHistoryExpanded && (
+                                        <View style={styles.historyBody}>
+                                            {historyValue ? (
+                                                historyValue.split('\n').filter(Boolean).map((line, idx) => (
+                                                    <Text key={idx} style={styles.historyLine}>{line}</Text>
+                                                ))
+                                            ) : (
+                                                <Text style={styles.historyEmpty}>아직 누적된 이력이 없습니다.</Text>
+                                            )}
+                                            <TouchableOpacity
+                                                style={styles.historyEditBtn}
+                                                onPress={() => handleEdit(asset, HISTORY_FIELD_NAME)}
+                                                activeOpacity={0.7}
+                                            >
+                                                <Edit2 size={12} color="#6366f1" />
+                                                <Text style={styles.historyEditText}>이력 직접 편집</Text>
+                                            </TouchableOpacity>
+                                        </View>
+                                    )}
+                                </View>
+                            )}
                         </ScrollView>
                     </View>
                 </View>
@@ -820,6 +926,101 @@ const styles = StyleSheet.create({
         fontWeight: 'bold',
         color: '#1e293b',
         textAlign: 'center',
+    },
+    quickTaskBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        paddingHorizontal: 14,
+        paddingVertical: 12,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(0,0,0,0.05)',
+    },
+    quickTaskBannerInfo: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+    },
+    quickTaskBannerEmoji: {
+        fontSize: 22,
+    },
+    quickTaskBannerName: {
+        fontSize: 14,
+        fontWeight: '700',
+    },
+    quickTaskBannerDesc: {
+        fontSize: 11,
+        color: '#475569',
+        marginTop: 2,
+    },
+    quickTaskCompleteBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 10,
+    },
+    quickTaskCompleteBtnDisabled: {
+        opacity: 0.6,
+    },
+    quickTaskCompleteBtnText: {
+        color: '#ffffff',
+        fontSize: 13,
+        fontWeight: '700',
+    },
+    historySection: {
+        marginTop: 16,
+        borderTopWidth: 1,
+        borderTopColor: '#f1f5f9',
+        paddingTop: 12,
+    },
+    historyHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingVertical: 6,
+    },
+    historyHeaderText: {
+        flex: 1,
+        fontSize: 13,
+        fontWeight: '600',
+        color: '#475569',
+    },
+    historyBody: {
+        marginTop: 8,
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        backgroundColor: '#f8fafc',
+        borderRadius: 8,
+        gap: 4,
+    },
+    historyLine: {
+        fontSize: 12,
+        color: '#334155',
+        lineHeight: 18,
+    },
+    historyEmpty: {
+        fontSize: 12,
+        color: '#94a3b8',
+        fontStyle: 'italic',
+    },
+    historyEditBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        alignSelf: 'flex-start',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        marginTop: 6,
+        borderRadius: 6,
+        backgroundColor: '#eef2ff',
+    },
+    historyEditText: {
+        fontSize: 11,
+        fontWeight: '600',
+        color: '#6366f1',
     },
     conditionBadges: {
         flexDirection: 'row',
