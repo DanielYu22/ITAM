@@ -38,6 +38,7 @@ import { LocationNavigator } from './src/components/LocationNavigator';
 import { HomeScreen, FilterTemplate } from './src/components/HomeScreen';
 import { ExportPreviewModal } from './src/components/ExportPreviewModal';
 import { BulkUpdateModal } from './src/components/BulkUpdateModal';
+import { SourceImportModal } from './src/components/SourceImportModal';
 import { APP_VERSION } from './src/lib/version';
 import {
   QuickTaskDef,
@@ -78,6 +79,7 @@ export default function App() {
   const [templateName, setTemplateName] = useState('');
   const [showExportModal, setShowExportModal] = useState(false);
   const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false);
+  const [showSourceImportModal, setShowSourceImportModal] = useState(false);
   const [skipLocationSelection, setSkipLocationSelection] = useState(false);
   const [appSettings, setAppSettings] = useState<Record<string, any>>({});
   const [bulkLookupColumn, setBulkLookupColumn] = useState<string>('Name');
@@ -848,6 +850,7 @@ export default function App() {
               }}
               onExport={() => setShowExportModal(true)}
               onBulkUpdate={() => setShowBulkUpdateModal(true)}
+              onSourceImport={() => setShowSourceImportModal(true)}
               onRefresh={onRefresh}
             />
 
@@ -1086,6 +1089,17 @@ export default function App() {
             if (!notionClient) return false;
             return await notionClient.createDatabaseProperty(propertyName, type || 'rich_text');
           }}
+        />
+
+        <SourceImportModal
+          visible={showSourceImportModal}
+          onClose={() => {
+            setShowSourceImportModal(false);
+            loadData(); // 임포트 후 새로고침
+          }}
+          assets={assets}
+          schemaProperties={schemaProperties}
+          onUpdate={handleUpdateAsset}
         />
 
         {/* 글로벌 플로팅 버튼 - 홈, 새로고침 */}

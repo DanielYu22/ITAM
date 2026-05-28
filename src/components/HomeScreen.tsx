@@ -28,6 +28,7 @@ import {
     Download,
     Upload,
     RefreshCw,
+    FileUp,
 } from 'lucide-react-native';
 import { FilterConfig } from './FieldWorkFilter';
 import { Asset, NotionProperty } from '../lib/notion';
@@ -50,6 +51,7 @@ interface HomeScreenProps {
     // Tool section callbacks
     onExport?: () => void;
     onBulkUpdate?: () => void;
+    onSourceImport?: () => void;
     onRefresh?: () => void;
 }
 
@@ -74,6 +76,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     onQuickTask,
     onExport,
     onBulkUpdate,
+    onSourceImport,
     onRefresh,
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
@@ -350,6 +353,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             <Download size={28} color="#16a34a" />
                         </View>
                         <Text style={styles.toolLabel}>내보내기</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.toolCard}
+                        onPress={onSourceImport}
+                        disabled={!onSourceImport}
+                    >
+                        <View style={[styles.toolIconContainer, { backgroundColor: '#ede9fe' }]}>
+                            <FileUp size={28} color="#7c3aed" />
+                        </View>
+                        <Text style={styles.toolLabel}>소스 임포트</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
