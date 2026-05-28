@@ -58,6 +58,10 @@ export const SourceImportModal: React.FC<Props> = ({
     const [progress, setProgress] = useState({ current: 0, total: 0 });
     const [skipUnchanged, setSkipUnchanged] = useState(true);
     const [appendHistory, setAppendHistory] = useState(true);
+    // 의심 매칭(엑셀 IP가 용인 대역 밖)을 적용에 포함할지 — 기본 false(안전)
+    const [applySuspicious, setApplySuspicious] = useState(false);
+    // 미등록 후보 중 ❌ 제외(용인 대역 밖)도 보여줄지
+    const [showExcludedCandidates, setShowExcludedCandidates] = useState(false);
 
     const resetAll = useCallback(() => {
         setStep('select');
@@ -133,9 +137,14 @@ export const SourceImportModal: React.FC<Props> = ({
 
     const handleApply = useCallback(async () => {
         if (!plan) return;
-        const toApply = skipUnchanged
-            ? plan.plans.filter(p => p.fieldChanges.some(c => c.changed))
-            : plan.plans;
+        let toApply = plan.plans;
+        if (skipUnchanged) {
+            toApply = toApply.filter(p => p.fieldChanges.some(c => c.changed));
+        }
+        // 의심 매칭은 토글 켤 때만 적용
+        if (!applySuspicious) {
+            toApply = toApply.filter(p => !p.suspicious);
+        }
 
         setStep('running');
         setProgress({ current: 0, total: toApply.length });
@@ -166,7 +175,7 @@ export const SourceImportModal: React.FC<Props> = ({
         }
 
         setStep('done');
-    }, [plan, skipUnchanged, appendHistory, schemaProperties, onUpdate]);
+    }, [plan, skipUnchanged, applySuspicious, appendHistory, schemaProperties, onUpdate]);
 
     // 미리보기 통계
     const stats = useMemo(() => {
@@ -260,6 +269,12 @@ export const SourceImportModal: React.FC<Props> = ({
                                         <Text style={[styles.statNum, { color: '#15803d' }]}>{stats.changes}</Text>
                                         <Text style={styles.statLabel}>변경됨</Text>
                                     </View>
+                                    {plan.suspiciousCount > 0 && (
+                                        <View style={[styles.statBox, { backgroundColor: '#fee2e2' }]}>
+                                            <Text style={[styles.statNum, { color: '#b91c1c' }]}>{plan.suspiciousCount}</Text>
+                                            <Text style={styles.statLabel}>의심 매칭</Text>
+                                        </View>
+                                    )}
                                     <View style={[styles.statBox, { backgroundColor: '#f1f5f9' }]}>
                                         <Text style={[styles.statNum, { color: '#475569' }]}>{stats.unchanged}</Text>
                                         <Text style={styles.statLabel}>변화 없음</Text>
@@ -291,7 +306,27 @@ export const SourceImportModal: React.FC<Props> = ({
                                     </View>
                                     <Text style={styles.optionText}>처리이력에 한 줄 추가</Text>
                                 </TouchableOpacity>
+                                {plan && plan.suspiciousCount > 0 && (
+                                    <TouchableOpacity
+                                        style={styles.option}
+                                        onPress={() => setApplySuspicious(v => !v)}
+                                    >
+                                        <View style={[styles.checkbox, applySuspicious && styles.checkboxOnDanger]}>
+                                            {applySuspicious && <Check size={14} color="#ffffff" />}
+                                        </View>
+                                        <Text style={[styles.optionText, { color: '#b91c1c' }]}>의심 매칭도 적용 (위험)</Text>
+                                    </TouchableOpacity>
+                                )}
                             </View>
+                            {plan && plan.suspiciousCount > 0 && !applySuspicious && (
+                                <View style={styles.suspicionNotice}>
+                                    <AlertTriangle size={14} color="#b91c1c" />
+                                    <Text style={styles.suspicionNoticeText}>
+                                        엑셀의 IP가 용인 대역(10.5.x.x / 192.168.x.x) 밖인 매칭 {plan.suspiciousCount}건은
+                                        기본 제외됐어요. 동일 사용자명을 가진 다른 기기일 가능성이 있어요.
+                                    </Text>
+                                </View>
+                            )}
 
                             {/* 변경 미리보기 표 */}
                             {plan && (
@@ -303,8 +338,26 @@ export const SourceImportModal: React.FC<Props> = ({
                                         .filter(p => !skipUnchanged || p.fieldChanges.some(c => c.changed))
                                         .slice(0, 50)
                                         .map((p, idx) => (
-                                            <View key={`${p.lookupValue}-${idx}`} style={styles.planRow}>
-                                                <Text style={styles.planName}>{p.lookupValue}</Text>
+                                            <View
+                                                key={`${p.lookupValue}-${idx}`}
+                                                style={[styles.planRow, p.suspicious && styles.planRowSuspicious]}
+                                            >
+                                                <View style={styles.planRowHeader}>
+                                                    {p.suspicious && (
+                                                        <AlertTriangle size={14} color="#b91c1c" />
+                                                    )}
+                                                    <Text style={[styles.planName, p.suspicious && { color: '#b91c1c' }]}>
+                                                        {p.lookupValue}
+                                                    </Text>
+                                                    {p.suspicious && !applySuspicious && (
+                                                        <Text style={styles.planSkipBadge}>적용 제외됨</Text>
+                                                    )}
+                                                </View>
+                                                {p.suspicious && (
+                                                    <Text style={styles.planSuspicionReason}>
+                                                        {p.suspicionReason}
+                                                    </Text>
+                                                )}
                                                 {p.fieldChanges.map((c, i) => (
                                                     <View key={i} style={styles.changeRow}>
                                                         <Text style={styles.changeField}>{c.field}</Text>
@@ -324,27 +377,71 @@ export const SourceImportModal: React.FC<Props> = ({
                                 </>
                             )}
 
-                            {/* 매칭 안 된 행 (후보) */}
-                            {plan && plan.unmatchedRows.length > 0 && (
-                                <>
-                                    <Text style={styles.sectionLabel}>
-                                        매칭 안 된 행 ({plan.unmatchedRows.length}건)
-                                    </Text>
-                                    <Text style={styles.helperText}>
-                                        {selectedSource?.unmatchedBehavior === 'candidate'
-                                            ? '용인 추정 후보. Notion에 없는 사용자명이라 자동 추가는 안 함. 필요한 행은 기존 일괄 업데이트 모달에서 수동으로 추가하세요.'
-                                            : '사용자명이 Notion DB에 없어요. 무시됩니다.'}
-                                    </Text>
-                                    {plan.unmatchedRows.slice(0, 20).map((u, idx) => (
-                                        <View key={idx} style={styles.unmatchedRow}>
-                                            <AlertTriangle size={12} color="#b45309" />
-                                            <Text style={styles.unmatchedText}>
-                                                {u.lookupValue} {u.excelRow['컴퓨터 이름'] ? `(${u.excelRow['컴퓨터 이름']})` : ''} {u.excelRow['IP'] ? `· ${u.excelRow['IP']}` : ''}
-                                            </Text>
-                                        </View>
-                                    ))}
-                                </>
-                            )}
+                            {/* 매칭 안 된 행 (분류: ✅용인추정 / ❌제외) */}
+                            {plan && plan.unmatchedRows.length > 0 && (() => {
+                                const likely = plan.unmatchedRows.filter(u => u.classification === 'likely-yongin');
+                                const excluded = plan.unmatchedRows.filter(u => u.classification === 'excluded');
+                                return (
+                                    <>
+                                        <Text style={styles.sectionLabel}>
+                                            매칭 안 된 행 (전체 {plan.unmatchedRows.length}건)
+                                        </Text>
+                                        <Text style={styles.helperText}>
+                                            Notion에 없는 사용자명. IP 대역으로 용인 추정 여부 분류. 자동 추가는 안 하니
+                                            확인 후 기존 일괄 업데이트 모달에서 수동으로 추가하세요.
+                                        </Text>
+
+                                        {/* ✅ 용인 추정 */}
+                                        {likely.length > 0 && (
+                                            <>
+                                                <Text style={styles.unmatchedGroupLabel}>
+                                                    ✅ 용인 추정 ({likely.length}건) — IP 화이트리스트 매칭
+                                                </Text>
+                                                {likely.slice(0, 30).map((u, idx) => (
+                                                    <View key={idx} style={[styles.unmatchedRow, styles.unmatchedRowLikely]}>
+                                                        <Text style={styles.unmatchedText}>
+                                                            <Text style={{ fontWeight: '700' }}>{u.lookupValue}</Text>
+                                                            {u.excelRow['컴퓨터 이름'] ? ` (${u.excelRow['컴퓨터 이름']})` : ''}
+                                                            {u.excelRow['IP'] ? ` · ${u.excelRow['IP']}` : ''}
+                                                        </Text>
+                                                    </View>
+                                                ))}
+                                                {likely.length > 30 && (
+                                                    <Text style={styles.helperText}>… 외 {likely.length - 30}건</Text>
+                                                )}
+                                            </>
+                                        )}
+
+                                        {/* ❌ 용인 외 (접힘) */}
+                                        {excluded.length > 0 && (
+                                            <>
+                                                <TouchableOpacity
+                                                    style={styles.excludedToggle}
+                                                    onPress={() => setShowExcludedCandidates(v => !v)}
+                                                >
+                                                    <Text style={styles.unmatchedGroupLabel}>
+                                                        ❌ 용인 외 ({excluded.length}건) — {showExcludedCandidates ? '접기' : '펼치기'}
+                                                    </Text>
+                                                </TouchableOpacity>
+                                                {showExcludedCandidates && excluded.slice(0, 50).map((u, idx) => (
+                                                    <View key={idx} style={styles.unmatchedRow}>
+                                                        <AlertTriangle size={12} color="#b45309" />
+                                                        <Text style={styles.unmatchedText}>
+                                                            {u.lookupValue}
+                                                            {u.excelRow['컴퓨터 이름'] ? ` (${u.excelRow['컴퓨터 이름']})` : ''}
+                                                            {u.excelRow['IP'] ? ` · ${u.excelRow['IP']}` : ''}
+                                                            {' · '}
+                                                            <Text style={{ color: '#94a3b8', fontStyle: 'italic' }}>
+                                                                {u.reason}
+                                                            </Text>
+                                                        </Text>
+                                                    </View>
+                                                ))}
+                                            </>
+                                        )}
+                                    </>
+                                );
+                            })()}
                         </>
                     )}
 
@@ -385,28 +482,37 @@ export const SourceImportModal: React.FC<Props> = ({
                 </ScrollView>
 
                 {/* 하단 액션 */}
-                {step === 'preview' && plan && (
-                    <View style={styles.footer}>
-                        <TouchableOpacity style={styles.footerCancel} onPress={resetAll}>
-                            <Text style={styles.footerCancelText}>취소</Text>
-                        </TouchableOpacity>
-                        <TouchableOpacity
-                            style={[
-                                styles.footerApply,
-                                plan.changeCount === 0 && skipUnchanged && styles.footerApplyDisabled,
-                            ]}
-                            onPress={handleApply}
-                            disabled={plan.changeCount === 0 && skipUnchanged}
-                        >
-                            <Text style={styles.footerApplyText}>
-                                {skipUnchanged
-                                    ? `${plan.changeCount}건 적용`
-                                    : `${plan.matchedCount}건 적용`}
-                            </Text>
-                            <ChevronRight size={16} color="#ffffff" />
-                        </TouchableOpacity>
-                    </View>
-                )}
+                {step === 'preview' && plan && (() => {
+                    // 적용 대상 수 계산 (의심 매칭 제외 반영)
+                    let toApply = plan.plans;
+                    if (skipUnchanged) {
+                        toApply = toApply.filter(p => p.fieldChanges.some(c => c.changed));
+                    }
+                    if (!applySuspicious) {
+                        toApply = toApply.filter(p => !p.suspicious);
+                    }
+                    const applyCount = toApply.length;
+                    return (
+                        <View style={styles.footer}>
+                            <TouchableOpacity style={styles.footerCancel} onPress={resetAll}>
+                                <Text style={styles.footerCancelText}>취소</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={[
+                                    styles.footerApply,
+                                    applyCount === 0 && styles.footerApplyDisabled,
+                                ]}
+                                onPress={handleApply}
+                                disabled={applyCount === 0}
+                            >
+                                <Text style={styles.footerApplyText}>
+                                    {applyCount}건 적용
+                                </Text>
+                                <ChevronRight size={16} color="#ffffff" />
+                            </TouchableOpacity>
+                        </View>
+                    );
+                })()}
             </View>
         </Modal>
     );
@@ -511,7 +617,43 @@ const styles = StyleSheet.create({
         justifyContent: 'center',
     },
     checkboxOn: { backgroundColor: '#6366f1', borderColor: '#6366f1' },
+    checkboxOnDanger: { backgroundColor: '#b91c1c', borderColor: '#b91c1c' },
     optionText: { fontSize: 12, color: '#475569' },
+    suspicionNotice: {
+        flexDirection: 'row',
+        gap: 8,
+        backgroundColor: '#fee2e2',
+        padding: 10,
+        borderRadius: 8,
+        marginBottom: 12,
+    },
+    suspicionNoticeText: { flex: 1, fontSize: 11, color: '#991b1b', lineHeight: 16 },
+    planRowSuspicious: {
+        borderWidth: 1,
+        borderColor: '#fecaca',
+        backgroundColor: '#fef2f2',
+    },
+    planRowHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+    planSkipBadge: {
+        marginLeft: 'auto',
+        fontSize: 10,
+        color: '#ffffff',
+        backgroundColor: '#b91c1c',
+        paddingHorizontal: 6,
+        paddingVertical: 2,
+        borderRadius: 4,
+        fontWeight: '700',
+    },
+    planSuspicionReason: { fontSize: 11, color: '#991b1b', marginBottom: 6, fontStyle: 'italic' },
+    unmatchedGroupLabel: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#334155',
+        marginTop: 10,
+        marginBottom: 6,
+    },
+    unmatchedRowLikely: { backgroundColor: '#ecfdf5' },
+    excludedToggle: { marginTop: 6 },
 
     planRow: {
         backgroundColor: '#ffffff',

@@ -89,6 +89,29 @@ export const normalizeOnlineStatus = (raw: string): string => {
 };
 
 // ============================================================================
+// 용인 IP 화이트리스트
+// ============================================================================
+//
+// 사용자 확인 결과 (2026-05-28):
+// - 10.5.x.x 전체가 용인 실험기기 주력 대역
+// - 192.168.x.x 일부도 폐쇄망 실험기기에서 사용 (정확한 서브넷은 차차 좁힐 수 있음)
+// - Hostname/사용자명 패턴(AEQ-/DEQ- 등)은 향남·마곡에서도 쓰이므로 판단 기준에서 제외
+//
+// 패턴은 단순 prefix 매칭(startsWith)으로 처리해 빠름.
+
+export const YONGIN_IP_PREFIXES: string[] = [
+    '10.5.',     // 사내망 용인 (주력)
+    '192.168.',  // 평광망 일부 (실험기기) — 향후 좁힐 수 있음
+];
+
+/** IP가 용인 실험기기로 추정되는 대역인지 */
+export const isYonginIp = (ip: string): boolean => {
+    if (!ip) return false;
+    const s = String(ip).trim();
+    return YONGIN_IP_PREFIXES.some(p => s.startsWith(p));
+};
+
+// ============================================================================
 // 소스 정의들
 // ============================================================================
 
@@ -262,6 +285,22 @@ export interface RowPlan {
         changed: boolean;
     }>;
     historyLabel: string;
+    /**
+     * 매칭됐지만 새 IP가 용인 대역 밖 → 진짜 같은 기기가 맞는지 의심.
+     * UI에서 기본 적용 제외 + 경고 표시.
+     */
+    suspicious?: boolean;
+    suspicionReason?: string;
+}
+
+/** 매칭 안 된 행을 용인 추정 여부로 분류 */
+export type UnmatchedClassification = 'likely-yongin' | 'excluded';
+
+export interface UnmatchedRow {
+    excelRow: Record<string, any>;
+    lookupValue: string;
+    classification: UnmatchedClassification;
+    reason: string;
 }
 
 export interface ImportPlan {
@@ -269,9 +308,10 @@ export interface ImportPlan {
     totalRows: number;
     matchedCount: number;
     unmatchedCount: number;
-    changeCount: number;       // 실제로 값이 바뀌는 행 수
+    changeCount: number;         // 실제로 값이 바뀌는 행 수
+    suspiciousCount: number;     // 의심 매칭 수
     plans: RowPlan[];
-    unmatchedRows: Array<{ excelRow: Record<string, any>; lookupValue: string }>;
+    unmatchedRows: UnmatchedRow[];
 }
 
 /**
@@ -291,20 +331,37 @@ export const buildImportPlan = (
     });
 
     const plans: RowPlan[] = [];
-    const unmatchedRows: { excelRow: Record<string, any>; lookupValue: string }[] = [];
+    const unmatchedRows: UnmatchedRow[] = [];
     let matchedCount = 0;
     let changeCount = 0;
+    let suspiciousCount = 0;
 
     for (const row of parsed.rows) {
         const lookupValue = String(row[source.matchExcelColumn] ?? '').trim();
         if (!lookupValue) continue;
 
+        const rowIp = String(row['IP'] ?? '').trim();
         const asset = byName.get(lookupValue);
+
+        // ----------------- 매칭 안 된 행 -----------------
         if (!asset) {
-            unmatchedRows.push({ excelRow: row, lookupValue });
+            // 미등록 후보: IP가 용인 대역이면 likely-yongin, 아니면 excluded
+            // (Hostname/사용자명 패턴은 신뢰하지 않음 — 향남/마곡과 동일 형식 사용)
+            const inYongin = isYonginIp(rowIp);
+            unmatchedRows.push({
+                excelRow: row,
+                lookupValue,
+                classification: inYongin ? 'likely-yongin' : 'excluded',
+                reason: inYongin
+                    ? `IP ${rowIp} 가 용인 대역 (10.5.x.x / 192.168.x.x)`
+                    : rowIp
+                        ? `IP ${rowIp} 가 용인 대역 밖`
+                        : 'IP 정보 없음',
+            });
             continue;
         }
 
+        // ----------------- 매칭된 행 -----------------
         matchedCount++;
         const updates = source.rowToUpdates(row);
         const fieldChanges = updates.map(u => {
@@ -317,12 +374,24 @@ export const buildImportPlan = (
             changeCount++;
         }
 
+        // 의심 매칭 판단: 엑셀 IP가 있는데 용인 대역 밖이면 의심
+        // (다른 사람 PC가 우연히/실수로 같은 사용자명을 쓰는 케이스 대비)
+        let suspicious = false;
+        let suspicionReason = '';
+        if (rowIp && !isYonginIp(rowIp)) {
+            suspicious = true;
+            suspicionReason = `엑셀 IP ${rowIp} 가 용인 대역 (10.5.x.x / 192.168.x.x) 밖 — 동일 사용자명이지만 다른 기기일 가능성`;
+            suspiciousCount++;
+        }
+
         plans.push({
             excelRow: row,
             lookupValue,
             matchedAsset: asset,
             fieldChanges,
             historyLabel: source.historyLabel(row),
+            suspicious,
+            suspicionReason,
         });
     }
 
@@ -332,6 +401,7 @@ export const buildImportPlan = (
         matchedCount,
         unmatchedCount: unmatchedRows.length,
         changeCount,
+        suspiciousCount,
         plans,
         unmatchedRows,
     };
