@@ -42,6 +42,8 @@ import { APP_VERSION } from './src/lib/version';
 import {
   QuickTaskDef,
   HISTORY_FIELD_NAME,
+  SYNOLOGY_FIELD_NAME,
+  SYNOLOGY_OPTIONS,
   computeClearUpdates,
   appendHistoryLine,
 } from './src/lib/quickTasks';
@@ -114,16 +116,35 @@ export default function App() {
       let schemaProps = await notionClient.getDatabaseSchema();
 
       // 처리이력 필드가 없으면 자동 생성 (Rich Text)
+      let schemaChanged = false;
       if (!schemaProps[HISTORY_FIELD_NAME]) {
         try {
           const created = await notionClient.createDatabaseProperty(HISTORY_FIELD_NAME, 'rich_text');
           if (created) {
             console.log(`[App] '${HISTORY_FIELD_NAME}' 필드를 Notion DB에 자동 생성했습니다.`);
-            schemaProps = await notionClient.getDatabaseSchema();
+            schemaChanged = true;
           }
         } catch (e) {
           console.warn(`[App] '${HISTORY_FIELD_NAME}' 필드 자동 생성 실패 (수동으로 만들어 주세요):`, e);
         }
+      }
+
+      // 시놀로지 상태 필드가 없으면 자동 생성 (multi_select). 옵션은 사용자가
+      // Notion에서 직접 추가하거나, 처음 입력하는 값으로 자동 등록됨.
+      if (!schemaProps[SYNOLOGY_FIELD_NAME]) {
+        try {
+          const created = await notionClient.createDatabaseProperty(SYNOLOGY_FIELD_NAME, 'multi_select');
+          if (created) {
+            console.log(`[App] '${SYNOLOGY_FIELD_NAME}' 필드(multi_select)를 Notion DB에 자동 생성했습니다. 옵션: ${SYNOLOGY_OPTIONS.join(', ')}`);
+            schemaChanged = true;
+          }
+        } catch (e) {
+          console.warn(`[App] '${SYNOLOGY_FIELD_NAME}' 필드 자동 생성 실패:`, e);
+        }
+      }
+
+      if (schemaChanged) {
+        schemaProps = await notionClient.getDatabaseSchema();
       }
 
       setSchemaProperties(schemaProps);

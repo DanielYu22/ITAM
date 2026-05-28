@@ -375,32 +375,49 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     </TouchableOpacity>
                 </View>
 
-                {/* Quick Task — 정기/현장 업무 바로 시작 */}
-                {onQuickTask && (
-                    <View style={styles.section}>
-                        <View style={styles.sectionHeader}>
-                            <Text style={styles.sectionTitle}>정기 / 현장 업무</Text>
-                        </View>
-                        <View style={styles.quickTaskGrid}>
-                            {QUICK_TASKS.map(task => (
-                                <TouchableOpacity
-                                    key={task.id}
-                                    style={[styles.quickTaskCard, { backgroundColor: task.bgColor }]}
-                                    onPress={() => onQuickTask(task)}
-                                    activeOpacity={0.7}
-                                >
-                                    <Text style={styles.quickTaskEmoji}>{task.emoji}</Text>
-                                    <Text style={[styles.quickTaskName, { color: task.color }]} numberOfLines={2}>
-                                        {task.name}
-                                    </Text>
-                                    <Text style={styles.quickTaskDesc} numberOfLines={2}>
-                                        {task.description}
-                                    </Text>
-                                </TouchableOpacity>
+                {/* Quick Task — 정기/현장 업무 바로 시작 (그룹별 묶음) */}
+                {onQuickTask && (() => {
+                    // 그룹 순서 보존 + 그룹별 묶음
+                    const groupOrder: string[] = [];
+                    const byGroup: Record<string, typeof QUICK_TASKS> = {};
+                    QUICK_TASKS.forEach(t => {
+                        if (!byGroup[t.group]) {
+                            byGroup[t.group] = [];
+                            groupOrder.push(t.group);
+                        }
+                        byGroup[t.group].push(t);
+                    });
+                    return (
+                        <View style={styles.section}>
+                            <View style={styles.sectionHeader}>
+                                <Text style={styles.sectionTitle}>정기 / 현장 업무</Text>
+                            </View>
+                            {groupOrder.map(group => (
+                                <View key={group} style={styles.quickTaskGroupBlock}>
+                                    <Text style={styles.quickTaskGroupLabel}>{group}</Text>
+                                    <View style={styles.quickTaskGrid}>
+                                        {byGroup[group].map(task => (
+                                            <TouchableOpacity
+                                                key={task.id}
+                                                style={[styles.quickTaskCard, { backgroundColor: task.bgColor }]}
+                                                onPress={() => onQuickTask(task)}
+                                                activeOpacity={0.7}
+                                            >
+                                                <Text style={styles.quickTaskEmoji}>{task.emoji}</Text>
+                                                <Text style={[styles.quickTaskName, { color: task.color }]} numberOfLines={2}>
+                                                    {task.name}
+                                                </Text>
+                                                <Text style={styles.quickTaskDesc} numberOfLines={2}>
+                                                    {task.description}
+                                                </Text>
+                                            </TouchableOpacity>
+                                        ))}
+                                    </View>
+                                </View>
                             ))}
                         </View>
-                    </View>
-                )}
+                    );
+                })()}
 
                 {/* 현재 필터 요약 */}
                 <View style={styles.section}>
@@ -731,6 +748,17 @@ const styles = StyleSheet.create({
         flexDirection: 'row',
         gap: 12,
         marginBottom: 20,
+    },
+    quickTaskGroupBlock: {
+        marginBottom: 14,
+    },
+    quickTaskGroupLabel: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#475569',
+        letterSpacing: 0.5,
+        marginBottom: 8,
+        textTransform: 'uppercase',
     },
     quickTaskGrid: {
         flexDirection: 'row',
