@@ -13,6 +13,7 @@ import * as XLSX from 'xlsx';
 import { Asset } from './notion';
 
 export type SourceId =
+    | 'notion-export-reimport'
     | 'ahnlab-push-result'
     | 'ahnlab-user-info'
     | 'ahnlab-unregistered';
@@ -115,7 +116,50 @@ export const isYonginIp = (ip: string): boolean => {
 // 소스 정의들
 // ============================================================================
 
+// 임포트에서 제외할 필드 (Notion export 재임포트 등에서)
+const RESERVED_FIELDS = new Set<string>([
+    'Name',          // 매칭키라 업데이트 대상 아님
+    '처리이력',       // 누적 이력은 임포트로 덮어쓰지 않음
+]);
+
 export const SOURCES: SourceDef[] = [
+    // ------------------------------------------------------------------------
+    // 0. Notion DB Export 재임포트
+    //    사용자가 export 받은 CSV/XLSX를 수정해서 다시 적용.
+    //    헤더에 Name 컬럼이 있고 알약 소스의 표식(사용자명)이 없으면 매칭.
+    //    Name과 처리이력 제외한 모든 컬럼을 그대로 매핑.
+    //    안전을 위해 빈 값은 스킵 — 의도치 않은 값 삭제 방지.
+    // ------------------------------------------------------------------------
+    {
+        id: 'notion-export-reimport',
+        name: 'Notion DB Export 재임포트',
+        emoji: '📥',
+        description: '익스포트한 CSV/XLSX를 수정 후 다시 적용',
+        sampleFilename: 'export_YYYY-MM-DD.csv',
+        detect: (headers) => {
+            const set = new Set(headers.map(h => String(h).trim()));
+            // Notion export 의 특징: 'Name' 컬럼 존재 + 알약 엑셀 시그니처(사용자명) 부재
+            return set.has('Name') && !set.has('사용자명');
+        },
+        matchExcelColumn: 'Name',
+        rowToUpdates: (row) => {
+            const updates: FieldUpdate[] = [];
+            for (const [key, raw] of Object.entries(row)) {
+                if (!key) continue;
+                if (RESERVED_FIELDS.has(key)) continue;
+                if (raw === undefined || raw === null) continue;
+                const value = String(raw).trim();
+                // 빈 값은 스킵 (안전): export 된 CSV의 비어있는 셀로 인해
+                // 기존 값이 사라지는 사고를 막기 위함. 명시적으로 비우려면 카드에서 편집.
+                if (!value) continue;
+                updates.push({ field: key, value });
+            }
+            return updates;
+        },
+        unmatchedBehavior: 'skip',
+        historyLabel: () => 'Notion DB export 재임포트',
+    },
+
     // ------------------------------------------------------------------------
     // 1. 알약 ASM 푸시 결과
     //    헤더: 사용자명, 부서명, 성공, 작업 그룹, IP, ...

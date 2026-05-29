@@ -65,6 +65,10 @@ interface HomeScreenProps {
     onRefresh?: () => void;
     /** 사용자 오버라이드가 합성된 최종 사이트 정의 (카운트/표시용) */
     effectiveSites?: SiteDef[];
+    /** 'all' = 전체장비, 'filtered' = 작업대상 대시보드 오픈 */
+    onOpenDashboard?: (mode: 'all' | 'filtered') => void;
+    /** 작업 대상 자산 개수 (필터 적용된 결과). filteredCount 와 다를 수 있음 */
+    workTargetCount?: number;
 }
 
 export interface FilterTemplate {
@@ -96,6 +100,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     onEditSiteRules,
     onRefresh,
     effectiveSites,
+    onOpenDashboard,
+    workTargetCount,
 }) => {
     const sites = effectiveSites || SITES_DEFAULTS;
     const siteCounts = useMemo(
@@ -374,16 +380,28 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     )}
                 </View>
 
-                {/* 통계 카드 */}
+                {/* 통계 카드 — 클릭하면 해당 자산셋의 대시보드가 열림 */}
                 <View style={styles.statsContainer}>
-                    <View style={styles.statCard}>
+                    <TouchableOpacity
+                        style={styles.statCard}
+                        onPress={() => onOpenDashboard?.('all')}
+                        disabled={!onOpenDashboard}
+                        activeOpacity={0.7}
+                    >
                         <Text style={styles.statNumber}>{assets.length}</Text>
                         <Text style={styles.statLabel}>전체 장비</Text>
-                    </View>
-                    <View style={[styles.statCard, styles.statCardHighlight]}>
-                        <Text style={[styles.statNumber, styles.statNumberHighlight]}>{filteredCount}</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.statCard, styles.statCardHighlight]}
+                        onPress={() => onOpenDashboard?.('filtered')}
+                        disabled={!onOpenDashboard}
+                        activeOpacity={0.85}
+                    >
+                        <Text style={[styles.statNumber, styles.statNumberHighlight]}>
+                            {workTargetCount ?? filteredCount}
+                        </Text>
                         <Text style={[styles.statLabel, styles.statLabelHighlight]}>작업 대상</Text>
-                    </View>
+                    </TouchableOpacity>
                 </View>
 
                 {/* 달성률 */}

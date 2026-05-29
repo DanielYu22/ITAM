@@ -90,6 +90,8 @@ export default function App() {
   const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false);
   const [showSourceImportModal, setShowSourceImportModal] = useState(false);
   const [showDashboardModal, setShowDashboardModal] = useState(false);
+  // 대시보드 모드: 'all' = 전체장비, 'filtered' = 작업대상(워크 필터 적용)
+  const [dashboardMode, setDashboardMode] = useState<'all' | 'filtered'>('all');
   const [showSiteRulesModal, setShowSiteRulesModal] = useState(false);
   // 사이트(장소) 컨텍스트
   const [currentSite, setCurrentSite] = useState<SiteId>('all');
@@ -934,7 +936,15 @@ export default function App() {
               onExport={() => setShowExportModal(true)}
               onBulkUpdate={() => setShowBulkUpdateModal(true)}
               onSourceImport={() => setShowSourceImportModal(true)}
-              onDashboard={() => setShowDashboardModal(true)}
+              onDashboard={() => {
+                setDashboardMode('all');
+                setShowDashboardModal(true);
+              }}
+              onOpenDashboard={(mode) => {
+                setDashboardMode(mode);
+                setShowDashboardModal(true);
+              }}
+              workTargetCount={workFilteredAssets.length}
               onEditSiteRules={() => setShowSiteRulesModal(true)}
               onRefresh={onRefresh}
               effectiveSites={effectiveSites}
@@ -1191,10 +1201,11 @@ export default function App() {
         <DashboardModal
           visible={showDashboardModal}
           onClose={() => setShowDashboardModal(false)}
-          assets={siteFilteredAssets}
+          assets={dashboardMode === 'filtered' ? workFilteredAssets : siteFilteredAssets}
           schema={schema}
           schemaProperties={schemaProperties}
           onUpdate={handleUpdateAsset}
+          title={dashboardMode === 'filtered' ? '작업 대상' : '전체 장비'}
         />
 
         <SiteRulesModal

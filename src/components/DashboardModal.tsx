@@ -35,6 +35,8 @@ interface Props {
     schema: string[];
     schemaProperties: Record<string, NotionProperty>;
     onUpdate: (id: string, field: string, value: string, type: string) => Promise<void>;
+    /** 헤더에 표시할 타이틀. 안 주면 '데이터 뷰' */
+    title?: string;
 }
 
 type FilterOp = 'contains' | 'not_contains' | 'equals' | 'not_equals' | 'is_empty' | 'is_not_empty';
@@ -85,6 +87,7 @@ export const DashboardModal: React.FC<Props> = ({
     schema,
     schemaProperties,
     onUpdate,
+    title,
 }) => {
     // 표시 컬럼
     const [visibleColumns, setVisibleColumns] = useState<string[]>(() =>
@@ -309,7 +312,7 @@ export const DashboardModal: React.FC<Props> = ({
                 {/* 헤더 */}
                 <View style={styles.header}>
                     <View style={styles.headerLeft}>
-                        <Text style={styles.title}>데이터 뷰</Text>
+                        <Text style={styles.title}>{title || '데이터 뷰'}</Text>
                         <Text style={styles.subtitle}>
                             {displayedAssets.length} / {assets.length}
                         </Text>

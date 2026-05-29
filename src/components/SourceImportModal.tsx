@@ -161,10 +161,16 @@ export const SourceImportModal: React.FC<Props> = ({
                     return onUpdate(p.matchedAsset!.id, c.field, c.newValue, type);
                 }));
 
-                // 2) 처리이력 한 줄 prepend (옵션)
+                // 2) 처리이력 한 줄 prepend (옵션) — 변경된 필드와 새 값을 함께 기록
                 if (appendHistory && updates.length > 0) {
                     const existing = String((p.matchedAsset.values as any)[HISTORY_FIELD_NAME] ?? '');
-                    const nextHistory = appendHistoryLine(existing, p.historyLabel);
+                    // "필드명=새값" 형식으로 요약. 빈 값은 ∅ 로 표기.
+                    const trim = (s: string) => (s.length > 30 ? s.slice(0, 30) + '…' : s);
+                    const changeSummary = updates
+                        .map(c => `${c.field}=${trim(c.newValue || '∅')}`)
+                        .join(', ');
+                    const detailedLabel = `${p.historyLabel} · ${changeSummary}`;
+                    const nextHistory = appendHistoryLine(existing, detailedLabel);
                     await onUpdate(p.matchedAsset.id, HISTORY_FIELD_NAME, nextHistory, 'rich_text');
                 }
             } catch (e) {
