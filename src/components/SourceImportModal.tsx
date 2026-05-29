@@ -205,6 +205,27 @@ export const SourceImportModal: React.FC<Props> = ({
         };
     }, [plan]);
 
+    // 컬럼별 변경 요약 — 사용자가 의도한 변경 패턴인지 한눈에 확인용
+    // 의심 매칭 제외(기본) 같은 적용 옵션을 반영해서 실제 적용될 변경만 카운트.
+    const fieldSummary = useMemo(() => {
+        if (!plan) return [];
+        const map = new Map<string, { total: number; deletes: number; sets: number }>();
+        for (const p of plan.plans) {
+            if (!applySuspicious && p.suspicious) continue;
+            for (const c of p.fieldChanges) {
+                if (!c.changed) continue;
+                const entry = map.get(c.field) || { total: 0, deletes: 0, sets: 0 };
+                entry.total++;
+                if (c.newValue === '') entry.deletes++;
+                else entry.sets++;
+                map.set(c.field, entry);
+            }
+        }
+        return Array.from(map.entries())
+            .map(([field, counts]) => ({ field, ...counts }))
+            .sort((a, b) => b.total - a.total);
+    }, [plan, applySuspicious]);
+
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
             <View style={styles.container}>
@@ -362,6 +383,37 @@ export const SourceImportModal: React.FC<Props> = ({
                                         기본 제외됐어요. 동일 사용자명을 가진 다른 기기일 가능성이 있어요.
                                     </Text>
                                 </View>
+                            )}
+
+                            {/* 컬럼별 변경 요약 — 의도한 변경 패턴인지 한눈에 검증 */}
+                            {plan && fieldSummary.length > 0 && (
+                                <>
+                                    <Text style={styles.sectionLabel}>
+                                        변경 요약 (컬럼별 · 적용 대상 기준)
+                                    </Text>
+                                    <View style={styles.summaryBox}>
+                                        {fieldSummary.map(s => (
+                                            <View key={s.field} style={styles.summaryRow}>
+                                                <Text style={styles.summaryField} numberOfLines={1}>
+                                                    {s.field}
+                                                </Text>
+                                                <Text style={styles.summaryCount}>
+                                                    <Text style={styles.summaryTotal}>{s.total}건 변경</Text>
+                                                    {s.deletes > 0 && (
+                                                        <Text style={styles.summaryDeletes}>
+                                                            {' · '}{s.deletes}건 삭제
+                                                        </Text>
+                                                    )}
+                                                    {s.sets > 0 && (
+                                                        <Text style={styles.summarySets}>
+                                                            {' · '}{s.sets}건 입력
+                                                        </Text>
+                                                    )}
+                                                </Text>
+                                            </View>
+                                        ))}
+                                    </View>
+                                </>
                             )}
 
                             {/* 변경 미리보기 표 */}
@@ -671,6 +723,31 @@ const styles = StyleSheet.create({
         marginBottom: 12,
     },
     suspicionNoticeText: { flex: 1, fontSize: 11, color: '#991b1b', lineHeight: 16 },
+    summaryBox: {
+        backgroundColor: '#ffffff',
+        borderRadius: 10,
+        padding: 10,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+    },
+    summaryRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 4,
+        gap: 12,
+    },
+    summaryField: {
+        fontSize: 12,
+        color: '#1f2937',
+        fontWeight: '600',
+        minWidth: 140,
+        maxWidth: 220,
+    },
+    summaryCount: { fontSize: 12, color: '#475569', flex: 1 },
+    summaryTotal: { fontWeight: '700', color: '#1f2937' },
+    summaryDeletes: { color: '#b91c1c', fontWeight: '600' },
+    summarySets: { color: '#15803d', fontWeight: '600' },
     planRowSuspicious: {
         borderWidth: 1,
         borderColor: '#fecaca',
