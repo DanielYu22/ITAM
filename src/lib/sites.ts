@@ -53,9 +53,8 @@ export const SITES: SiteDef[] = [
         emoji: '🏢',
         color: '#9333ea',
         bgColor: '#f3e8ff',
-        ipPrefixes: [
-            // TODO: 마곡 IP 대역. 사용자 확정되면 추가.
-        ],
+        ipPrefixes: ['10.9.'],
+        description: '마곡 본사',
     },
     {
         id: 'hyangnam',
@@ -63,9 +62,8 @@ export const SITES: SiteDef[] = [
         emoji: '🌳',
         color: '#16a34a',
         bgColor: '#dcfce7',
-        ipPrefixes: [
-            // TODO: 향남 IP 대역. 사용자 확정되면 추가.
-        ],
+        ipPrefixes: ['10.4.'],
+        description: '향남 공장',
     },
     {
         id: 'unclassified',
