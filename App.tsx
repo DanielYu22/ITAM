@@ -40,7 +40,14 @@ import { ExportPreviewModal } from './src/components/ExportPreviewModal';
 import { BulkUpdateModal } from './src/components/BulkUpdateModal';
 import { SourceImportModal } from './src/components/SourceImportModal';
 import { DashboardModal } from './src/components/DashboardModal';
-import { SiteId, filterAssetsBySite, buildSiteFilterConfig } from './src/lib/sites';
+import { SiteRulesModal } from './src/components/SiteRulesModal';
+import {
+  SiteId,
+  SitesOverrides,
+  applySitesOverrides,
+  filterAssetsBySite,
+  buildSiteFilterConfig,
+} from './src/lib/sites';
 import { APP_VERSION } from './src/lib/version';
 import {
   QuickTaskDef,
@@ -83,13 +90,21 @@ export default function App() {
   const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false);
   const [showSourceImportModal, setShowSourceImportModal] = useState(false);
   const [showDashboardModal, setShowDashboardModal] = useState(false);
+  const [showSiteRulesModal, setShowSiteRulesModal] = useState(false);
   // 사이트(장소) 컨텍스트
   const [currentSite, setCurrentSite] = useState<SiteId>('all');
+  // 사용자 편집 사이트 정의 (Notion 설정에 영구 저장)
+  const [sitesOverrides, setSitesOverrides] = useState<SitesOverrides | null>(null);
+  // 오버라이드 합성된 최종 사이트 정의
+  const effectiveSites = useMemo(
+    () => applySitesOverrides(sitesOverrides),
+    [sitesOverrides]
+  );
 
   // 사이트 필터링된 자산 (앱 전반의 컨텍스트)
   const siteFilteredAssets = useMemo(() => {
-    return filterAssetsBySite(assets, currentSite);
-  }, [assets, currentSite]);
+    return filterAssetsBySite(assets, currentSite, effectiveSites);
+  }, [assets, currentSite, effectiveSites]);
   const [skipLocationSelection, setSkipLocationSelection] = useState(false);
   const [appSettings, setAppSettings] = useState<Record<string, any>>({});
   const [bulkLookupColumn, setBulkLookupColumn] = useState<string>('Name');
@@ -250,6 +265,11 @@ export default function App() {
 
       if (ensuredSettings) {
         setAppSettings(ensuredSettings);
+        // 사이트 오버라이드 복원 (저장된 게 있으면)
+        const savedSites = (ensuredSettings as any)?.sites;
+        if (savedSites && typeof savedSites === 'object') {
+          setSitesOverrides(savedSites as SitesOverrides);
+        }
         const lastLookup = ensuredSettings?.bulkUpdate?.lastLookupColumn;
         const schemaCols = result.schema;
         if (typeof lastLookup === 'string' && schemaCols.includes(lastLookup)) {
@@ -379,7 +399,7 @@ export default function App() {
   // Filter assets based on search query AND current site
   useEffect(() => {
     // 사이트 컨텍스트 먼저 적용
-    const siteScoped = filterAssetsBySite(assets, currentSite);
+    const siteScoped = filterAssetsBySite(assets, currentSite, effectiveSites);
     if (!searchQuery.trim()) {
       const filtered = siteScoped.filter(asset => evaluateFilter(asset, filter));
       setFilteredAssets(filtered);
@@ -393,7 +413,7 @@ export default function App() {
       });
       setFilteredAssets(filtered);
     }
-  }, [assets, searchQuery, filter, currentSite]);
+  }, [assets, searchQuery, filter, currentSite, effectiveSites]);
 
   // Field work filter 적용
   const workFilteredAssets = useMemo(() => {
@@ -604,12 +624,33 @@ export default function App() {
   // 사용자가 '필터 설정' 모달을 열면 그 사이트로 분류되는 조건이 그대로 보여요.
   const handleChangeSite = useCallback((siteId: SiteId) => {
     setCurrentSite(siteId);
-    const preset = buildSiteFilterConfig(siteId);
+    const preset = buildSiteFilterConfig(siteId, effectiveSites);
     setFieldWorkConfig(preset);
     setLocationSelectedAssets([]);
     setLocationFilters({});
     setActiveQuickTask(null);
-  }, []);
+  }, [effectiveSites]);
+
+  // 사이트 룰 저장: Notion 설정 페이지에 영구 저장.
+  // 저장 직후 effectiveSites 가 재계산되어 분류/카운트가 즉시 반영됩니다.
+  const handleSaveSitesOverrides = useCallback(async (next: SitesOverrides) => {
+    setSitesOverrides(next);
+    const merged = { ...(appSettings || {}), sites: next };
+    setAppSettings(merged);
+    if (notionClient) {
+      try {
+        await notionClient.saveSettings(merged);
+      } catch (e) {
+        console.error('[App] 사이트 룰 저장 실패:', e);
+        throw e;
+      }
+    }
+    // 현재 활성 사이트가 편집된 경우, 필터 프리셋도 새 정의로 다시 적용
+    if (currentSite !== 'all' && currentSite !== 'unclassified') {
+      const nextEffective = applySitesOverrides(next);
+      setFieldWorkConfig(buildSiteFilterConfig(currentSite, nextEffective));
+    }
+  }, [appSettings, notionClient, currentSite]);
 
   // Quick Task 핸들러: 정기/현장 업무를 즉시 시작.
   // 현재 사이트의 프리셋이 있으면 사이트 그룹을 첫 번째 그룹으로 prepend해서
@@ -617,7 +658,7 @@ export default function App() {
   const handleQuickTask = useCallback((task: QuickTaskDef) => {
     const now = new Date();
     const taskConfig = task.buildConfig({ now });
-    const sitePreset = buildSiteFilterConfig(currentSite);
+    const sitePreset = buildSiteFilterConfig(currentSite, effectiveSites);
 
     const config: typeof taskConfig = sitePreset
       ? {
@@ -639,7 +680,7 @@ export default function App() {
     if (config.locationHierarchy && config.locationHierarchy.length > 0) {
       setSkipLocationSelection(true);
     }
-  }, [currentSite]);
+  }, [currentSite, effectiveSites]);
 
   // Quick Task 완료 처리: 사전값 클리어 + 처리이력 append
   // 자산 카드의 "완료" 체크박스에서 호출됨
@@ -894,7 +935,9 @@ export default function App() {
               onBulkUpdate={() => setShowBulkUpdateModal(true)}
               onSourceImport={() => setShowSourceImportModal(true)}
               onDashboard={() => setShowDashboardModal(true)}
+              onEditSiteRules={() => setShowSiteRulesModal(true)}
               onRefresh={onRefresh}
+              effectiveSites={effectiveSites}
             />
 
             {/* 버전 표시 (배포 확인용) */}
@@ -1152,6 +1195,13 @@ export default function App() {
           schema={schema}
           schemaProperties={schemaProperties}
           onUpdate={handleUpdateAsset}
+        />
+
+        <SiteRulesModal
+          visible={showSiteRulesModal}
+          onClose={() => setShowSiteRulesModal(false)}
+          overrides={sitesOverrides}
+          onSave={handleSaveSitesOverrides}
         />
 
         {/* 글로벌 플로팅 버튼 - 홈, 새로고침 */}

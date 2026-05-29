@@ -35,7 +35,7 @@ import { FilterConfig } from './FieldWorkFilter';
 import { Asset, NotionProperty } from '../lib/notion';
 import { APP_VERSION } from '../lib/version';
 import { QUICK_TASKS, QuickTaskDef } from '../lib/quickTasks';
-import { SITES, SiteId, getSiteCounts } from '../lib/sites';
+import { SITES_DEFAULTS, SiteDef, SiteId, getSiteCounts } from '../lib/sites';
 
 interface HomeScreenProps {
     // 전체 자산 (사이트 토글 카운트 계산용)
@@ -61,7 +61,10 @@ interface HomeScreenProps {
     onBulkUpdate?: () => void;
     onSourceImport?: () => void;
     onDashboard?: () => void;
+    onEditSiteRules?: () => void;
     onRefresh?: () => void;
+    /** 사용자 오버라이드가 합성된 최종 사이트 정의 (카운트/표시용) */
+    effectiveSites?: SiteDef[];
 }
 
 export interface FilterTemplate {
@@ -90,9 +93,15 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     onBulkUpdate,
     onSourceImport,
     onDashboard,
+    onEditSiteRules,
     onRefresh,
+    effectiveSites,
 }) => {
-    const siteCounts = useMemo(() => getSiteCounts(allAssets), [allAssets]);
+    const sites = effectiveSites || SITES_DEFAULTS;
+    const siteCounts = useMemo(
+        () => getSiteCounts(allAssets, sites),
+        [allAssets, sites]
+    );
     const [searchQuery, setSearchQuery] = useState('');
     const [showSearchResults, setShowSearchResults] = useState(false);
 
@@ -297,7 +306,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     style={styles.siteToggleScroll}
                     contentContainerStyle={styles.siteToggleRow}
                 >
-                    {SITES.map(site => {
+                    {sites.map(site => {
                         const active = currentSite === site.id;
                         const count = siteCounts[site.id];
                         return (
@@ -433,6 +442,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             <LayoutGrid size={28} color="#be185d" />
                         </View>
                         <Text style={styles.toolLabel}>대시보드</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.toolCard}
+                        onPress={onEditSiteRules}
+                        disabled={!onEditSiteRules}
+                    >
+                        <View style={[styles.toolIconContainer, { backgroundColor: '#e0e7ff' }]}>
+                            <Settings2 size={28} color="#4338ca" />
+                        </View>
+                        <Text style={styles.toolLabel}>사이트 설정</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity

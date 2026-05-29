@@ -7,13 +7,12 @@
  *   3. QA)네트워크 IP 가 ipPrefixes 중 하나로 시작 → 해당 사이트
  *   4. 위 어디에도 안 맞음 → unclassified
  *
- * 건물 단서를 IP보다 우선시함. 자산이 이동했을 때 IP 정보가 옛 사이트
- * 기준으로 남아 있을 수 있으나, 건물은 현재 위치가 정확함.
+ * 건물 단서가 IP보다 우선. 자산이 이동했을 때 IP 정보가 옛 사이트
+ * 기준으로 남아있을 수 있으나, 건물은 현재 위치가 정확함.
  *
- * 사용자 정의:
- *   - 용인 건물: 바이오센터, 경영관, 창조관, 혁신관
- *   - 향남: 건물명에 "향남" 포함되거나 시작
- *   - 마곡: 일단 IP만. 추후 실험실/건물명 알려주시면 추가
+ * 사이트 정의는 SITES_DEFAULTS 에 기본값이 박혀있고, 사용자가 앱에서
+ * 편집한 오버라이드는 Notion 설정 페이지에 저장됩니다. effectiveSites()
+ * 가 둘을 합쳐 최종 정의를 만듭니다.
  */
 
 import { Asset } from './notion';
@@ -37,11 +36,20 @@ export interface SiteDef {
     description?: string;
 }
 
+/** 사용자가 앱에서 편집하는 부분만 추출한 가벼운 타입 (Notion에 저장) */
+export interface SiteOverride {
+    ipPrefixes?: string[];
+    buildingExactMatches?: string[];
+    buildingContains?: string[];
+}
+
+export type SitesOverrides = Partial<Record<SiteId, SiteOverride>>;
+
 // ---------------------------------------------------------------------------
-// 사이트 정의 — 여기만 손보면 됨
+// 기본 사이트 정의 (코드에 박힌 default)
 // ---------------------------------------------------------------------------
 
-export const SITES: SiteDef[] = [
+export const SITES_DEFAULTS: SiteDef[] = [
     {
         id: 'all',
         name: '전체',
@@ -53,7 +61,6 @@ export const SITES: SiteDef[] = [
     {
         id: 'yongin',
         name: '용인',
-        // 이모지 없음
         color: '#0369a1',
         bgColor: '#e0f2fe',
         ipPrefixes: ['10.5.', '192.168.'],
@@ -66,7 +73,6 @@ export const SITES: SiteDef[] = [
         color: '#9333ea',
         bgColor: '#f3e8ff',
         ipPrefixes: ['10.9.'],
-        // 마곡 건물/실험실명은 차후 추가
         description: '마곡 본사',
     },
     {
@@ -88,58 +94,74 @@ export const SITES: SiteDef[] = [
     },
 ];
 
+// 후방 호환 (기존 import 깨지지 않게)
+export const SITES = SITES_DEFAULTS;
+
 // ---------------------------------------------------------------------------
-// 자산 → 사이트 분류
+// 오버라이드 적용
 // ---------------------------------------------------------------------------
 
-/**
- * 자산이 어느 사이트에 속하는지 판단.
- * 건물 단서가 IP보다 우선.
- */
-export const getAssetSite = (asset: Asset): SiteId => {
+/** SITES_DEFAULTS 에 사용자 오버라이드를 합성해 최종 사이트 정의를 반환 */
+export const applySitesOverrides = (overrides: SitesOverrides | null | undefined): SiteDef[] => {
+    if (!overrides) return SITES_DEFAULTS;
+    return SITES_DEFAULTS.map(site => {
+        const ov = overrides[site.id];
+        if (!ov) return site;
+        return {
+            ...site,
+            ipPrefixes: ov.ipPrefixes ?? site.ipPrefixes,
+            buildingExactMatches: ov.buildingExactMatches ?? site.buildingExactMatches,
+            buildingContains: ov.buildingContains ?? site.buildingContains,
+        };
+    });
+};
+
+/** 사이트의 사용자 편집 가능한 부분만 SiteOverride로 추출 */
+export const siteToOverride = (site: SiteDef): SiteOverride => ({
+    ipPrefixes: site.ipPrefixes,
+    buildingExactMatches: site.buildingExactMatches,
+    buildingContains: site.buildingContains,
+});
+
+// ---------------------------------------------------------------------------
+// 자산 → 사이트 분류 (effectiveSites 받음)
+// ---------------------------------------------------------------------------
+
+export const getAssetSite = (asset: Asset, effective?: SiteDef[]): SiteId => {
+    const sites = effective || SITES_DEFAULTS;
     const values = asset.values as any;
     const ip = String(values['QA)네트워크 IP'] ?? '').trim();
     const building = String(values['L)건물'] ?? '').trim();
 
-    for (const site of SITES) {
+    for (const site of sites) {
         if (site.id === 'all' || site.id === 'unclassified') continue;
-
-        // 1순위: 건물 정확 일치
-        if (building && site.buildingExactMatches?.some(b => building === b)) {
-            return site.id;
-        }
-        // 2순위: 건물 키워드 포함
-        if (building && site.buildingContains?.some(k => building.includes(k))) {
-            return site.id;
-        }
-        // 3순위: IP prefix
-        if (ip && site.ipPrefixes.some(p => ip.startsWith(p))) {
-            return site.id;
-        }
+        if (building && site.buildingExactMatches?.some(b => building === b)) return site.id;
+        if (building && site.buildingContains?.some(k => building.includes(k))) return site.id;
+        if (ip && site.ipPrefixes.some(p => ip.startsWith(p))) return site.id;
     }
     return 'unclassified';
 };
 
-/** 자산 배열을 사이트로 필터링. 'all'이면 그대로 반환. */
-export const filterAssetsBySite = (assets: Asset[], siteId: SiteId): Asset[] => {
+export const filterAssetsBySite = (
+    assets: Asset[],
+    siteId: SiteId,
+    effective?: SiteDef[],
+): Asset[] => {
     if (siteId === 'all') return assets;
-    return assets.filter(a => getAssetSite(a) === siteId);
+    return assets.filter(a => getAssetSite(a, effective) === siteId);
 };
 
 // ---------------------------------------------------------------------------
-// 사이트 정의 → 재사용 가능한 FilterConfig 프리셋
+// 사이트 정의 → FilterConfig 프리셋
 // ---------------------------------------------------------------------------
-//
-// 사이트 칩을 누를 때, 그 사이트의 분류 룰(건물 / IP)을 FilterConfig로 변환
-// 해서 fieldWorkConfig 로 적용합니다. 그러면 사용자가 "필터 설정" 모달을
-// 열었을 때 "왜 이 기기들이 마곡으로 분류되는지" 한 눈에 볼 수 있어요.
-//
-// 'all' / 'unclassified' 는 null 반환 — 명시적 FilterConfig 표현이 어렵거나
-// 의미가 없어서 빈 필터로 둡니다.
 
-export const buildSiteFilterConfig = (siteId: SiteId): FilterConfig | null => {
+export const buildSiteFilterConfig = (
+    siteId: SiteId,
+    effective?: SiteDef[],
+): FilterConfig | null => {
     if (siteId === 'all' || siteId === 'unclassified') return null;
-    const site = SITES.find(s => s.id === siteId);
+    const sites = effective || SITES_DEFAULTS;
+    const site = sites.find(s => s.id === siteId);
     if (!site) return null;
 
     const stamp = Date.now();
@@ -147,15 +169,12 @@ export const buildSiteFilterConfig = (siteId: SiteId): FilterConfig | null => {
     const mkId = () => `site-${siteId}-${stamp}-${idx++}`;
     const conds: TargetCondition[] = [];
 
-    // 건물 정확 일치 (예: 바이오센터, 경영관, 창조관, 혁신관)
     for (const b of site.buildingExactMatches || []) {
         conds.push({ id: mkId(), column: 'L)건물', type: 'equals', values: [b] });
     }
-    // 건물 키워드 포함 (예: '향남')
     for (const k of site.buildingContains || []) {
         conds.push({ id: mkId(), column: 'L)건물', type: 'text_contains', values: [k] });
     }
-    // IP prefix (text_contains 로 표현 — '10.5.', '192.168.' 등)
     for (const ip of site.ipPrefixes) {
         conds.push({ id: mkId(), column: 'QA)네트워크 IP', type: 'text_contains', values: [ip] });
     }
@@ -178,8 +197,10 @@ export const buildSiteFilterConfig = (siteId: SiteId): FilterConfig | null => {
     };
 };
 
-/** 각 사이트별 자산 수 계산 */
-export const getSiteCounts = (assets: Asset[]): Record<SiteId, number> => {
+export const getSiteCounts = (
+    assets: Asset[],
+    effective?: SiteDef[],
+): Record<SiteId, number> => {
     const counts: Record<SiteId, number> = {
         all: assets.length,
         yongin: 0,
@@ -188,7 +209,7 @@ export const getSiteCounts = (assets: Asset[]): Record<SiteId, number> => {
         unclassified: 0,
     };
     for (const a of assets) {
-        const site = getAssetSite(a);
+        const site = getAssetSite(a, effective);
         counts[site]++;
     }
     return counts;
