@@ -77,9 +77,14 @@ export const normalizePushResult = (raw: string): string => {
     return s;
 };
 
-/** "ON" / "OFF" → 알약 온라인구분.
- *  ASM에 등록된 기기 중 OFF는 "오프라인", ON은 "온라인"으로 매핑.
- *  폐쇄망(스탠드얼론)은 ASM에 안 잡히므로 별개 처리.
+/**
+ * @deprecated
+ * ASM 콘솔의 ON/OFF 는 일시 상태(전원/네트워크). 콘솔에 잡힌 기기는 정의상
+ * 모두 "온라인" 분류이며, `M)알약 온라인구분`의 "오프라인" 값은 폐쇄망
+ * 스탠드얼론 알약(콘솔에 안 잡힘)을 의미하므로 OFF==오프라인 매핑은
+ * 데이터 모델을 망가뜨립니다. 직접 매핑하지 마세요.
+ *
+ * 함수는 외부 호환을 위해 남겨두지만 새 코드에서 호출하지 않습니다.
  */
 export const normalizeOnlineStatus = (raw: string): string => {
     if (!raw) return '';
@@ -197,12 +202,21 @@ export const SOURCES: SourceDef[] = [
     // 2. 알약 유저정보 (등록된 사용자 전체)
     //    헤더: 사용자명, 부서명, 사원번호, 컴퓨터이름, 작업그룹, IP,
     //         Connected IP, 접속 상태, 정책명, OS, 통합에이전트버전, 알약버전, ...
+    //
+    //    매핑 의도적 누락:
+    //    - 접속 상태(ON/OFF) → ❌ M)알약 온라인구분 으로 매핑하지 않음.
+    //      ASM 콘솔에 잡힌 기기는 정의상 온라인 분류이고, OFF 는 일시
+    //      상태(전원 꺼짐 / 랜선 빠짐 등)입니다. 반면 M)알약 온라인구분의
+    //      "오프라인" 값은 폐쇄망 스탠드얼론 알약(콘솔에 아예 안 잡힘)을
+    //      가리키는 의미라 두 개념이 충돌합니다.
+    //    - PC Hostname / OS / IP 만 동기화. 이건 ASM 콘솔이 신뢰할 수
+    //      있는 소스라 그대로 반영해도 안전.
     // ------------------------------------------------------------------------
     {
         id: 'ahnlab-user-info',
         name: '알약 유저정보',
         emoji: '👥',
-        description: '온라인 상태/호스트네임/OS/IP 일괄 동기화',
+        description: '호스트네임/OS/IP 일괄 동기화 (온라인구분은 변경하지 않음)',
         sampleFilename: '용인알약유저정보출력.xlsx',
         detect: (headers) => {
             const set = new Set(headers.map(h => String(h).trim()));
@@ -211,12 +225,7 @@ export const SOURCES: SourceDef[] = [
         matchExcelColumn: '사용자명',
         rowToUpdates: (row) => {
             const updates: FieldUpdate[] = [];
-            const online = normalizeOnlineStatus(row['접속 상태'] ?? '');
-            // ASM에 잡힌 폐쇄망(=콘솔에 등록되었지만 폐쇄망 정책) 기기는 그대로 폐쇄망으로 둬야 하므로
-            // 기존 값이 "폐쇄망" 또는 "알약대상아님"이면 덮어쓰지 않도록 후처리는 임포트 모달에서 처리.
-            if (online) {
-                updates.push({ field: 'M)알약 온라인구분', value: online });
-            }
+            // 접속 상태는 의도적으로 무시 — 위 주석 참고
             const hostname = String(row['컴퓨터 이름'] ?? '').trim();
             if (hostname) {
                 updates.push({ field: 'PC Hostname', value: hostname });
