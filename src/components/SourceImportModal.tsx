@@ -60,6 +60,9 @@ export const SourceImportModal: React.FC<Props> = ({
     const [appendHistory, setAppendHistory] = useState(true);
     // 의심 매칭(엑셀 IP가 용인 대역 밖)을 적용에 포함할지 — 기본 false(안전)
     const [applySuspicious, setApplySuspicious] = useState(false);
+    // 빈 셀로 값 삭제 — Notion export 재임포트 같이 모든 컬럼을 매핑하는 소스에서
+    // 사용자가 의도적으로 값을 비울 때만 ON. 기본 false(안전).
+    const [allowBlankClear, setAllowBlankClear] = useState(false);
     // 미등록 후보 중 ❌ 제외(용인 대역 밖)도 보여줄지
     const [showExcludedCandidates, setShowExcludedCandidates] = useState(false);
 
@@ -109,7 +112,7 @@ export const SourceImportModal: React.FC<Props> = ({
                 setSelectedSource(detected);
 
                 if (detected) {
-                    const newPlan = buildImportPlan(parsedFile, detected, assets);
+                    const newPlan = buildImportPlan(parsedFile, detected, assets, { allowBlankClear });
                     setPlan(newPlan);
                     setStep('preview');
                 } else {
@@ -130,10 +133,17 @@ export const SourceImportModal: React.FC<Props> = ({
     const handleSelectSource = useCallback((src: SourceDef) => {
         setSelectedSource(src);
         if (parsed) {
-            const newPlan = buildImportPlan(parsed, src, assets);
+            const newPlan = buildImportPlan(parsed, src, assets, { allowBlankClear });
             setPlan(newPlan);
         }
-    }, [parsed, assets]);
+    }, [parsed, assets, allowBlankClear]);
+
+    // 빈 셀 토글이 바뀌면 plan 재계산
+    React.useEffect(() => {
+        if (parsed && selectedSource) {
+            setPlan(buildImportPlan(parsed, selectedSource, assets, { allowBlankClear }));
+        }
+    }, [allowBlankClear, parsed, selectedSource, assets]);
 
     const handleApply = useCallback(async () => {
         if (!plan) return;
@@ -323,7 +333,27 @@ export const SourceImportModal: React.FC<Props> = ({
                                         <Text style={[styles.optionText, { color: '#b91c1c' }]}>의심 매칭도 적용 (위험)</Text>
                                     </TouchableOpacity>
                                 )}
+                                {selectedSource?.id === 'notion-export-reimport' && (
+                                    <TouchableOpacity
+                                        style={styles.option}
+                                        onPress={() => setAllowBlankClear(v => !v)}
+                                    >
+                                        <View style={[styles.checkbox, allowBlankClear && styles.checkboxOnDanger]}>
+                                            {allowBlankClear && <Check size={14} color="#ffffff" />}
+                                        </View>
+                                        <Text style={[styles.optionText, { color: '#b91c1c' }]}>빈 셀로 값 삭제 (위험)</Text>
+                                    </TouchableOpacity>
+                                )}
                             </View>
+                            {selectedSource?.id === 'notion-export-reimport' && !allowBlankClear && (
+                                <View style={styles.suspicionNotice}>
+                                    <AlertTriangle size={14} color="#b45309" />
+                                    <Text style={[styles.suspicionNoticeText, { color: '#92400e' }]}>
+                                        안전 모드: 비어있는 셀로 인한 변경은 제외돼요. 의도적으로 값을 비우려면
+                                        '빈 셀로 값 삭제'를 켜세요.
+                                    </Text>
+                                </View>
+                            )}
                             {plan && plan.suspiciousCount > 0 && !applySuspicious && (
                                 <View style={styles.suspicionNotice}>
                                     <AlertTriangle size={14} color="#b91c1c" />
@@ -364,20 +394,27 @@ export const SourceImportModal: React.FC<Props> = ({
                                                         {p.suspicionReason}
                                                     </Text>
                                                 )}
-                                                {p.fieldChanges.map((c, i) => (
-                                                    <View key={i} style={styles.changeRow}>
-                                                        <Text style={styles.changeField}>{c.field}</Text>
-                                                        {c.changed ? (
-                                                            <Text style={styles.changeArrow}>
-                                                                <Text style={styles.changeOld}>{c.oldValue || '∅'}</Text>
-                                                                {' → '}
-                                                                <Text style={styles.changeNew}>{c.newValue || '∅'}</Text>
-                                                            </Text>
-                                                        ) : (
-                                                            <Text style={styles.changeSame}>= {c.oldValue || '∅'}</Text>
-                                                        )}
-                                                    </View>
-                                                ))}
+                                                {p.fieldChanges.map((c, i) => {
+                                                    const isDelete = c.changed && c.newValue === '';
+                                                    return (
+                                                        <View key={i} style={styles.changeRow}>
+                                                            <Text style={styles.changeField}>{c.field}</Text>
+                                                            {c.changed ? (
+                                                                <Text style={styles.changeArrow}>
+                                                                    <Text style={styles.changeOld}>{c.oldValue || '∅'}</Text>
+                                                                    {' → '}
+                                                                    {isDelete ? (
+                                                                        <Text style={{ color: '#b91c1c', fontWeight: '700' }}>삭제</Text>
+                                                                    ) : (
+                                                                        <Text style={styles.changeNew}>{c.newValue}</Text>
+                                                                    )}
+                                                                </Text>
+                                                            ) : (
+                                                                <Text style={styles.changeSame}>= {c.oldValue || '∅'}</Text>
+                                                            )}
+                                                        </View>
+                                                    );
+                                                })}
                                             </View>
                                         ))}
                                 </>

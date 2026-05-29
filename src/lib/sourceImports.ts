@@ -143,15 +143,14 @@ export const SOURCES: SourceDef[] = [
         },
         matchExcelColumn: 'Name',
         rowToUpdates: (row) => {
+            // 빈 값도 포함해서 반환. 빈 값을 실제 적용할지는 buildImportPlan 의
+            // allowBlankClear 옵션 + 모달의 '빈 셀로 값 삭제' 토글로 제어.
             const updates: FieldUpdate[] = [];
             for (const [key, raw] of Object.entries(row)) {
                 if (!key) continue;
                 if (RESERVED_FIELDS.has(key)) continue;
                 if (raw === undefined || raw === null) continue;
                 const value = String(raw).trim();
-                // 빈 값은 스킵 (안전): export 된 CSV의 비어있는 셀로 인해
-                // 기존 값이 사라지는 사고를 막기 위함. 명시적으로 비우려면 카드에서 편집.
-                if (!value) continue;
                 updates.push({ field: key, value });
             }
             return updates;
@@ -363,10 +362,20 @@ export interface ImportPlan {
  * 멀티셀렉트 필드의 경우 단순 덮어쓰기가 아닌 머지로 처리할 수 있도록
  * mergeMultiSelect 옵션을 받을 수 있지만 현재 매핑 룰은 모두 select/rich_text라 단순 덮어쓰기.
  */
+export interface BuildPlanOptions {
+    /**
+     * true 면 빈 값 업데이트도 plan 에 포함 (값 삭제). 기본 false 면 빈 값 변경은
+     * plan 에서 제외되어 변화 없음으로 카운트. Notion export 재임포트처럼
+     * 모든 컬럼을 통째로 매핑하는 소스에서 빈 셀로 값 삭제를 허용할 때 사용.
+     */
+    allowBlankClear?: boolean;
+}
+
 export const buildImportPlan = (
     parsed: ParsedFile,
     source: SourceDef,
-    assets: Asset[]
+    assets: Asset[],
+    options: BuildPlanOptions = {},
 ): ImportPlan => {
     const byName = new Map<string, Asset>();
     assets.forEach(a => {
@@ -407,7 +416,11 @@ export const buildImportPlan = (
 
         // ----------------- 매칭된 행 -----------------
         matchedCount++;
-        const updates = source.rowToUpdates(row);
+        let updates = source.rowToUpdates(row);
+        // 옵션 OFF (기본): 빈 값으로 가는 update 는 제외 (안전 모드)
+        if (!options.allowBlankClear) {
+            updates = updates.filter(u => u.value !== '');
+        }
         const fieldChanges = updates.map(u => {
             const oldValue = String((asset.values as any)[u.field] ?? '');
             const changed = oldValue !== u.value;
