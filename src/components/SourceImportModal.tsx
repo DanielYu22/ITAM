@@ -1,14 +1,17 @@
 /**
- * SourceImportModal — 알약 엑셀 3종을 직접 업로드해서 Notion DB 일괄 업데이트
+ * SourceImportModal — 여러 소스 파일을 한 번에 업로드해서 Notion DB 일괄 업데이트
  *
  * 흐름:
- * 1. 파일 선택 (드래그 또는 클릭)
- * 2. 자동 파싱 + 소스 감지 (사용자가 수동 변경 가능)
- * 3. 변경 미리보기 표 (매칭 / 추가 후보 / 변화 없음)
- * 4. 적용 (진행률 표시) → 처리이력 자동 누적
+ * 1. 파일 여러 개 선택 (xlsx/csv)
+ * 2. 각 파일 자동 파싱 + 소스 감지 (헤더 기반, 파일명과 무관)
+ * 3. 파일별 탭 + 변경 미리보기 (활성 파일)
+ * 4. 활성 파일 단독 적용 OR 모든 파일 일괄 적용
+ *
+ * 자동 감지는 파일명이 아닌 헤더 시그니처에 의존하기 때문에 다음 달
+ * 같은 패턴(예: 용인알약업데이트YYYYMMDD.xlsx)도 그대로 동작합니다.
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
     View,
     Text,
@@ -43,6 +46,14 @@ interface Props {
 
 type Step = 'select' | 'preview' | 'running' | 'done';
 
+interface ImportFile {
+    id: string;
+    name: string;
+    parsed: ParsedFile;
+    source: SourceDef | null;
+    plan: ImportPlan | null;
+}
+
 export const SourceImportModal: React.FC<Props> = ({
     visible,
     onClose,
@@ -51,28 +62,29 @@ export const SourceImportModal: React.FC<Props> = ({
     onUpdate,
 }) => {
     const [step, setStep] = useState<Step>('select');
-    const [fileName, setFileName] = useState('');
-    const [parsed, setParsed] = useState<ParsedFile | null>(null);
-    const [selectedSource, setSelectedSource] = useState<SourceDef | null>(null);
-    const [plan, setPlan] = useState<ImportPlan | null>(null);
+    const [files, setFiles] = useState<ImportFile[]>([]);
+    const [activeId, setActiveId] = useState<string | null>(null);
     const [progress, setProgress] = useState({ current: 0, total: 0 });
+    const [progressLabel, setProgressLabel] = useState('');
+    const [doneSummary, setDoneSummary] = useState<{ files: number; rows: number } | null>(null);
+    // 옵션 (모든 파일에 일관 적용)
     const [skipUnchanged, setSkipUnchanged] = useState(true);
     const [appendHistory, setAppendHistory] = useState(true);
-    // 의심 매칭(엑셀 IP가 용인 대역 밖)을 적용에 포함할지 — 기본 false(안전)
     const [applySuspicious, setApplySuspicious] = useState(false);
-    // 빈 셀로 값 삭제 — Notion export 재임포트 같이 모든 컬럼을 매핑하는 소스에서
-    // 사용자가 의도적으로 값을 비울 때만 ON. 기본 false(안전).
     const [allowBlankClear, setAllowBlankClear] = useState(false);
-    // 미등록 후보 중 ❌ 제외(용인 대역 밖)도 보여줄지
     const [showExcludedCandidates, setShowExcludedCandidates] = useState(false);
+
+    const activeFile = files.find(f => f.id === activeId) || null;
+    const plan = activeFile?.plan || null;
+    const selectedSource = activeFile?.source || null;
 
     const resetAll = useCallback(() => {
         setStep('select');
-        setFileName('');
-        setParsed(null);
-        setSelectedSource(null);
-        setPlan(null);
+        setFiles([]);
+        setActiveId(null);
         setProgress({ current: 0, total: 0 });
+        setProgressLabel('');
+        setDoneSummary(null);
     }, []);
 
     const handleClose = useCallback(() => {
@@ -80,104 +92,142 @@ export const SourceImportModal: React.FC<Props> = ({
         onClose();
     }, [resetAll, onClose]);
 
-    // 파일 선택 핸들러 (웹 환경 기준 — 모바일 RN은 expo-document-picker 필요하지만 본 앱은 주로 웹)
+    // 파일 추가 (다중 지원)
     const handleFilePick = useCallback(async () => {
         if (Platform.OS !== 'web') {
             Alert.alert('미지원', '현재 파일 업로드는 웹 브라우저에서만 동작합니다.');
             return;
         }
-        // input[type=file] 동적 생성
         const input = (globalThis as any).document?.createElement('input');
         if (!input) return;
         input.type = 'file';
         input.accept = '.xlsx,.xls,.csv';
+        input.multiple = true;
         input.onchange = async (e: any) => {
-            const file = e.target.files?.[0];
-            if (!file) return;
-            setFileName(file.name);
+            const fileList = e.target.files as FileList | null;
+            if (!fileList || fileList.length === 0) return;
 
-            try {
-                let parsedFile: ParsedFile;
-                if (file.name.toLowerCase().endsWith('.csv')) {
-                    const text = await file.text();
-                    parsedFile = parseCsvText(text);
-                } else {
-                    const buffer = await file.arrayBuffer();
-                    parsedFile = parseXlsxArrayBuffer(buffer);
+            const newItems: ImportFile[] = [];
+            for (let i = 0; i < fileList.length; i++) {
+                const file = fileList[i];
+                try {
+                    let parsedFile: ParsedFile;
+                    if (file.name.toLowerCase().endsWith('.csv')) {
+                        parsedFile = parseCsvText(await file.text());
+                    } else {
+                        parsedFile = parseXlsxArrayBuffer(await file.arrayBuffer());
+                    }
+                    const detected = detectSource(parsedFile);
+                    const newPlan = detected
+                        ? buildImportPlan(parsedFile, detected, assets, { allowBlankClear })
+                        : null;
+                    newItems.push({
+                        id: `f-${Date.now()}-${i}-${Math.random().toString(36).slice(2, 6)}`,
+                        name: file.name,
+                        parsed: parsedFile,
+                        source: detected,
+                        plan: newPlan,
+                    });
+                } catch (error: any) {
+                    console.error('[SourceImport] 파일 파싱 실패:', file.name, error);
+                    Alert.alert('오류', `'${file.name}' 파싱 실패\n${error?.message ?? ''}`);
                 }
-                setParsed(parsedFile);
+            }
 
-                // 자동 감지
-                const detected = detectSource(parsedFile);
-                setSelectedSource(detected);
+            if (newItems.length === 0) return;
 
-                if (detected) {
-                    const newPlan = buildImportPlan(parsedFile, detected, assets, { allowBlankClear });
-                    setPlan(newPlan);
-                    setStep('preview');
-                } else {
-                    Alert.alert(
-                        '소스 자동 감지 실패',
-                        '헤더로 소스를 판별하지 못했습니다. 아래에서 직접 선택해 주세요.'
-                    );
-                    setStep('preview');
-                }
-            } catch (error: any) {
-                console.error('[SourceImport] 파일 파싱 실패:', error);
-                Alert.alert('오류', `파일을 읽지 못했습니다.\n${error?.message ?? ''}`);
+            setFiles(prev => [...prev, ...newItems]);
+            // 활성 파일이 없으면 첫 번째 신규 파일로
+            setActiveId(prev => prev || newItems[0].id);
+            setStep('preview');
+
+            // 자동 감지 실패한 파일이 있으면 알림
+            const undetected = newItems.filter(f => !f.source);
+            if (undetected.length > 0) {
+                Alert.alert(
+                    '일부 파일 자동 감지 실패',
+                    `${undetected.map(f => f.name).join(', ')}\n해당 파일 탭에서 소스를 수동으로 선택해 주세요.`
+                );
             }
         };
         input.click();
-    }, [assets]);
+    }, [assets, allowBlankClear]);
 
+    // 활성 파일의 소스 수동 변경
     const handleSelectSource = useCallback((src: SourceDef) => {
-        setSelectedSource(src);
-        if (parsed) {
-            const newPlan = buildImportPlan(parsed, src, assets, { allowBlankClear });
-            setPlan(newPlan);
-        }
-    }, [parsed, assets, allowBlankClear]);
+        if (!activeFile) return;
+        const newPlan = buildImportPlan(activeFile.parsed, src, assets, { allowBlankClear });
+        setFiles(prev => prev.map(f =>
+            f.id === activeFile.id ? { ...f, source: src, plan: newPlan } : f
+        ));
+    }, [activeFile, assets, allowBlankClear]);
 
-    // 빈 셀 토글이 바뀌면 plan 재계산
-    React.useEffect(() => {
-        if (parsed && selectedSource) {
-            setPlan(buildImportPlan(parsed, selectedSource, assets, { allowBlankClear }));
-        }
-    }, [allowBlankClear, parsed, selectedSource, assets]);
+    // 옵션이 바뀌면 모든 파일의 plan 재계산
+    useEffect(() => {
+        setFiles(prev => prev.map(f => {
+            if (!f.source) return f;
+            return { ...f, plan: buildImportPlan(f.parsed, f.source, assets, { allowBlankClear }) };
+        }));
+    }, [allowBlankClear, assets]);
 
-    const handleApply = useCallback(async () => {
-        if (!plan) return;
-        let toApply = plan.plans;
-        if (skipUnchanged) {
-            toApply = toApply.filter(p => p.fieldChanges.some(c => c.changed));
-        }
-        // 의심 매칭은 토글 켤 때만 적용
-        if (!applySuspicious) {
-            toApply = toApply.filter(p => !p.suspicious);
+    // 파일 제거
+    const removeFile = useCallback((id: string) => {
+        setFiles(prev => {
+            const next = prev.filter(f => f.id !== id);
+            if (activeId === id) {
+                setActiveId(next[0]?.id || null);
+            }
+            return next;
+        });
+    }, [activeId]);
+
+    // 적용 — target 'active' 또는 'all'
+    const handleApply = useCallback(async (target: 'active' | 'all') => {
+        const targetFiles = target === 'active'
+            ? (activeFile ? [activeFile] : [])
+            : files.filter(f => f.plan);
+        if (targetFiles.length === 0) return;
+
+        // 적용할 행 수집 (파일별로 옵션 일관 적용)
+        type RowEntry = {
+            file: ImportFile;
+            row: NonNullable<typeof activeFile>['plan'] extends infer T
+                ? T extends { plans: Array<infer R> } ? R : never
+                : never;
+        };
+        const allRows: RowEntry[] = [];
+        for (const f of targetFiles) {
+            if (!f.plan) continue;
+            let rows = f.plan.plans;
+            if (skipUnchanged) rows = rows.filter(p => p.fieldChanges.some(c => c.changed));
+            if (!applySuspicious) rows = rows.filter(p => !p.suspicious);
+            for (const r of rows) {
+                allRows.push({ file: f, row: r as any });
+            }
         }
 
         setStep('running');
-        setProgress({ current: 0, total: toApply.length });
+        setProgress({ current: 0, total: allRows.length });
+        setProgressLabel('');
 
-        for (let i = 0; i < toApply.length; i++) {
-            const p = toApply[i];
+        for (let i = 0; i < allRows.length; i++) {
+            const { file, row } = allRows[i];
+            const p = row as any;
             if (!p.matchedAsset) continue;
+            setProgressLabel(`${file.name} · ${p.lookupValue}`);
 
             try {
-                // 1) 각 필드 업데이트 (변경된 것만)
-                const updates = p.fieldChanges.filter(c => c.changed);
-                await Promise.all(updates.map(c => {
+                const updates = p.fieldChanges.filter((c: any) => c.changed);
+                await Promise.all(updates.map((c: any) => {
                     const type = schemaProperties[c.field]?.type || 'rich_text';
-                    return onUpdate(p.matchedAsset!.id, c.field, c.newValue, type);
+                    return onUpdate(p.matchedAsset.id, c.field, c.newValue, type);
                 }));
 
-                // 2) 처리이력 한 줄 prepend (옵션) — 변경된 필드와 새 값을 함께 기록
                 if (appendHistory && updates.length > 0) {
                     const existing = String((p.matchedAsset.values as any)[HISTORY_FIELD_NAME] ?? '');
-                    // "필드명=새값" 형식으로 요약. 빈 값은 ∅ 로 표기.
                     const trim = (s: string) => (s.length > 30 ? s.slice(0, 30) + '…' : s);
                     const changeSummary = updates
-                        .map(c => `${c.field}=${trim(c.newValue || '∅')}`)
+                        .map((c: any) => `${c.field}=${trim(c.newValue || '∅')}`)
                         .join(', ');
                     const detailedLabel = `${p.historyLabel} · ${changeSummary}`;
                     const nextHistory = appendHistoryLine(existing, detailedLabel);
@@ -187,13 +237,14 @@ export const SourceImportModal: React.FC<Props> = ({
                 console.error(`[SourceImport] ${p.lookupValue} 업데이트 실패:`, e);
             }
 
-            setProgress({ current: i + 1, total: toApply.length });
+            setProgress({ current: i + 1, total: allRows.length });
         }
 
+        setDoneSummary({ files: targetFiles.length, rows: allRows.length });
         setStep('done');
-    }, [plan, skipUnchanged, applySuspicious, appendHistory, schemaProperties, onUpdate]);
+    }, [activeFile, files, skipUnchanged, applySuspicious, appendHistory, schemaProperties, onUpdate]);
 
-    // 미리보기 통계
+    // 활성 파일의 plan 통계
     const stats = useMemo(() => {
         if (!plan) return null;
         return {
@@ -205,8 +256,7 @@ export const SourceImportModal: React.FC<Props> = ({
         };
     }, [plan]);
 
-    // 컬럼별 변경 요약 — 사용자가 의도한 변경 패턴인지 한눈에 확인용
-    // 의심 매칭 제외(기본) 같은 적용 옵션을 반영해서 실제 적용될 변경만 카운트.
+    // 활성 파일의 컬럼별 변경 요약
     const fieldSummary = useMemo(() => {
         if (!plan) return [];
         const map = new Map<string, { total: number; deletes: number; sets: number }>();
@@ -226,6 +276,27 @@ export const SourceImportModal: React.FC<Props> = ({
             .sort((a, b) => b.total - a.total);
     }, [plan, applySuspicious]);
 
+    // 전체 적용 카운트 계산 (옵션 반영)
+    const totalApplyCount = useMemo(() => {
+        let cnt = 0;
+        for (const f of files) {
+            if (!f.plan) continue;
+            let rows = f.plan.plans;
+            if (skipUnchanged) rows = rows.filter(p => p.fieldChanges.some(c => c.changed));
+            if (!applySuspicious) rows = rows.filter(p => !p.suspicious);
+            cnt += rows.length;
+        }
+        return cnt;
+    }, [files, skipUnchanged, applySuspicious]);
+
+    const activeApplyCount = useMemo(() => {
+        if (!plan) return 0;
+        let rows = plan.plans;
+        if (skipUnchanged) rows = rows.filter(p => p.fieldChanges.some(c => c.changed));
+        if (!applySuspicious) rows = rows.filter(p => !p.suspicious);
+        return rows.length;
+    }, [plan, skipUnchanged, applySuspicious]);
+
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
             <View style={styles.container}>
@@ -241,13 +312,14 @@ export const SourceImportModal: React.FC<Props> = ({
                     {step === 'select' && (
                         <>
                             <Text style={styles.intro}>
-                                알약 콘솔에서 받은 엑셀을 그대로 업로드하면, 사전 정의된 매핑으로
-                                Notion DB를 자동 업데이트해요. 사용자명(예: DEQ-358)이 매칭키예요.
+                                여러 소스 엑셀을 한 번에 업로드하면 헤더로 자동 분류해서 일괄 적용합니다.
+                                파일명이 달라도(예: 날짜 변경) 같은 양식이면 인식돼요.
+                                매칭키는 각 소스의 사용자명 / Name 컬럼입니다.
                             </Text>
 
                             <TouchableOpacity style={styles.dropZone} onPress={handleFilePick} activeOpacity={0.7}>
                                 <Upload size={36} color="#6366f1" />
-                                <Text style={styles.dropZoneTitle}>파일 선택 또는 드래그</Text>
+                                <Text style={styles.dropZoneTitle}>파일 선택 (여러 개 가능)</Text>
                                 <Text style={styles.dropZoneSub}>.xlsx, .xls, .csv 지원</Text>
                             </TouchableOpacity>
 
@@ -266,277 +338,306 @@ export const SourceImportModal: React.FC<Props> = ({
                     )}
 
                     {/* STEP: PREVIEW */}
-                    {step === 'preview' && parsed && (
+                    {step === 'preview' && (
                         <>
-                            <View style={styles.fileBar}>
-                                <FileText size={16} color="#475569" />
-                                <Text style={styles.fileName} numberOfLines={1}>{fileName}</Text>
-                                <TouchableOpacity onPress={resetAll}>
-                                    <Text style={styles.changeFileBtn}>다른 파일</Text>
-                                </TouchableOpacity>
-                            </View>
-
-                            {/* 소스 선택 (자동감지된 거 강조) */}
-                            <Text style={styles.sectionLabel}>소스 종류</Text>
-                            <View style={styles.sourceChips}>
-                                {SOURCES.map(src => {
-                                    const active = selectedSource?.id === src.id;
-                                    return (
-                                        <TouchableOpacity
-                                            key={src.id}
-                                            style={[styles.chip, active && styles.chipActive]}
-                                            onPress={() => handleSelectSource(src)}
-                                        >
-                                            <Text style={[styles.chipText, active && styles.chipTextActive]}>
-                                                {src.emoji} {src.name}
-                                            </Text>
-                                        </TouchableOpacity>
-                                    );
-                                })}
-                            </View>
-
-                            {/* 통계 카드 */}
-                            {stats && plan && (
-                                <View style={styles.statsRow}>
-                                    <View style={styles.statBox}>
-                                        <Text style={styles.statNum}>{stats.total}</Text>
-                                        <Text style={styles.statLabel}>총 행</Text>
-                                    </View>
-                                    <View style={[styles.statBox, { backgroundColor: '#dcfce7' }]}>
-                                        <Text style={[styles.statNum, { color: '#15803d' }]}>{stats.changes}</Text>
-                                        <Text style={styles.statLabel}>변경됨</Text>
-                                    </View>
-                                    {plan.suspiciousCount > 0 && (
-                                        <View style={[styles.statBox, { backgroundColor: '#fee2e2' }]}>
-                                            <Text style={[styles.statNum, { color: '#b91c1c' }]}>{plan.suspiciousCount}</Text>
-                                            <Text style={styles.statLabel}>의심 매칭</Text>
-                                        </View>
-                                    )}
-                                    <View style={[styles.statBox, { backgroundColor: '#f1f5f9' }]}>
-                                        <Text style={[styles.statNum, { color: '#475569' }]}>{stats.unchanged}</Text>
-                                        <Text style={styles.statLabel}>변화 없음</Text>
-                                    </View>
-                                    <View style={[styles.statBox, { backgroundColor: '#fef3c7' }]}>
-                                        <Text style={[styles.statNum, { color: '#b45309' }]}>{stats.unmatched}</Text>
-                                        <Text style={styles.statLabel}>매칭 안됨</Text>
-                                    </View>
-                                </View>
-                            )}
-
-                            {/* 옵션 */}
-                            <View style={styles.optionsRow}>
-                                <TouchableOpacity
-                                    style={styles.option}
-                                    onPress={() => setSkipUnchanged(v => !v)}
-                                >
-                                    <View style={[styles.checkbox, skipUnchanged && styles.checkboxOn]}>
-                                        {skipUnchanged && <Check size={14} color="#ffffff" />}
-                                    </View>
-                                    <Text style={styles.optionText}>변화 없는 행 건너뛰기</Text>
-                                </TouchableOpacity>
-                                <TouchableOpacity
-                                    style={styles.option}
-                                    onPress={() => setAppendHistory(v => !v)}
-                                >
-                                    <View style={[styles.checkbox, appendHistory && styles.checkboxOn]}>
-                                        {appendHistory && <Check size={14} color="#ffffff" />}
-                                    </View>
-                                    <Text style={styles.optionText}>처리이력에 한 줄 추가</Text>
-                                </TouchableOpacity>
-                                {plan && plan.suspiciousCount > 0 && (
-                                    <TouchableOpacity
-                                        style={styles.option}
-                                        onPress={() => setApplySuspicious(v => !v)}
-                                    >
-                                        <View style={[styles.checkbox, applySuspicious && styles.checkboxOnDanger]}>
-                                            {applySuspicious && <Check size={14} color="#ffffff" />}
-                                        </View>
-                                        <Text style={[styles.optionText, { color: '#b91c1c' }]}>의심 매칭도 적용 (위험)</Text>
-                                    </TouchableOpacity>
-                                )}
-                                {selectedSource?.id === 'notion-export-reimport' && (
-                                    <TouchableOpacity
-                                        style={styles.option}
-                                        onPress={() => setAllowBlankClear(v => !v)}
-                                    >
-                                        <View style={[styles.checkbox, allowBlankClear && styles.checkboxOnDanger]}>
-                                            {allowBlankClear && <Check size={14} color="#ffffff" />}
-                                        </View>
-                                        <Text style={[styles.optionText, { color: '#b91c1c' }]}>빈 셀로 값 삭제 (위험)</Text>
-                                    </TouchableOpacity>
-                                )}
-                            </View>
-                            {selectedSource?.id === 'notion-export-reimport' && !allowBlankClear && (
-                                <View style={styles.suspicionNotice}>
-                                    <AlertTriangle size={14} color="#b45309" />
-                                    <Text style={[styles.suspicionNoticeText, { color: '#92400e' }]}>
-                                        안전 모드: 비어있는 셀로 인한 변경은 제외돼요. 의도적으로 값을 비우려면
-                                        '빈 셀로 값 삭제'를 켜세요.
-                                    </Text>
-                                </View>
-                            )}
-                            {plan && plan.suspiciousCount > 0 && !applySuspicious && (
-                                <View style={styles.suspicionNotice}>
-                                    <AlertTriangle size={14} color="#b91c1c" />
-                                    <Text style={styles.suspicionNoticeText}>
-                                        엑셀의 IP가 용인 대역(10.5.x.x / 192.168.x.x) 밖인 매칭 {plan.suspiciousCount}건은
-                                        기본 제외됐어요. 동일 사용자명을 가진 다른 기기일 가능성이 있어요.
-                                    </Text>
-                                </View>
-                            )}
-
-                            {/* 컬럼별 변경 요약 — 의도한 변경 패턴인지 한눈에 검증 */}
-                            {plan && fieldSummary.length > 0 && (
-                                <>
-                                    <Text style={styles.sectionLabel}>
-                                        변경 요약 (컬럼별 · 적용 대상 기준)
-                                    </Text>
-                                    <View style={styles.summaryBox}>
-                                        {fieldSummary.map(s => (
-                                            <View key={s.field} style={styles.summaryRow}>
-                                                <Text style={styles.summaryField} numberOfLines={1}>
-                                                    {s.field}
-                                                </Text>
-                                                <Text style={styles.summaryCount}>
-                                                    <Text style={styles.summaryTotal}>{s.total}건 변경</Text>
-                                                    {s.deletes > 0 && (
-                                                        <Text style={styles.summaryDeletes}>
-                                                            {' · '}{s.deletes}건 삭제
-                                                        </Text>
-                                                    )}
-                                                    {s.sets > 0 && (
-                                                        <Text style={styles.summarySets}>
-                                                            {' · '}{s.sets}건 입력
-                                                        </Text>
-                                                    )}
-                                                </Text>
-                                            </View>
-                                        ))}
-                                    </View>
-                                </>
-                            )}
-
-                            {/* 변경 미리보기 표 */}
-                            {plan && (
-                                <>
-                                    <Text style={styles.sectionLabel}>
-                                        변경 미리보기 (상위 50건)
-                                    </Text>
-                                    {plan.plans
-                                        .filter(p => !skipUnchanged || p.fieldChanges.some(c => c.changed))
-                                        .slice(0, 50)
-                                        .map((p, idx) => (
-                                            <View
-                                                key={`${p.lookupValue}-${idx}`}
-                                                style={[styles.planRow, p.suspicious && styles.planRowSuspicious]}
+                            {/* 파일 탭 */}
+                            <Text style={styles.sectionLabel}>업로드한 파일 ({files.length})</Text>
+                            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.fileTabsScroll}>
+                                <View style={styles.fileTabs}>
+                                    {files.map(f => {
+                                        const active = f.id === activeId;
+                                        const src = f.source;
+                                        let countText = '';
+                                        if (f.plan) {
+                                            let rows = f.plan.plans;
+                                            if (skipUnchanged) rows = rows.filter(p => p.fieldChanges.some(c => c.changed));
+                                            if (!applySuspicious) rows = rows.filter(p => !p.suspicious);
+                                            countText = `${rows.length}건`;
+                                        } else {
+                                            countText = '미감지';
+                                        }
+                                        return (
+                                            <TouchableOpacity
+                                                key={f.id}
+                                                style={[styles.fileTab, active && styles.fileTabActive]}
+                                                onPress={() => setActiveId(f.id)}
                                             >
-                                                <View style={styles.planRowHeader}>
-                                                    {p.suspicious && (
-                                                        <AlertTriangle size={14} color="#b91c1c" />
-                                                    )}
-                                                    <Text style={[styles.planName, p.suspicious && { color: '#b91c1c' }]}>
-                                                        {p.lookupValue}
+                                                <Text style={styles.fileTabIcon}>{src?.emoji || '⚠️'}</Text>
+                                                <View style={{ flex: 1 }}>
+                                                    <Text style={[styles.fileTabName, active && styles.fileTabNameActive]} numberOfLines={1}>
+                                                        {f.name}
                                                     </Text>
-                                                    {p.suspicious && !applySuspicious && (
-                                                        <Text style={styles.planSkipBadge}>적용 제외됨</Text>
-                                                    )}
+                                                    <Text style={[styles.fileTabSub, active && styles.fileTabSubActive]} numberOfLines={1}>
+                                                        {src?.name || '미감지'} · {countText}
+                                                    </Text>
                                                 </View>
-                                                {p.suspicious && (
-                                                    <Text style={styles.planSuspicionReason}>
-                                                        {p.suspicionReason}
-                                                    </Text>
-                                                )}
-                                                {p.fieldChanges.map((c, i) => {
-                                                    const isDelete = c.changed && c.newValue === '';
-                                                    return (
-                                                        <View key={i} style={styles.changeRow}>
-                                                            <Text style={styles.changeField}>{c.field}</Text>
-                                                            {c.changed ? (
-                                                                <Text style={styles.changeArrow}>
-                                                                    <Text style={styles.changeOld}>{c.oldValue || '∅'}</Text>
-                                                                    {' → '}
-                                                                    {isDelete ? (
-                                                                        <Text style={{ color: '#b91c1c', fontWeight: '700' }}>삭제</Text>
-                                                                    ) : (
-                                                                        <Text style={styles.changeNew}>{c.newValue}</Text>
-                                                                    )}
-                                                                </Text>
-                                                            ) : (
-                                                                <Text style={styles.changeSame}>= {c.oldValue || '∅'}</Text>
-                                                            )}
-                                                        </View>
-                                                    );
-                                                })}
-                                            </View>
-                                        ))}
-                                </>
-                            )}
-
-                            {/* 매칭 안 된 행 (분류: ✅용인추정 / ❌제외) */}
-                            {plan && plan.unmatchedRows.length > 0 && (() => {
-                                const likely = plan.unmatchedRows.filter(u => u.classification === 'likely-yongin');
-                                const excluded = plan.unmatchedRows.filter(u => u.classification === 'excluded');
-                                return (
-                                    <>
-                                        <Text style={styles.sectionLabel}>
-                                            매칭 안 된 행 (전체 {plan.unmatchedRows.length}건)
-                                        </Text>
-                                        <Text style={styles.helperText}>
-                                            Notion에 없는 사용자명. IP 대역으로 용인 추정 여부 분류. 자동 추가는 안 하니
-                                            확인 후 기존 일괄 업데이트 모달에서 수동으로 추가하세요.
-                                        </Text>
-
-                                        {/* ✅ 용인 추정 */}
-                                        {likely.length > 0 && (
-                                            <>
-                                                <Text style={styles.unmatchedGroupLabel}>
-                                                    ✅ 용인 추정 ({likely.length}건) — IP 화이트리스트 매칭
-                                                </Text>
-                                                {likely.slice(0, 30).map((u, idx) => (
-                                                    <View key={idx} style={[styles.unmatchedRow, styles.unmatchedRowLikely]}>
-                                                        <Text style={styles.unmatchedText}>
-                                                            <Text style={{ fontWeight: '700' }}>{u.lookupValue}</Text>
-                                                            {u.excelRow['컴퓨터 이름'] ? ` (${u.excelRow['컴퓨터 이름']})` : ''}
-                                                            {u.excelRow['IP'] ? ` · ${u.excelRow['IP']}` : ''}
-                                                        </Text>
-                                                    </View>
-                                                ))}
-                                                {likely.length > 30 && (
-                                                    <Text style={styles.helperText}>… 외 {likely.length - 30}건</Text>
-                                                )}
-                                            </>
-                                        )}
-
-                                        {/* ❌ 용인 외 (접힘) */}
-                                        {excluded.length > 0 && (
-                                            <>
                                                 <TouchableOpacity
-                                                    style={styles.excludedToggle}
-                                                    onPress={() => setShowExcludedCandidates(v => !v)}
+                                                    onPress={(e) => { e.stopPropagation?.(); removeFile(f.id); }}
+                                                    hitSlop={6}
+                                                    style={styles.fileTabClose}
                                                 >
-                                                    <Text style={styles.unmatchedGroupLabel}>
-                                                        ❌ 용인 외 ({excluded.length}건) — {showExcludedCandidates ? '접기' : '펼치기'}
+                                                    <X size={12} color={active ? '#ffffff' : '#9ca3af'} />
+                                                </TouchableOpacity>
+                                            </TouchableOpacity>
+                                        );
+                                    })}
+                                    <TouchableOpacity style={styles.addFileBtn} onPress={handleFilePick}>
+                                        <Upload size={14} color="#6366f1" />
+                                        <Text style={styles.addFileBtnText}>파일 추가</Text>
+                                    </TouchableOpacity>
+                                </View>
+                            </ScrollView>
+
+                            {!activeFile ? (
+                                <Text style={styles.helperText}>위에서 파일을 선택해 미리보기를 확인하세요.</Text>
+                            ) : (
+                                <>
+                                    {/* 소스 종류 (수동 변경 가능) */}
+                                    <Text style={styles.sectionLabel}>소스 종류</Text>
+                                    <View style={styles.sourceChips}>
+                                        {SOURCES.map(src => {
+                                            const active = selectedSource?.id === src.id;
+                                            return (
+                                                <TouchableOpacity
+                                                    key={src.id}
+                                                    style={[styles.chip, active && styles.chipActive]}
+                                                    onPress={() => handleSelectSource(src)}
+                                                >
+                                                    <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                                                        {src.emoji} {src.name}
                                                     </Text>
                                                 </TouchableOpacity>
-                                                {showExcludedCandidates && excluded.slice(0, 50).map((u, idx) => (
-                                                    <View key={idx} style={styles.unmatchedRow}>
-                                                        <AlertTriangle size={12} color="#b45309" />
-                                                        <Text style={styles.unmatchedText}>
-                                                            {u.lookupValue}
-                                                            {u.excelRow['컴퓨터 이름'] ? ` (${u.excelRow['컴퓨터 이름']})` : ''}
-                                                            {u.excelRow['IP'] ? ` · ${u.excelRow['IP']}` : ''}
-                                                            {' · '}
-                                                            <Text style={{ color: '#94a3b8', fontStyle: 'italic' }}>
-                                                                {u.reason}
-                                                            </Text>
+                                            );
+                                        })}
+                                    </View>
+
+                                    {/* 통계 카드 */}
+                                    {stats && plan && (
+                                        <View style={styles.statsRow}>
+                                            <View style={styles.statBox}>
+                                                <Text style={styles.statNum}>{stats.total}</Text>
+                                                <Text style={styles.statLabel}>총 행</Text>
+                                            </View>
+                                            <View style={[styles.statBox, { backgroundColor: '#dcfce7' }]}>
+                                                <Text style={[styles.statNum, { color: '#15803d' }]}>{stats.changes}</Text>
+                                                <Text style={styles.statLabel}>변경됨</Text>
+                                            </View>
+                                            {plan.suspiciousCount > 0 && (
+                                                <View style={[styles.statBox, { backgroundColor: '#fee2e2' }]}>
+                                                    <Text style={[styles.statNum, { color: '#b91c1c' }]}>{plan.suspiciousCount}</Text>
+                                                    <Text style={styles.statLabel}>의심 매칭</Text>
+                                                </View>
+                                            )}
+                                            <View style={[styles.statBox, { backgroundColor: '#f1f5f9' }]}>
+                                                <Text style={[styles.statNum, { color: '#475569' }]}>{stats.unchanged}</Text>
+                                                <Text style={styles.statLabel}>변화 없음</Text>
+                                            </View>
+                                            <View style={[styles.statBox, { backgroundColor: '#fef3c7' }]}>
+                                                <Text style={[styles.statNum, { color: '#b45309' }]}>{stats.unmatched}</Text>
+                                                <Text style={styles.statLabel}>매칭 안됨</Text>
+                                            </View>
+                                        </View>
+                                    )}
+
+                                    {/* 옵션 (모든 파일에 일관 적용) */}
+                                    <View style={styles.optionsRow}>
+                                        <TouchableOpacity style={styles.option} onPress={() => setSkipUnchanged(v => !v)}>
+                                            <View style={[styles.checkbox, skipUnchanged && styles.checkboxOn]}>
+                                                {skipUnchanged && <Check size={14} color="#ffffff" />}
+                                            </View>
+                                            <Text style={styles.optionText}>변화 없는 행 건너뛰기</Text>
+                                        </TouchableOpacity>
+                                        <TouchableOpacity style={styles.option} onPress={() => setAppendHistory(v => !v)}>
+                                            <View style={[styles.checkbox, appendHistory && styles.checkboxOn]}>
+                                                {appendHistory && <Check size={14} color="#ffffff" />}
+                                            </View>
+                                            <Text style={styles.optionText}>처리이력에 한 줄 추가</Text>
+                                        </TouchableOpacity>
+                                        {plan && plan.suspiciousCount > 0 && (
+                                            <TouchableOpacity style={styles.option} onPress={() => setApplySuspicious(v => !v)}>
+                                                <View style={[styles.checkbox, applySuspicious && styles.checkboxOnDanger]}>
+                                                    {applySuspicious && <Check size={14} color="#ffffff" />}
+                                                </View>
+                                                <Text style={[styles.optionText, { color: '#b91c1c' }]}>의심 매칭도 적용 (위험)</Text>
+                                            </TouchableOpacity>
+                                        )}
+                                        {selectedSource?.id === 'notion-export-reimport' && (
+                                            <TouchableOpacity style={styles.option} onPress={() => setAllowBlankClear(v => !v)}>
+                                                <View style={[styles.checkbox, allowBlankClear && styles.checkboxOnDanger]}>
+                                                    {allowBlankClear && <Check size={14} color="#ffffff" />}
+                                                </View>
+                                                <Text style={[styles.optionText, { color: '#b91c1c' }]}>빈 셀로 값 삭제 (위험)</Text>
+                                            </TouchableOpacity>
+                                        )}
+                                    </View>
+                                    {selectedSource?.id === 'notion-export-reimport' && !allowBlankClear && (
+                                        <View style={styles.suspicionNotice}>
+                                            <AlertTriangle size={14} color="#b45309" />
+                                            <Text style={[styles.suspicionNoticeText, { color: '#92400e' }]}>
+                                                안전 모드: 비어있는 셀로 인한 변경은 제외돼요. 의도적으로 값을 비우려면
+                                                '빈 셀로 값 삭제'를 켜세요.
+                                            </Text>
+                                        </View>
+                                    )}
+                                    {plan && plan.suspiciousCount > 0 && !applySuspicious && (
+                                        <View style={styles.suspicionNotice}>
+                                            <AlertTriangle size={14} color="#b91c1c" />
+                                            <Text style={styles.suspicionNoticeText}>
+                                                엑셀의 IP가 용인 대역(10.5.x.x / 192.168.x.x) 밖인 매칭 {plan.suspiciousCount}건은
+                                                기본 제외됐어요. 동일 사용자명을 가진 다른 기기일 가능성이 있어요.
+                                            </Text>
+                                        </View>
+                                    )}
+
+                                    {/* 컬럼별 변경 요약 */}
+                                    {plan && fieldSummary.length > 0 && (
+                                        <>
+                                            <Text style={styles.sectionLabel}>
+                                                변경 요약 (컬럼별 · 적용 대상 기준)
+                                            </Text>
+                                            <View style={styles.summaryBox}>
+                                                {fieldSummary.map(s => (
+                                                    <View key={s.field} style={styles.summaryRow}>
+                                                        <Text style={styles.summaryField} numberOfLines={1}>
+                                                            {s.field}
+                                                        </Text>
+                                                        <Text style={styles.summaryCount}>
+                                                            <Text style={styles.summaryTotal}>{s.total}건 변경</Text>
+                                                            {s.deletes > 0 && (
+                                                                <Text style={styles.summaryDeletes}>
+                                                                    {' · '}{s.deletes}건 삭제
+                                                                </Text>
+                                                            )}
+                                                            {s.sets > 0 && (
+                                                                <Text style={styles.summarySets}>
+                                                                    {' · '}{s.sets}건 입력
+                                                                </Text>
+                                                            )}
                                                         </Text>
                                                     </View>
                                                 ))}
+                                            </View>
+                                        </>
+                                    )}
+
+                                    {/* 변경 미리보기 */}
+                                    {plan && (
+                                        <>
+                                            <Text style={styles.sectionLabel}>
+                                                변경 미리보기 (상위 50건)
+                                            </Text>
+                                            {plan.plans
+                                                .filter(p => !skipUnchanged || p.fieldChanges.some(c => c.changed))
+                                                .slice(0, 50)
+                                                .map((p, idx) => (
+                                                    <View
+                                                        key={`${p.lookupValue}-${idx}`}
+                                                        style={[styles.planRow, p.suspicious && styles.planRowSuspicious]}
+                                                    >
+                                                        <View style={styles.planRowHeader}>
+                                                            {p.suspicious && (
+                                                                <AlertTriangle size={14} color="#b91c1c" />
+                                                            )}
+                                                            <Text style={[styles.planName, p.suspicious && { color: '#b91c1c' }]}>
+                                                                {p.lookupValue}
+                                                            </Text>
+                                                            {p.suspicious && !applySuspicious && (
+                                                                <Text style={styles.planSkipBadge}>적용 제외됨</Text>
+                                                            )}
+                                                        </View>
+                                                        {p.suspicious && (
+                                                            <Text style={styles.planSuspicionReason}>
+                                                                {p.suspicionReason}
+                                                            </Text>
+                                                        )}
+                                                        {p.fieldChanges.map((c, i) => {
+                                                            const isDelete = c.changed && c.newValue === '';
+                                                            return (
+                                                                <View key={i} style={styles.changeRow}>
+                                                                    <Text style={styles.changeField}>{c.field}</Text>
+                                                                    {c.changed ? (
+                                                                        <Text style={styles.changeArrow}>
+                                                                            <Text style={styles.changeOld}>{c.oldValue || '∅'}</Text>
+                                                                            {' → '}
+                                                                            {isDelete ? (
+                                                                                <Text style={{ color: '#b91c1c', fontWeight: '700' }}>삭제</Text>
+                                                                            ) : (
+                                                                                <Text style={styles.changeNew}>{c.newValue}</Text>
+                                                                            )}
+                                                                        </Text>
+                                                                    ) : (
+                                                                        <Text style={styles.changeSame}>= {c.oldValue || '∅'}</Text>
+                                                                    )}
+                                                                </View>
+                                                            );
+                                                        })}
+                                                    </View>
+                                                ))}
+                                        </>
+                                    )}
+
+                                    {/* 매칭 안 된 행 */}
+                                    {plan && plan.unmatchedRows.length > 0 && (() => {
+                                        const likely = plan.unmatchedRows.filter(u => u.classification === 'likely-yongin');
+                                        const excluded = plan.unmatchedRows.filter(u => u.classification === 'excluded');
+                                        return (
+                                            <>
+                                                <Text style={styles.sectionLabel}>
+                                                    매칭 안 된 행 (전체 {plan.unmatchedRows.length}건)
+                                                </Text>
+                                                <Text style={styles.helperText}>
+                                                    Notion에 없는 사용자명. 자동 추가는 안 하니 확인 후 일괄 업데이트에서 수동 추가하세요.
+                                                </Text>
+                                                {likely.length > 0 && (
+                                                    <>
+                                                        <Text style={styles.unmatchedGroupLabel}>
+                                                            ✅ 용인 추정 ({likely.length}건)
+                                                        </Text>
+                                                        {likely.slice(0, 30).map((u, idx) => (
+                                                            <View key={idx} style={[styles.unmatchedRow, styles.unmatchedRowLikely]}>
+                                                                <Text style={styles.unmatchedText}>
+                                                                    <Text style={{ fontWeight: '700' }}>{u.lookupValue}</Text>
+                                                                    {u.excelRow['컴퓨터 이름'] ? ` (${u.excelRow['컴퓨터 이름']})` : ''}
+                                                                    {u.excelRow['IP'] ? ` · ${u.excelRow['IP']}` : ''}
+                                                                </Text>
+                                                            </View>
+                                                        ))}
+                                                        {likely.length > 30 && (
+                                                            <Text style={styles.helperText}>… 외 {likely.length - 30}건</Text>
+                                                        )}
+                                                    </>
+                                                )}
+                                                {excluded.length > 0 && (
+                                                    <>
+                                                        <TouchableOpacity
+                                                            style={styles.excludedToggle}
+                                                            onPress={() => setShowExcludedCandidates(v => !v)}
+                                                        >
+                                                            <Text style={styles.unmatchedGroupLabel}>
+                                                                ❌ 용인 외 ({excluded.length}건) — {showExcludedCandidates ? '접기' : '펼치기'}
+                                                            </Text>
+                                                        </TouchableOpacity>
+                                                        {showExcludedCandidates && excluded.slice(0, 50).map((u, idx) => (
+                                                            <View key={idx} style={styles.unmatchedRow}>
+                                                                <AlertTriangle size={12} color="#b45309" />
+                                                                <Text style={styles.unmatchedText}>
+                                                                    {u.lookupValue}
+                                                                    {u.excelRow['컴퓨터 이름'] ? ` (${u.excelRow['컴퓨터 이름']})` : ''}
+                                                                    {u.excelRow['IP'] ? ` · ${u.excelRow['IP']}` : ''}
+                                                                    {' · '}
+                                                                    <Text style={{ color: '#94a3b8', fontStyle: 'italic' }}>
+                                                                        {u.reason}
+                                                                    </Text>
+                                                                </Text>
+                                                            </View>
+                                                        ))}
+                                                    </>
+                                                )}
                                             </>
-                                        )}
-                                    </>
-                                );
-                            })()}
+                                        );
+                                    })()}
+                                </>
+                            )}
                         </>
                     )}
 
@@ -548,6 +649,9 @@ export const SourceImportModal: React.FC<Props> = ({
                             <Text style={styles.runningProgress}>
                                 {progress.current} / {progress.total}
                             </Text>
+                            {!!progressLabel && (
+                                <Text style={styles.runningLabel} numberOfLines={1}>{progressLabel}</Text>
+                            )}
                             <View style={styles.progressBar}>
                                 <View
                                     style={[
@@ -560,14 +664,14 @@ export const SourceImportModal: React.FC<Props> = ({
                     )}
 
                     {/* STEP: DONE */}
-                    {step === 'done' && plan && (
+                    {step === 'done' && doneSummary && (
                         <View style={styles.doneBox}>
                             <View style={styles.doneIconCircle}>
                                 <Check size={36} color="#15803d" />
                             </View>
                             <Text style={styles.doneTitle}>임포트 완료</Text>
                             <Text style={styles.doneStat}>
-                                {progress.current}건 업데이트 적용. 처리이력에도 누적됐어요.
+                                {doneSummary.files}개 파일 · {doneSummary.rows}건 적용. 처리이력에도 누적됐어요.
                             </Text>
                             <TouchableOpacity style={styles.doneBtn} onPress={resetAll}>
                                 <Text style={styles.doneBtnText}>다른 파일 임포트</Text>
@@ -577,37 +681,32 @@ export const SourceImportModal: React.FC<Props> = ({
                 </ScrollView>
 
                 {/* 하단 액션 */}
-                {step === 'preview' && plan && (() => {
-                    // 적용 대상 수 계산 (의심 매칭 제외 반영)
-                    let toApply = plan.plans;
-                    if (skipUnchanged) {
-                        toApply = toApply.filter(p => p.fieldChanges.some(c => c.changed));
-                    }
-                    if (!applySuspicious) {
-                        toApply = toApply.filter(p => !p.suspicious);
-                    }
-                    const applyCount = toApply.length;
-                    return (
-                        <View style={styles.footer}>
-                            <TouchableOpacity style={styles.footerCancel} onPress={resetAll}>
-                                <Text style={styles.footerCancelText}>취소</Text>
-                            </TouchableOpacity>
-                            <TouchableOpacity
-                                style={[
-                                    styles.footerApply,
-                                    applyCount === 0 && styles.footerApplyDisabled,
-                                ]}
-                                onPress={handleApply}
-                                disabled={applyCount === 0}
-                            >
-                                <Text style={styles.footerApplyText}>
-                                    {applyCount}건 적용
-                                </Text>
-                                <ChevronRight size={16} color="#ffffff" />
-                            </TouchableOpacity>
-                        </View>
-                    );
-                })()}
+                {step === 'preview' && files.length > 0 && (
+                    <View style={styles.footer}>
+                        <TouchableOpacity style={styles.footerCancel} onPress={resetAll}>
+                            <Text style={styles.footerCancelText}>취소</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.footerApplyOne, activeApplyCount === 0 && styles.footerApplyDisabled]}
+                            onPress={() => handleApply('active')}
+                            disabled={activeApplyCount === 0}
+                        >
+                            <Text style={styles.footerApplyOneText}>
+                                이 파일 {activeApplyCount}건
+                            </Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={[styles.footerApply, totalApplyCount === 0 && styles.footerApplyDisabled]}
+                            onPress={() => handleApply('all')}
+                            disabled={totalApplyCount === 0}
+                        >
+                            <Text style={styles.footerApplyText}>
+                                전체 {totalApplyCount}건 적용
+                            </Text>
+                            <ChevronRight size={16} color="#ffffff" />
+                        </TouchableOpacity>
+                    </View>
+                )}
             </View>
         </Modal>
     );
@@ -664,17 +763,41 @@ const styles = StyleSheet.create({
     sourceDesc: { fontSize: 12, color: '#475569', marginTop: 2 },
     sourceFile: { fontSize: 11, color: '#9ca3af', marginTop: 4, fontStyle: 'italic' },
 
-    fileBar: {
+    fileTabsScroll: { marginBottom: 4 },
+    fileTabs: { flexDirection: 'row', gap: 8, paddingVertical: 4 },
+    fileTab: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: 8,
-        padding: 12,
+        paddingHorizontal: 10,
+        paddingVertical: 8,
         backgroundColor: '#ffffff',
         borderRadius: 10,
-        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        minWidth: 200,
+        maxWidth: 260,
     },
-    fileName: { flex: 1, fontSize: 13, color: '#1f2937', fontWeight: '600' },
-    changeFileBtn: { fontSize: 12, color: '#6366f1', fontWeight: '600' },
+    fileTabActive: { backgroundColor: '#6366f1', borderColor: '#6366f1' },
+    fileTabIcon: { fontSize: 16 },
+    fileTabName: { fontSize: 12, fontWeight: '700', color: '#1f2937' },
+    fileTabNameActive: { color: '#ffffff' },
+    fileTabSub: { fontSize: 10, color: '#64748b', marginTop: 1 },
+    fileTabSubActive: { color: '#e0e7ff' },
+    fileTabClose: { padding: 4 },
+    addFileBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        backgroundColor: '#eef2ff',
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: '#c7d2fe',
+        borderStyle: 'dashed',
+    },
+    addFileBtnText: { fontSize: 12, fontWeight: '600', color: '#6366f1' },
 
     sourceChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginBottom: 12 },
     chip: {
@@ -723,6 +846,7 @@ const styles = StyleSheet.create({
         marginBottom: 12,
     },
     suspicionNoticeText: { flex: 1, fontSize: 11, color: '#991b1b', lineHeight: 16 },
+
     summaryBox: {
         backgroundColor: '#ffffff',
         borderRadius: 10,
@@ -748,12 +872,20 @@ const styles = StyleSheet.create({
     summaryTotal: { fontWeight: '700', color: '#1f2937' },
     summaryDeletes: { color: '#b91c1c', fontWeight: '600' },
     summarySets: { color: '#15803d', fontWeight: '600' },
+
+    planRow: {
+        backgroundColor: '#ffffff',
+        borderRadius: 8,
+        padding: 10,
+        marginBottom: 6,
+    },
     planRowSuspicious: {
         borderWidth: 1,
         borderColor: '#fecaca',
         backgroundColor: '#fef2f2',
     },
     planRowHeader: { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 },
+    planName: { fontSize: 13, fontWeight: '700', color: '#1f2937' },
     planSkipBadge: {
         marginLeft: 'auto',
         fontSize: 10,
@@ -765,23 +897,7 @@ const styles = StyleSheet.create({
         fontWeight: '700',
     },
     planSuspicionReason: { fontSize: 11, color: '#991b1b', marginBottom: 6, fontStyle: 'italic' },
-    unmatchedGroupLabel: {
-        fontSize: 12,
-        fontWeight: '700',
-        color: '#334155',
-        marginTop: 10,
-        marginBottom: 6,
-    },
-    unmatchedRowLikely: { backgroundColor: '#ecfdf5' },
-    excludedToggle: { marginTop: 6 },
 
-    planRow: {
-        backgroundColor: '#ffffff',
-        borderRadius: 8,
-        padding: 10,
-        marginBottom: 6,
-    },
-    planName: { fontSize: 13, fontWeight: '700', color: '#1f2937', marginBottom: 4 },
     changeRow: {
         flexDirection: 'row',
         gap: 6,
@@ -795,6 +911,13 @@ const styles = StyleSheet.create({
     changeSame: { fontSize: 11, color: '#9ca3af', flex: 1 },
 
     helperText: { fontSize: 11, color: '#9ca3af', marginBottom: 6, lineHeight: 16 },
+    unmatchedGroupLabel: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#334155',
+        marginTop: 10,
+        marginBottom: 6,
+    },
     unmatchedRow: {
         flexDirection: 'row',
         alignItems: 'center',
@@ -804,7 +927,9 @@ const styles = StyleSheet.create({
         borderRadius: 6,
         marginBottom: 4,
     },
+    unmatchedRowLikely: { backgroundColor: '#ecfdf5' },
     unmatchedText: { fontSize: 11, color: '#92400e', flex: 1 },
+    excludedToggle: { marginTop: 6 },
 
     footer: {
         flexDirection: 'row',
@@ -822,8 +947,17 @@ const styles = StyleSheet.create({
         alignItems: 'center',
     },
     footerCancelText: { fontSize: 14, color: '#475569', fontWeight: '600' },
+    footerApplyOne: {
+        flex: 1.2,
+        padding: 12,
+        borderRadius: 10,
+        backgroundColor: '#e0e7ff',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    footerApplyOneText: { fontSize: 13, color: '#4338ca', fontWeight: '700' },
     footerApply: {
-        flex: 2,
+        flex: 1.6,
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'center',
@@ -838,6 +972,7 @@ const styles = StyleSheet.create({
     runningBox: { alignItems: 'center', padding: 40, gap: 12 },
     runningTitle: { fontSize: 16, fontWeight: '700', color: '#1f2937' },
     runningProgress: { fontSize: 14, color: '#6366f1', fontWeight: '600' },
+    runningLabel: { fontSize: 11, color: '#64748b', maxWidth: 280, textAlign: 'center' },
     progressBar: {
         width: '100%',
         height: 8,
