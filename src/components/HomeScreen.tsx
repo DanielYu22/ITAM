@@ -29,17 +29,25 @@ import {
     Upload,
     RefreshCw,
     FileUp,
+    LayoutGrid,
 } from 'lucide-react-native';
 import { FilterConfig } from './FieldWorkFilter';
 import { Asset, NotionProperty } from '../lib/notion';
 import { APP_VERSION } from '../lib/version';
 import { QUICK_TASKS, QuickTaskDef } from '../lib/quickTasks';
+import { SITES, SiteId, getSiteCounts } from '../lib/sites';
 
 interface HomeScreenProps {
+    // 전체 자산 (사이트 토글 카운트 계산용)
+    allAssets: Asset[];
+    // 사이트 필터링 후 자산 (통계/Quick Task 카운트는 이걸 사용)
     assets: Asset[];
     filterConfig: FilterConfig | null;
     templates: FilterTemplate[];
     schemaProperties: Record<string, NotionProperty>;
+    // 사이트 토글
+    currentSite: SiteId;
+    onChangeSite: (site: SiteId) => void;
     onStartWork: () => void;
     onOpenFilter: () => void;
     onLoadTemplate: (template: FilterTemplate) => void;
@@ -52,6 +60,7 @@ interface HomeScreenProps {
     onExport?: () => void;
     onBulkUpdate?: () => void;
     onSourceImport?: () => void;
+    onDashboard?: () => void;
     onRefresh?: () => void;
 }
 
@@ -63,10 +72,13 @@ export interface FilterTemplate {
 }
 
 export const HomeScreen: React.FC<HomeScreenProps> = ({
+    allAssets,
     assets,
     filterConfig,
     templates,
     schemaProperties,
+    currentSite,
+    onChangeSite,
     onStartWork,
     onOpenFilter,
     onLoadTemplate,
@@ -77,8 +89,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     onExport,
     onBulkUpdate,
     onSourceImport,
+    onDashboard,
     onRefresh,
 }) => {
+    const siteCounts = useMemo(() => getSiteCounts(allAssets), [allAssets]);
     const [searchQuery, setSearchQuery] = useState('');
     const [showSearchResults, setShowSearchResults] = useState(false);
 
@@ -276,6 +290,40 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     <Text style={styles.subtitle}>현장 작업 관리</Text>
                 </View>
 
+                {/* 사이트(장소) 토글 — 메인 컨텍스트 */}
+                <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.siteToggleScroll}
+                    contentContainerStyle={styles.siteToggleRow}
+                >
+                    {SITES.map(site => {
+                        const active = currentSite === site.id;
+                        const count = siteCounts[site.id];
+                        return (
+                            <TouchableOpacity
+                                key={site.id}
+                                style={[
+                                    styles.siteChip,
+                                    active && { backgroundColor: site.color, borderColor: site.color },
+                                ]}
+                                onPress={() => onChangeSite(site.id)}
+                                activeOpacity={0.7}
+                            >
+                                <Text style={[styles.siteChipEmoji, !active && { opacity: 0.7 }]}>
+                                    {site.emoji}
+                                </Text>
+                                <Text style={[styles.siteChipName, active && { color: '#ffffff' }]}>
+                                    {site.name}
+                                </Text>
+                                <Text style={[styles.siteChipCount, active && { color: '#e0e7ff' }]}>
+                                    {count}
+                                </Text>
+                            </TouchableOpacity>
+                        );
+                    })}
+                </ScrollView>
+
                 {/* 글로벌 검색 */}
                 <View style={styles.searchSection}>
                     <View style={styles.searchInputContainer}>
@@ -364,6 +412,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             <FileUp size={28} color="#7c3aed" />
                         </View>
                         <Text style={styles.toolLabel}>소스 임포트</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.toolCard}
+                        onPress={onDashboard}
+                        disabled={!onDashboard}
+                    >
+                        <View style={[styles.toolIconContainer, { backgroundColor: '#fce7f3' }]}>
+                            <LayoutGrid size={28} color="#be185d" />
+                        </View>
+                        <Text style={styles.toolLabel}>대시보드</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -758,10 +817,43 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '600',
     },
+    siteToggleScroll: {
+        marginBottom: 16,
+        marginHorizontal: -4,
+    },
+    siteToggleRow: {
+        flexDirection: 'row',
+        gap: 8,
+        paddingHorizontal: 4,
+    },
+    siteChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        backgroundColor: '#ffffff',
+        borderRadius: 20,
+        borderWidth: 1.5,
+        borderColor: '#e5e7eb',
+    },
+    siteChipEmoji: { fontSize: 14 },
+    siteChipName: { fontSize: 13, fontWeight: '600', color: '#1f2937' },
+    siteChipCount: {
+        fontSize: 11,
+        color: '#9ca3af',
+        backgroundColor: '#f1f5f9',
+        paddingHorizontal: 6,
+        paddingVertical: 1,
+        borderRadius: 8,
+        overflow: 'hidden',
+        fontWeight: '700',
+    },
     toolsSection: {
         flexDirection: 'row',
         gap: 12,
         marginBottom: 20,
+        flexWrap: 'wrap',
     },
     quickTaskGroupBlock: {
         marginBottom: 14,

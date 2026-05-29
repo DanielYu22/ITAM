@@ -39,6 +39,8 @@ import { HomeScreen, FilterTemplate } from './src/components/HomeScreen';
 import { ExportPreviewModal } from './src/components/ExportPreviewModal';
 import { BulkUpdateModal } from './src/components/BulkUpdateModal';
 import { SourceImportModal } from './src/components/SourceImportModal';
+import { DashboardModal } from './src/components/DashboardModal';
+import { SiteId, filterAssetsBySite } from './src/lib/sites';
 import { APP_VERSION } from './src/lib/version';
 import {
   QuickTaskDef,
@@ -80,6 +82,14 @@ export default function App() {
   const [showExportModal, setShowExportModal] = useState(false);
   const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false);
   const [showSourceImportModal, setShowSourceImportModal] = useState(false);
+  const [showDashboardModal, setShowDashboardModal] = useState(false);
+  // 사이트(장소) 컨텍스트
+  const [currentSite, setCurrentSite] = useState<SiteId>('all');
+
+  // 사이트 필터링된 자산 (앱 전반의 컨텍스트)
+  const siteFilteredAssets = useMemo(() => {
+    return filterAssetsBySite(assets, currentSite);
+  }, [assets, currentSite]);
   const [skipLocationSelection, setSkipLocationSelection] = useState(false);
   const [appSettings, setAppSettings] = useState<Record<string, any>>({});
   const [bulkLookupColumn, setBulkLookupColumn] = useState<string>('Name');
@@ -366,14 +376,16 @@ export default function App() {
     }
   }, [notionClient, loadData]);
 
-  // Filter assets based on search query
+  // Filter assets based on search query AND current site
   useEffect(() => {
+    // 사이트 컨텍스트 먼저 적용
+    const siteScoped = filterAssetsBySite(assets, currentSite);
     if (!searchQuery.trim()) {
-      const filtered = assets.filter(asset => evaluateFilter(asset, filter));
+      const filtered = siteScoped.filter(asset => evaluateFilter(asset, filter));
       setFilteredAssets(filtered);
     } else {
       const query = searchQuery.toLowerCase();
-      const filtered = assets.filter(asset => {
+      const filtered = siteScoped.filter(asset => {
         if (!evaluateFilter(asset, filter)) return false;
         return Object.values(asset.values).some(v =>
           String(v).toLowerCase().includes(query)
@@ -381,7 +393,7 @@ export default function App() {
       });
       setFilteredAssets(filtered);
     }
-  }, [assets, searchQuery, filter]);
+  }, [assets, searchQuery, filter, currentSite]);
 
   // Field work filter 적용
   const workFilteredAssets = useMemo(() => {
@@ -833,10 +845,13 @@ export default function App() {
         {!isWorkMode ? (
           <>
             <HomeScreen
-              assets={assets}
+              allAssets={assets}
+              assets={siteFilteredAssets}
               filterConfig={fieldWorkConfig}
               templates={filterTemplates}
               schemaProperties={schemaProperties}
+              currentSite={currentSite}
+              onChangeSite={setCurrentSite}
               onStartWork={startWork}
               onOpenFilter={() => setShowFieldWorkFilter(true)}
               onLoadTemplate={loadTemplate}
@@ -851,6 +866,7 @@ export default function App() {
               onExport={() => setShowExportModal(true)}
               onBulkUpdate={() => setShowBulkUpdateModal(true)}
               onSourceImport={() => setShowSourceImportModal(true)}
+              onDashboard={() => setShowDashboardModal(true)}
               onRefresh={onRefresh}
             />
 
@@ -1098,6 +1114,15 @@ export default function App() {
             loadData(); // 임포트 후 새로고침
           }}
           assets={assets}
+          schemaProperties={schemaProperties}
+          onUpdate={handleUpdateAsset}
+        />
+
+        <DashboardModal
+          visible={showDashboardModal}
+          onClose={() => setShowDashboardModal(false)}
+          assets={siteFilteredAssets}
+          schema={schema}
           schemaProperties={schemaProperties}
           onUpdate={handleUpdateAsset}
         />
