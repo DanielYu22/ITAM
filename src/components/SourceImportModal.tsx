@@ -52,6 +52,10 @@ interface ImportFile {
     parsed: ParsedFile;
     source: SourceDef | null;
     plan: ImportPlan | null;
+    /** 한 번 적용된 파일은 이후 일괄 적용에서 제외 + 탭에 ✅ 표시 */
+    applied?: boolean;
+    appliedAt?: string;   // "오후 3:24" 등 표시용
+    appliedRows?: number; // 실제로 적용된 행 수 (옵션 반영 후)
 }
 
 export const SourceImportModal: React.FC<Props> = ({
@@ -67,6 +71,8 @@ export const SourceImportModal: React.FC<Props> = ({
     const [progress, setProgress] = useState({ current: 0, total: 0 });
     const [progressLabel, setProgressLabel] = useState('');
     const [doneSummary, setDoneSummary] = useState<{ files: number; rows: number } | null>(null);
+    // 세션 전체 누적 (이 파일 적용 / 전체 적용을 여러 번 해도 합산)
+    const [accumulated, setAccumulated] = useState({ files: 0, rows: 0 });
     // 옵션 (모든 파일에 일관 적용)
     const [skipUnchanged, setSkipUnchanged] = useState(true);
     const [appendHistory, setAppendHistory] = useState(true);
@@ -85,6 +91,7 @@ export const SourceImportModal: React.FC<Props> = ({
         setProgress({ current: 0, total: 0 });
         setProgressLabel('');
         setDoneSummary(null);
+        setAccumulated({ files: 0, rows: 0 });
     }, []);
 
     const handleClose = useCallback(() => {
@@ -181,11 +188,13 @@ export const SourceImportModal: React.FC<Props> = ({
         });
     }, [activeId]);
 
-    // 적용 — target 'active' 또는 'all'
+    // 적용 — target 'active' 또는 'all'.
+    // 적용 후에도 모달은 그대로 (preview step 유지). 사용자가 다음 파일을 검토 후 다시 적용 가능.
     const handleApply = useCallback(async (target: 'active' | 'all') => {
+        // 이미 적용된 파일은 제외
         const targetFiles = target === 'active'
-            ? (activeFile ? [activeFile] : [])
-            : files.filter(f => f.plan);
+            ? (activeFile && !activeFile.applied ? [activeFile] : [])
+            : files.filter(f => f.plan && !f.applied);
         if (targetFiles.length === 0) return;
 
         // 적용할 행 수집 (파일별로 옵션 일관 적용)
@@ -196,11 +205,14 @@ export const SourceImportModal: React.FC<Props> = ({
                 : never;
         };
         const allRows: RowEntry[] = [];
+        // 파일별 적용 행 수도 함께 기록 (탭에 표시할 용도)
+        const appliedRowsByFile = new Map<string, number>();
         for (const f of targetFiles) {
             if (!f.plan) continue;
             let rows = f.plan.plans;
             if (skipUnchanged) rows = rows.filter(p => p.fieldChanges.some(c => c.changed));
             if (!applySuspicious) rows = rows.filter(p => !p.suspicious);
+            appliedRowsByFile.set(f.id, rows.length);
             for (const r of rows) {
                 allRows.push({ file: f, row: r as any });
             }
@@ -240,9 +252,52 @@ export const SourceImportModal: React.FC<Props> = ({
             setProgress({ current: i + 1, total: allRows.length });
         }
 
-        setDoneSummary({ files: targetFiles.length, rows: allRows.length });
-        setStep('done');
-    }, [activeFile, files, skipUnchanged, applySuspicious, appendHistory, schemaProperties, onUpdate]);
+        // 누적 합산
+        setAccumulated(prev => ({
+            files: prev.files + targetFiles.length,
+            rows: prev.rows + allRows.length,
+        }));
+
+        // 적용된 파일들에 applied 마킹
+        const appliedIds = new Set(targetFiles.map(f => f.id));
+        const applyTime = new Date().toLocaleTimeString('ko-KR', {
+            hour: '2-digit', minute: '2-digit',
+        });
+        let nextActiveId = activeId;
+        setFiles(prev => {
+            const next = prev.map(f =>
+                appliedIds.has(f.id)
+                    ? {
+                        ...f,
+                        applied: true,
+                        appliedAt: applyTime,
+                        appliedRows: appliedRowsByFile.get(f.id) ?? 0,
+                    }
+                    : f
+            );
+            // 활성 탭이 방금 적용된 거면, 다음 미적용 파일로 자동 이동
+            const currentActive = next.find(f => f.id === activeId);
+            if (currentActive?.applied) {
+                const remaining = next.find(f => f.plan && !f.applied);
+                if (remaining) nextActiveId = remaining.id;
+            }
+            return next;
+        });
+        if (nextActiveId !== activeId) {
+            setActiveId(nextActiveId);
+        }
+
+        // 미적용 파일이 더 남아있으면 preview 로 복귀, 다 끝났으면 done
+        const remainingCount = files.filter(
+            f => f.plan && !f.applied && !appliedIds.has(f.id)
+        ).length;
+        if (remainingCount === 0) {
+            setDoneSummary({ files: accumulated.files + targetFiles.length, rows: accumulated.rows + allRows.length });
+            setStep('done');
+        } else {
+            setStep('preview');
+        }
+    }, [activeFile, files, activeId, skipUnchanged, applySuspicious, appendHistory, accumulated, schemaProperties, onUpdate]);
 
     // 활성 파일의 plan 통계
     const stats = useMemo(() => {
@@ -276,11 +331,11 @@ export const SourceImportModal: React.FC<Props> = ({
             .sort((a, b) => b.total - a.total);
     }, [plan, applySuspicious]);
 
-    // 전체 적용 카운트 계산 (옵션 반영)
+    // 전체 적용 카운트 — 미적용 파일만 합산
     const totalApplyCount = useMemo(() => {
         let cnt = 0;
         for (const f of files) {
-            if (!f.plan) continue;
+            if (!f.plan || f.applied) continue;
             let rows = f.plan.plans;
             if (skipUnchanged) rows = rows.filter(p => p.fieldChanges.some(c => c.changed));
             if (!applySuspicious) rows = rows.filter(p => !p.suspicious);
@@ -289,13 +344,21 @@ export const SourceImportModal: React.FC<Props> = ({
         return cnt;
     }, [files, skipUnchanged, applySuspicious]);
 
+    // 활성 파일의 적용 카운트 — 적용된 파일은 0
     const activeApplyCount = useMemo(() => {
-        if (!plan) return 0;
+        if (!plan || activeFile?.applied) return 0;
         let rows = plan.plans;
         if (skipUnchanged) rows = rows.filter(p => p.fieldChanges.some(c => c.changed));
         if (!applySuspicious) rows = rows.filter(p => !p.suspicious);
         return rows.length;
-    }, [plan, skipUnchanged, applySuspicious]);
+    }, [plan, activeFile, skipUnchanged, applySuspicious]);
+
+    // 적용된 파일 수 / 미적용 파일 수 (헤더에 표시)
+    const appliedFilesCount = useMemo(() => files.filter(f => f.applied).length, [files]);
+    const remainingFilesCount = useMemo(
+        () => files.filter(f => f.plan && !f.applied).length,
+        [files],
+    );
 
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
@@ -341,14 +404,28 @@ export const SourceImportModal: React.FC<Props> = ({
                     {step === 'preview' && (
                         <>
                             {/* 파일 탭 */}
-                            <Text style={styles.sectionLabel}>업로드한 파일 ({files.length})</Text>
+                            <Text style={styles.sectionLabel}>
+                                업로드한 파일 ({files.length})
+                                {appliedFilesCount > 0 && (
+                                    <Text style={{ color: '#15803d', fontWeight: '700' }}>
+                                        {'  ·  '}✓ {appliedFilesCount}개 적용 완료
+                                    </Text>
+                                )}
+                                {remainingFilesCount > 0 && (
+                                    <Text style={{ color: '#6366f1', fontWeight: '700' }}>
+                                        {'  ·  '}{remainingFilesCount}개 남음
+                                    </Text>
+                                )}
+                            </Text>
                             <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.fileTabsScroll}>
                                 <View style={styles.fileTabs}>
                                     {files.map(f => {
                                         const active = f.id === activeId;
                                         const src = f.source;
                                         let countText = '';
-                                        if (f.plan) {
+                                        if (f.applied) {
+                                            countText = `✓ ${f.appliedRows ?? 0}건 적용됨`;
+                                        } else if (f.plan) {
                                             let rows = f.plan.plans;
                                             if (skipUnchanged) rows = rows.filter(p => p.fieldChanges.some(c => c.changed));
                                             if (!applySuspicious) rows = rows.filter(p => !p.suspicious);
@@ -359,16 +436,38 @@ export const SourceImportModal: React.FC<Props> = ({
                                         return (
                                             <TouchableOpacity
                                                 key={f.id}
-                                                style={[styles.fileTab, active && styles.fileTabActive]}
+                                                style={[
+                                                    styles.fileTab,
+                                                    active && styles.fileTabActive,
+                                                    f.applied && !active && styles.fileTabApplied,
+                                                ]}
                                                 onPress={() => setActiveId(f.id)}
                                             >
-                                                <Text style={styles.fileTabIcon}>{src?.emoji || '⚠️'}</Text>
+                                                <Text style={styles.fileTabIcon}>
+                                                    {f.applied ? '✅' : (src?.emoji || '⚠️')}
+                                                </Text>
                                                 <View style={{ flex: 1 }}>
-                                                    <Text style={[styles.fileTabName, active && styles.fileTabNameActive]} numberOfLines={1}>
+                                                    <Text
+                                                        style={[
+                                                            styles.fileTabName,
+                                                            active && styles.fileTabNameActive,
+                                                            f.applied && !active && styles.fileTabNameApplied,
+                                                        ]}
+                                                        numberOfLines={1}
+                                                    >
                                                         {f.name}
                                                     </Text>
-                                                    <Text style={[styles.fileTabSub, active && styles.fileTabSubActive]} numberOfLines={1}>
-                                                        {src?.name || '미감지'} · {countText}
+                                                    <Text
+                                                        style={[
+                                                            styles.fileTabSub,
+                                                            active && styles.fileTabSubActive,
+                                                            f.applied && !active && styles.fileTabSubApplied,
+                                                        ]}
+                                                        numberOfLines={1}
+                                                    >
+                                                        {f.applied
+                                                            ? `${countText}${f.appliedAt ? ` · ${f.appliedAt}` : ''}`
+                                                            : `${src?.name || '미감지'} · ${countText}`}
                                                     </Text>
                                                 </View>
                                                 <TouchableOpacity
@@ -392,6 +491,17 @@ export const SourceImportModal: React.FC<Props> = ({
                                 <Text style={styles.helperText}>위에서 파일을 선택해 미리보기를 확인하세요.</Text>
                             ) : (
                                 <>
+                                    {/* 적용 완료된 파일이면 안내 */}
+                                    {activeFile.applied && (
+                                        <View style={styles.appliedBanner}>
+                                            <Check size={16} color="#15803d" />
+                                            <Text style={styles.appliedBannerText}>
+                                                이 파일은 {activeFile.appliedAt} 에 {activeFile.appliedRows}건 적용되었어요.
+                                                다른 파일 탭을 눌러 검토를 이어가세요.
+                                            </Text>
+                                        </View>
+                                    )}
+
                                     {/* 소스 종류 (수동 변경 가능) */}
                                     <Text style={styles.sectionLabel}>소스 종류</Text>
                                     <View style={styles.sourceChips}>
@@ -663,19 +773,25 @@ export const SourceImportModal: React.FC<Props> = ({
                         </View>
                     )}
 
-                    {/* STEP: DONE */}
+                    {/* STEP: DONE — 모든 파일 적용 완료 */}
                     {step === 'done' && doneSummary && (
                         <View style={styles.doneBox}>
                             <View style={styles.doneIconCircle}>
                                 <Check size={36} color="#15803d" />
                             </View>
-                            <Text style={styles.doneTitle}>임포트 완료</Text>
+                            <Text style={styles.doneTitle}>모든 파일 임포트 완료</Text>
                             <Text style={styles.doneStat}>
-                                {doneSummary.files}개 파일 · {doneSummary.rows}건 적용. 처리이력에도 누적됐어요.
+                                이번 세션에서 {doneSummary.files}개 파일 · {doneSummary.rows}건 적용했어요.
+                                처리이력에도 누적됐어요.
                             </Text>
-                            <TouchableOpacity style={styles.doneBtn} onPress={resetAll}>
-                                <Text style={styles.doneBtnText}>다른 파일 임포트</Text>
-                            </TouchableOpacity>
+                            <View style={{ flexDirection: 'row', gap: 8, marginTop: 8 }}>
+                                <TouchableOpacity style={styles.doneBtn} onPress={resetAll}>
+                                    <Text style={styles.doneBtnText}>다른 파일 임포트</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={[styles.doneBtn, { backgroundColor: '#e5e7eb' }]} onPress={handleClose}>
+                                    <Text style={[styles.doneBtnText, { color: '#1f2937' }]}>닫기</Text>
+                                </TouchableOpacity>
+                            </View>
                         </View>
                     )}
                 </ScrollView>
@@ -683,8 +799,10 @@ export const SourceImportModal: React.FC<Props> = ({
                 {/* 하단 액션 */}
                 {step === 'preview' && files.length > 0 && (
                     <View style={styles.footer}>
-                        <TouchableOpacity style={styles.footerCancel} onPress={resetAll}>
-                            <Text style={styles.footerCancelText}>취소</Text>
+                        <TouchableOpacity style={styles.footerCancel} onPress={handleClose}>
+                            <Text style={styles.footerCancelText}>
+                                {appliedFilesCount > 0 ? '닫기' : '취소'}
+                            </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
                             style={[styles.footerApplyOne, activeApplyCount === 0 && styles.footerApplyDisabled]}
@@ -692,7 +810,9 @@ export const SourceImportModal: React.FC<Props> = ({
                             disabled={activeApplyCount === 0}
                         >
                             <Text style={styles.footerApplyOneText}>
-                                이 파일 {activeApplyCount}건
+                                {activeFile?.applied
+                                    ? '이미 적용됨'
+                                    : `이 파일 ${activeApplyCount}건`}
                             </Text>
                         </TouchableOpacity>
                         <TouchableOpacity
@@ -701,7 +821,9 @@ export const SourceImportModal: React.FC<Props> = ({
                             disabled={totalApplyCount === 0}
                         >
                             <Text style={styles.footerApplyText}>
-                                전체 {totalApplyCount}건 적용
+                                {appliedFilesCount > 0
+                                    ? `남은 ${totalApplyCount}건 적용`
+                                    : `전체 ${totalApplyCount}건 적용`}
                             </Text>
                             <ChevronRight size={16} color="#ffffff" />
                         </TouchableOpacity>
@@ -779,6 +901,9 @@ const styles = StyleSheet.create({
         maxWidth: 260,
     },
     fileTabActive: { backgroundColor: '#6366f1', borderColor: '#6366f1' },
+    fileTabApplied: { backgroundColor: '#f0fdf4', borderColor: '#bbf7d0' },
+    fileTabNameApplied: { color: '#15803d' },
+    fileTabSubApplied: { color: '#16a34a' },
     fileTabIcon: { fontSize: 16 },
     fileTabName: { fontSize: 12, fontWeight: '700', color: '#1f2937' },
     fileTabNameActive: { color: '#ffffff' },
@@ -846,6 +971,18 @@ const styles = StyleSheet.create({
         marginBottom: 12,
     },
     suspicionNoticeText: { flex: 1, fontSize: 11, color: '#991b1b', lineHeight: 16 },
+    appliedBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: '#dcfce7',
+        padding: 10,
+        borderRadius: 8,
+        marginBottom: 12,
+        borderWidth: 1,
+        borderColor: '#bbf7d0',
+    },
+    appliedBannerText: { flex: 1, fontSize: 12, color: '#14532d', lineHeight: 16, fontWeight: '500' },
 
     summaryBox: {
         backgroundColor: '#ffffff',
