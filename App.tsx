@@ -40,7 +40,7 @@ import { ExportPreviewModal } from './src/components/ExportPreviewModal';
 import { BulkUpdateModal } from './src/components/BulkUpdateModal';
 import { SourceImportModal } from './src/components/SourceImportModal';
 import { DashboardModal } from './src/components/DashboardModal';
-import { SiteId, filterAssetsBySite } from './src/lib/sites';
+import { SiteId, filterAssetsBySite, buildSiteFilterConfig } from './src/lib/sites';
 import { APP_VERSION } from './src/lib/version';
 import {
   QuickTaskDef,
@@ -600,10 +600,37 @@ export default function App() {
     }
   }, [fieldWorkConfig]);
 
-  // Quick Task 핸들러: 정기/현장 업무를 즉시 시작
+  // 사이트 변경: 글로벌 컨텍스트 + FilterConfig 프리셋 동시 적용.
+  // 사용자가 '필터 설정' 모달을 열면 그 사이트로 분류되는 조건이 그대로 보여요.
+  const handleChangeSite = useCallback((siteId: SiteId) => {
+    setCurrentSite(siteId);
+    const preset = buildSiteFilterConfig(siteId);
+    setFieldWorkConfig(preset);
+    setLocationSelectedAssets([]);
+    setLocationFilters({});
+    setActiveQuickTask(null);
+  }, []);
+
+  // Quick Task 핸들러: 정기/현장 업무를 즉시 시작.
+  // 현재 사이트의 프리셋이 있으면 사이트 그룹을 첫 번째 그룹으로 prepend해서
+  // 두 조건이 모두 가시화되고, 워크 결과도 사이트 안으로 좁혀집니다.
   const handleQuickTask = useCallback((task: QuickTaskDef) => {
     const now = new Date();
-    const config = task.buildConfig({ now });
+    const taskConfig = task.buildConfig({ now });
+    const sitePreset = buildSiteFilterConfig(currentSite);
+
+    const config: typeof taskConfig = sitePreset
+      ? {
+          ...taskConfig,
+          // 사이트 ∩ Quick Task (둘 다 만족하는 자산)
+          globalLogicalOperator: 'and',
+          targetGroups: [
+            ...sitePreset.targetGroups,
+            ...taskConfig.targetGroups,
+          ],
+        }
+      : taskConfig;
+
     setActiveQuickTask(task);
     setFieldWorkConfig(config);
     setLocationSelectedAssets([]);
@@ -612,7 +639,7 @@ export default function App() {
     if (config.locationHierarchy && config.locationHierarchy.length > 0) {
       setSkipLocationSelection(true);
     }
-  }, []);
+  }, [currentSite]);
 
   // Quick Task 완료 처리: 사전값 클리어 + 처리이력 append
   // 자산 카드의 "완료" 체크박스에서 호출됨
@@ -851,7 +878,7 @@ export default function App() {
               templates={filterTemplates}
               schemaProperties={schemaProperties}
               currentSite={currentSite}
-              onChangeSite={setCurrentSite}
+              onChangeSite={handleChangeSite}
               onStartWork={startWork}
               onOpenFilter={() => setShowFieldWorkFilter(true)}
               onLoadTemplate={loadTemplate}

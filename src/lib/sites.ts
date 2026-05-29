@@ -17,6 +17,7 @@
  */
 
 import { Asset } from './notion';
+import { FilterConfig, TargetCondition } from '../components/FieldWorkFilter';
 
 export type SiteId = 'all' | 'yongin' | 'magok' | 'hyangnam' | 'unclassified';
 
@@ -123,6 +124,58 @@ export const getAssetSite = (asset: Asset): SiteId => {
 export const filterAssetsBySite = (assets: Asset[], siteId: SiteId): Asset[] => {
     if (siteId === 'all') return assets;
     return assets.filter(a => getAssetSite(a) === siteId);
+};
+
+// ---------------------------------------------------------------------------
+// 사이트 정의 → 재사용 가능한 FilterConfig 프리셋
+// ---------------------------------------------------------------------------
+//
+// 사이트 칩을 누를 때, 그 사이트의 분류 룰(건물 / IP)을 FilterConfig로 변환
+// 해서 fieldWorkConfig 로 적용합니다. 그러면 사용자가 "필터 설정" 모달을
+// 열었을 때 "왜 이 기기들이 마곡으로 분류되는지" 한 눈에 볼 수 있어요.
+//
+// 'all' / 'unclassified' 는 null 반환 — 명시적 FilterConfig 표현이 어렵거나
+// 의미가 없어서 빈 필터로 둡니다.
+
+export const buildSiteFilterConfig = (siteId: SiteId): FilterConfig | null => {
+    if (siteId === 'all' || siteId === 'unclassified') return null;
+    const site = SITES.find(s => s.id === siteId);
+    if (!site) return null;
+
+    const stamp = Date.now();
+    let idx = 0;
+    const mkId = () => `site-${siteId}-${stamp}-${idx++}`;
+    const conds: TargetCondition[] = [];
+
+    // 건물 정확 일치 (예: 바이오센터, 경영관, 창조관, 혁신관)
+    for (const b of site.buildingExactMatches || []) {
+        conds.push({ id: mkId(), column: 'L)건물', type: 'equals', values: [b] });
+    }
+    // 건물 키워드 포함 (예: '향남')
+    for (const k of site.buildingContains || []) {
+        conds.push({ id: mkId(), column: 'L)건물', type: 'text_contains', values: [k] });
+    }
+    // IP prefix (text_contains 로 표현 — '10.5.', '192.168.' 등)
+    for (const ip of site.ipPrefixes) {
+        conds.push({ id: mkId(), column: 'QA)네트워크 IP', type: 'text_contains', values: [ip] });
+    }
+
+    if (conds.length === 0) return null;
+
+    return {
+        locationHierarchy: ['L)건물', 'L)층', 'L)연구실'],
+        sortColumn: 'L)연구실',
+        sortDirection: 'asc',
+        globalLogicalOperator: 'or',
+        targetGroups: [
+            {
+                id: `site-${siteId}-group-${stamp}`,
+                operator: 'or',
+                conditions: conds,
+            },
+        ],
+        editableFields: [],
+    };
 };
 
 /** 각 사이트별 자산 수 계산 */
