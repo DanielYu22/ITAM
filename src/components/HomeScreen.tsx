@@ -310,13 +310,23 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                 onPress={() => onChangeSite(site.id)}
                                 activeOpacity={0.7}
                             >
-                                <Text style={[styles.siteChipEmoji, !active && { opacity: 0.7 }]}>
-                                    {site.emoji}
-                                </Text>
+                                {site.emoji ? (
+                                    <Text style={[styles.siteChipEmoji, !active && { opacity: 0.7 }]}>
+                                        {site.emoji}
+                                    </Text>
+                                ) : null}
                                 <Text style={[styles.siteChipName, active && { color: '#ffffff' }]}>
                                     {site.name}
                                 </Text>
-                                <Text style={[styles.siteChipCount, active && { color: '#e0e7ff' }]}>
+                                <Text
+                                    style={[
+                                        styles.siteChipCount,
+                                        active && {
+                                            color: site.color,
+                                            backgroundColor: '#ffffff',
+                                        },
+                                    ]}
+                                >
                                     {count}
                                 </Text>
                             </TouchableOpacity>
