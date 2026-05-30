@@ -93,9 +93,9 @@ export const LayoutEditorModal: React.FC<Props> = ({
         }
     }, [visible, initialLayout]);
 
-    // 캔버스 표시 크기 계산 — 가로 화면에 맞춤
+    // 캔버스 표시 크기 — 모바일 가로폭에 맞춰 자동 스케일
     const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-    const canvasDisplayWidth = Math.min(screenWidth - 32, 720);
+    const canvasDisplayWidth = Math.min(screenWidth - 24, 720);
     const scale = canvasDisplayWidth / CANVAS_WIDTH;
     const canvasDisplayHeight = CANVAS_HEIGHT * scale;
 
@@ -218,19 +218,14 @@ export const LayoutEditorModal: React.FC<Props> = ({
                     </TouchableOpacity>
                 </View>
 
-                {/* 캔버스 (외곽 스크롤로 큰 캔버스도 가능, 모바일은 한 화면) */}
-                <ScrollView
-                    style={styles.canvasScroll}
-                    contentContainerStyle={styles.canvasScrollContent}
-                    minimumZoomScale={0.5}
-                    maximumZoomScale={2}
-                    bouncesZoom
-                >
+                {/* 캔버스 — ScrollView 가 PanResponder 가로채기 때문에 일반 View 로 */}
+                <View style={styles.canvasWrap}>
                     <TouchableOpacity
                         activeOpacity={1}
                         style={[
                             styles.canvas,
                             { width: canvasDisplayWidth, height: canvasDisplayHeight },
+                            ({ touchAction: 'none' } as any),
                         ]}
                         onPress={() => setSelectedId(null)}
                     >
@@ -277,7 +272,7 @@ export const LayoutEditorModal: React.FC<Props> = ({
                             />
                         ))}
                     </TouchableOpacity>
-                </ScrollView>
+                </View>
 
                 {/* 선택된 객체 옵션 패널 */}
                 {selected && (
@@ -452,8 +447,11 @@ const DraggableObject: React.FC<{
 
     const panResponder = useMemo(
         () => PanResponder.create({
+            // 시작 터치와 자식 터치 모두 가로채서 부모(캔버스/모달/문서)가 끼어들지 못하게
             onStartShouldSetPanResponder: () => true,
-            onMoveShouldSetPanResponder: (_, g) => Math.abs(g.dx) > 2 || Math.abs(g.dy) > 2,
+            onStartShouldSetPanResponderCapture: () => true,
+            onMoveShouldSetPanResponder: () => true,
+            onMoveShouldSetPanResponderCapture: () => true,
             onPanResponderGrant: () => {
                 lastMoveRef.current = { x: 0, y: 0 };
                 onSelect();
@@ -465,6 +463,7 @@ const DraggableObject: React.FC<{
                 onMove(dx, dy);
             },
             onPanResponderTerminationRequest: () => false,
+            onShouldBlockNativeResponder: () => true,
         }),
         [scale, onMove, onSelect]
     );
@@ -493,6 +492,8 @@ const DraggableObject: React.FC<{
                 shadowOpacity: selected ? 0.3 : 0.1,
                 shadowOffset: { width: 0, height: 1 },
                 shadowRadius: 2,
+                // 모바일 웹: 페이지 스크롤이 터치를 가로채는 걸 방지
+                ...(({ touchAction: 'none', userSelect: 'none', cursor: 'move' } as any)),
             }}
         >
             {obj.label && (
@@ -552,11 +553,11 @@ const styles = StyleSheet.create({
     },
     toolBtnText: { fontSize: 12, fontWeight: '700', color: '#475569' },
 
-    canvasScroll: { flex: 1 },
-    canvasScrollContent: {
+    canvasWrap: {
+        flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        padding: 16,
+        padding: 12,
     },
     canvas: {
         backgroundColor: '#ffffff',
