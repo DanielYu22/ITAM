@@ -242,10 +242,14 @@ export class NotionClient {
             });
 
             if (!response.ok) {
-                console.error(`[Notion] Update failed: ${response.status}`, await response.text());
+                const text = await response.text();
+                console.error(`[Notion] Update failed: ${response.status} (${propertyName} as ${type})`, text);
+                // 호출자가 어떤 필드가 실패했는지 알 수 있도록 throw
+                throw new Error(`Update failed (${propertyName}, type=${type}): ${response.status} — ${text.slice(0, 200)}`);
             }
         } catch (error) {
             console.error("Notion Update Error:", error);
+            throw error;
         }
     }
 

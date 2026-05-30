@@ -811,46 +811,85 @@ export default function App() {
   const handleCompleteQuickTask = useCallback(async (asset: Asset, task: QuickTaskDef) => {
     if (!notionClient) return;
 
+    // 0) 매번 fresh schema 를 가져옴. 사용자가 다른 세션에서 컬럼을 만들었거나
+    //    앱이 자동 생성한 컬럼의 type 정보가 캐시되지 않은 경우를 방어.
+    let freshTypes: Record<string, string> = {};
+    try {
+      const fresh = await notionClient.getDatabaseSchema();
+      Object.entries(fresh).forEach(([k, v]) => {
+        freshTypes[k] = v.type;
+      });
+      // schemaProperties state 도 최신화 (다음 작업이 같은 사이클이면 한 번만 호출되게)
+      setSchemaProperties(fresh);
+    } catch (e) {
+      // fresh fetch 실패 시 캐시 사용
+      Object.entries(schemaProperties).forEach(([k, v]) => {
+        freshTypes[k] = v.type;
+      });
+    }
+
     // 1) 처리이력 한 줄 prepend
     const now = new Date();
     const historyLabel = task.buildHistoryLabel({ now });
     const existingHistory = asset.values[HISTORY_FIELD_NAME] ?? '';
     const nextHistory = appendHistoryLine(existingHistory, historyLabel, now);
 
-    // 2) 사전값 클리어 (멀티셀렉트는 해당 옵션만 제거)
-    const schemaTypes: Record<string, string> = {};
-    Object.entries(schemaProperties).forEach(([k, v]) => {
-      schemaTypes[k] = v.type;
-    });
-    const clearUpdates = computeClearUpdates(task, asset.values, schemaTypes);
+    // 2) 사전값 클리어 계산
+    const clearUpdates = computeClearUpdates(task, asset.values, freshTypes);
 
-    // 3) Notion 업데이트 (병렬)
-    try {
-      await Promise.all([
-        notionClient.updatePage(asset.id, HISTORY_FIELD_NAME, nextHistory, 'rich_text'),
-        ...clearUpdates.map(u =>
-          notionClient.updatePage(asset.id, u.field, u.newValue, u.type)
-        ),
-      ]);
+    // 누락된 필드(Notion DB 에 없음) 식별 — 사용자에게 명확히 알림
+    const missingFields = clearUpdates
+      .filter(u => !freshTypes[u.field])
+      .map(u => u.field);
+    if (missingFields.length > 0) {
+      Alert.alert(
+        '필드 미존재',
+        `'${missingFields.join(', ')}' 컬럼이 Notion DB 에 없어요.\n앱을 새로고침하면 자동 생성됩니다.`
+      );
+    }
 
-      // 4) 로컬 상태 동기화 (Optimistic)
-      const updatedValues: Record<string, string> = {
-        ...asset.values,
-        [HISTORY_FIELD_NAME]: nextHistory,
-      };
-      for (const u of clearUpdates) {
+    // 3) Notion 업데이트 — 필드별 결과 추적
+    const failed: Array<{ field: string; error: any }> = [];
+    const safeUpdate = async (field: string, value: string, type: string) => {
+      try {
+        await notionClient.updatePage(asset.id, field, value, type);
+      } catch (e) {
+        failed.push({ field, error: e });
+      }
+    };
+    await Promise.all([
+      safeUpdate(HISTORY_FIELD_NAME, nextHistory, 'rich_text'),
+      ...clearUpdates.map(u => safeUpdate(u.field, u.newValue, u.type)),
+    ]);
+
+    if (failed.length > 0) {
+      console.error('[QuickTask] 일부 필드 업데이트 실패:', failed);
+      const msg = failed
+        .map(f => `• ${f.field}: ${String((f.error as any)?.message ?? f.error).slice(0, 120)}`)
+        .join('\n');
+      Alert.alert(
+        '일부 필드 업데이트 실패',
+        `${failed.length}개 필드 실패. 처리이력은 기록됐어요.\n\n${msg}`
+      );
+      // 성공한 필드만 로컬 반영
+    }
+
+    // 4) 로컬 상태 동기화 (성공한 것만)
+    const updatedValues: Record<string, string> = { ...asset.values };
+    if (!failed.find(f => f.field === HISTORY_FIELD_NAME)) {
+      updatedValues[HISTORY_FIELD_NAME] = nextHistory;
+    }
+    for (const u of clearUpdates) {
+      if (!failed.find(f => f.field === u.field)) {
         updatedValues[u.field] = u.newValue;
       }
-      setAssets(prev => prev.map(a =>
-        a.id === asset.id ? { ...a, values: updatedValues } : a
-      ));
-      setLocationSelectedAssets(prev => prev.map(a =>
-        a.id === asset.id ? { ...a, values: updatedValues } : a
-      ));
-    } catch (error) {
-      console.error('[QuickTask] 완료 처리 실패:', error);
-      Alert.alert('오류', '처리 중 문제가 발생했습니다.');
     }
+    setAssets(prev => prev.map(a =>
+      a.id === asset.id ? { ...a, values: updatedValues } : a
+    ));
+    setLocationSelectedAssets(prev => prev.map(a =>
+      a.id === asset.id ? { ...a, values: updatedValues } : a
+    ));
   }, [notionClient, schemaProperties]);
 
   // 홈으로 돌아가기
