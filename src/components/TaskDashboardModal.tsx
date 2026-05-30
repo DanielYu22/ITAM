@@ -404,16 +404,18 @@ export const TaskDashboardModal: React.FC<Props> = ({
                             </TouchableOpacity>
                             {QUICK_TASKS.map(t => {
                                 const cnt = stats.perTask[t.id] || 0;
-                                if (cnt === 0) return null;
                                 const active = activeTaskFilter === t.id;
+                                const dim = cnt === 0;
                                 return (
                                     <TouchableOpacity
                                         key={t.id}
                                         style={[
                                             styles.taskFilterChip,
                                             { backgroundColor: active ? t.color : t.bgColor },
+                                            dim && !active && { opacity: 0.5 },
                                         ]}
-                                        onPress={() => setActiveTaskFilter(active ? null : t.id)}
+                                        onPress={() => !dim && setActiveTaskFilter(active ? null : t.id)}
+                                        disabled={dim}
                                     >
                                         <Text style={styles.taskFilterChipEmoji}>{t.emoji}</Text>
                                         <Text style={[
@@ -444,14 +446,14 @@ export const TaskDashboardModal: React.FC<Props> = ({
                     </Text>
                 </View>
 
-                {/* Quick Task별 진행바 */}
+                {/* Quick Task별 진행바 — 0대도 표시(희미)해서 어떤 사이클이 있는지 보임 */}
                 <View style={styles.progressSection}>
                     {QUICK_TASKS.map(t => {
                         const cnt = stats.perTask[t.id] || 0;
-                        if (cnt === 0) return null;
-                        const widthPct = (cnt / stats.maxPerTask) * 100;
+                        const widthPct = stats.maxPerTask > 0 ? (cnt / stats.maxPerTask) * 100 : 0;
+                        const dim = cnt === 0;
                         return (
-                            <View key={t.id} style={styles.progressRow}>
+                            <View key={t.id} style={[styles.progressRow, dim && { opacity: 0.45 }]}>
                                 <Text style={styles.progressEmoji}>{t.emoji}</Text>
                                 <Text style={styles.progressName} numberOfLines={1}>{t.name}</Text>
                                 <View style={styles.progressBarTrack}>
@@ -461,6 +463,11 @@ export const TaskDashboardModal: React.FC<Props> = ({
                             </View>
                         );
                     })}
+                    {Object.values(stats.perTask).filter(n => n > 0).length < QUICK_TASKS.length && (
+                        <Text style={styles.progressHint}>
+                            💡 0대인 사이클은 정기 초기화로 마킹해야 큐에 올라와요.
+                        </Text>
+                    )}
                 </View>
 
                 {/* 위치 4단계 트리 자산 테이블 */}
@@ -542,6 +549,13 @@ const styles = StyleSheet.create({
     progressBarTrack: { flex: 1, height: 8, backgroundColor: '#f1f5f9', borderRadius: 4, overflow: 'hidden' },
     progressBarFill: { height: '100%' },
     progressCount: { fontSize: 11, fontWeight: '800', minWidth: 28, textAlign: 'right' },
+    progressHint: {
+        fontSize: 10,
+        color: '#94a3b8',
+        marginTop: 6,
+        paddingHorizontal: 4,
+        lineHeight: 14,
+    },
 
     tableScroll: { flex: 1 },
     tableContent: { padding: 10, gap: 10 },

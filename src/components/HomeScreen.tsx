@@ -601,9 +601,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                 <View style={styles.combinedBreakdown}>
                                     {QUICK_TASKS.map(t => {
                                         const cnt = combinedStats.matchedTaskCounts[t.id] || 0;
-                                        if (cnt === 0) return null;
+                                        const dim = cnt === 0;
                                         return (
-                                            <View key={t.id} style={[styles.combinedChip, { backgroundColor: t.bgColor }]}>
+                                            <TouchableOpacity
+                                                key={t.id}
+                                                style={[
+                                                    styles.combinedChip,
+                                                    { backgroundColor: t.bgColor },
+                                                    dim && styles.combinedChipDim,
+                                                ]}
+                                                onPress={(e) => {
+                                                    (e as any).stopPropagation?.();
+                                                    if (dim && onMonthlyReset) onMonthlyReset();
+                                                }}
+                                                activeOpacity={dim && onMonthlyReset ? 0.5 : 1}
+                                                disabled={!dim || !onMonthlyReset}
+                                            >
                                                 <Text style={styles.combinedChipEmoji}>{t.emoji}</Text>
                                                 <Text style={[styles.combinedChipName, { color: t.color }]} numberOfLines={1}>
                                                     {t.name}
@@ -611,10 +624,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                                 <Text style={[styles.combinedChipCount, { color: t.color }]}>
                                                     {cnt}
                                                 </Text>
-                                            </View>
+                                            </TouchableOpacity>
                                         );
                                     })}
                                 </View>
+                                {Object.values(combinedStats.matchedTaskCounts).filter(n => n > 0).length < QUICK_TASKS.length && onMonthlyReset && (
+                                    <View style={styles.combinedHint}>
+                                        <Text style={styles.combinedHintText}>
+                                            💡 0대인 사이클은 '정기 초기화'에서 마킹하면 큐에 올라옵니다 (탭하면 바로 이동)
+                                        </Text>
+                                    </View>
+                                )}
                             </TouchableOpacity>
                         )}
 
@@ -1093,6 +1113,15 @@ const styles = StyleSheet.create({
     combinedChipEmoji: { fontSize: 12 },
     combinedChipName: { fontSize: 11, fontWeight: '700', maxWidth: 140 },
     combinedChipCount: { fontSize: 11, fontWeight: '800' },
+    combinedChipDim: { opacity: 0.45 },
+    combinedHint: {
+        marginTop: 8,
+        backgroundColor: 'rgba(255,255,255,0.15)',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+    },
+    combinedHintText: { fontSize: 11, color: '#e0e7ff', lineHeight: 16 },
     individualToggle: {
         alignSelf: 'flex-start',
         paddingHorizontal: 8,
