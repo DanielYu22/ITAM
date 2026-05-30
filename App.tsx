@@ -59,6 +59,7 @@ import {
   computeClearUpdates,
   appendHistoryLine,
   buildCombinedQuickTaskConfig,
+  getMatchingQuickTasks,
 } from './src/lib/quickTasks';
 
 export default function App() {
@@ -432,6 +433,14 @@ export default function App() {
 
     if (!fieldWorkConfig) return filteredAssets;
 
+    // 통합 모드: 각 Quick Task 를 따로 평가해서 하나라도 매칭되면 포함.
+    // (fieldWorkConfig 의 평탄화된 그룹 평가는 오프라인 패치처럼 그룹간
+    // AND 가 있는 Quick Task 의 의미를 망가뜨려서 별도 경로로 처리)
+    if (combinedQuickTask) {
+      const now = new Date();
+      return filteredAssets.filter(a => getMatchingQuickTasks(a, QUICK_TASKS, now).length > 0);
+    }
+
     let result = filteredAssets;
 
     // 작업 대상 조건 적용 (그룹 및 중첩 논리 지원)
@@ -527,7 +536,7 @@ export default function App() {
     }
 
     return result;
-  }, [filteredAssets, fieldWorkConfig, locationSelectedAssets]);
+  }, [filteredAssets, fieldWorkConfig, locationSelectedAssets, combinedQuickTask]);
 
   // Pull to refresh
   const onRefresh = useCallback(() => {
@@ -661,22 +670,19 @@ export default function App() {
     }
   }, [appSettings, notionClient, currentSite]);
 
-  // 통합 모드 핸들러 — 모든 Quick Task 의 조건을 OR 로 합친 큐 시작.
+  // 통합 모드 핸들러 — 모든 Quick Task 를 합친 큐 시작.
   // '현장 한 번 나가는 김에 그 기기의 모든 과제 처리' 워크플로우용.
+  //
+  // 사이트 컨텍스트는 siteFilteredAssets 단계에서 이미 적용되므로
+  // 여기서 사이트 그룹을 prepend 하지 않습니다. (prepend 하면 그룹간
+  // AND 가 평탄화된 통합 그룹들과 충돌해서 매칭 0건이 됨)
+  //
+  // 실제 자산 필터링은 workFilteredAssets 안에서 getMatchingQuickTasks
+  // 기반으로 정확히 평가합니다. fieldWorkConfig 는 '필터 설정' 모달에서
+  // 어떤 조건들이 합쳐졌는지 시각적으로 보여주는 디스플레이 용도입니다.
   const handleCombinedQuickTask = useCallback(() => {
     const now = new Date();
-    const combinedConfig = buildCombinedQuickTaskConfig(QUICK_TASKS, now);
-    const sitePreset = buildSiteFilterConfig(currentSite, effectiveSites);
-    const config = sitePreset
-      ? {
-          ...combinedConfig,
-          globalLogicalOperator: 'and' as const,
-          targetGroups: [
-            ...sitePreset.targetGroups,
-            ...combinedConfig.targetGroups,
-          ],
-        }
-      : combinedConfig;
+    const config = buildCombinedQuickTaskConfig(QUICK_TASKS, now);
     setActiveQuickTask(null);
     setCombinedQuickTask(true);
     setFieldWorkConfig(config);
@@ -686,7 +692,7 @@ export default function App() {
     if (config.locationHierarchy && config.locationHierarchy.length > 0) {
       setSkipLocationSelection(true);
     }
-  }, [currentSite, effectiveSites]);
+  }, []);
 
   // Quick Task 핸들러: 정기/현장 업무를 즉시 시작.
   // 현재 사이트의 프리셋이 있으면 사이트 그룹을 첫 번째 그룹으로 prepend해서
