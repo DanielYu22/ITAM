@@ -32,6 +32,7 @@ import {
     LayoutGrid,
     Database,
     Wrench,
+    Map,
 } from 'lucide-react-native';
 import { FilterConfig } from './FieldWorkFilter';
 import { Asset, NotionProperty } from '../lib/notion';
@@ -73,6 +74,8 @@ interface HomeScreenProps {
     onRefresh?: () => void;
     // 현장지원 접수 모달 열기
     onSubmitFieldSupport?: () => void;
+    // 레이아웃 편집 진입
+    onEditLayout?: () => void;
     /** 사용자 오버라이드가 합성된 최종 사이트 정의 (카운트/표시용) */
     effectiveSites?: SiteDef[];
     /** 'all' = 전체장비, 'filtered' = 작업대상 대시보드 오픈 */
@@ -113,6 +116,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     onEditSiteRules,
     onRefresh,
     onSubmitFieldSupport,
+    onEditLayout,
     effectiveSites,
     onOpenDashboard,
     workTargetCount,
@@ -512,6 +516,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             <Database size={26} color="#0369a1" />
                         </View>
                         <Text style={styles.toolLabel}>DB 관리</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.toolCard}
+                        onPress={onEditLayout}
+                        disabled={!onEditLayout}
+                    >
+                        <View style={[styles.toolIconContainer, { backgroundColor: '#fef3c7' }]}>
+                            <Map size={26} color="#b45309" />
+                        </View>
+                        <Text style={styles.toolLabel}>레이아웃</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity

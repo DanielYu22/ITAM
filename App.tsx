@@ -44,6 +44,9 @@ import { TaskDashboardModal } from './src/components/TaskDashboardModal';
 import { SiteRulesModal } from './src/components/SiteRulesModal';
 import { DBManagementModal } from './src/components/DBManagementModal';
 import { FieldSupportSubmitModal } from './src/components/FieldSupportSubmitModal';
+import { LayoutEditorModal } from './src/components/LayoutEditorModal';
+import { LayoutRoomPickerModal } from './src/components/LayoutRoomPickerModal';
+import { LayoutsStore, RoomLayout, ensureStore, roomKey } from './src/lib/layouts';
 import {
   SiteId,
   SitesOverrides,
@@ -107,6 +110,10 @@ export default function App() {
   // 새 모달들
   const [showDBManagementModal, setShowDBManagementModal] = useState(false);
   const [showFieldSupportModal, setShowFieldSupportModal] = useState(false);
+  // 레이아웃 편집
+  const [layoutsStore, setLayoutsStore] = useState<LayoutsStore>({ rooms: {} });
+  const [showLayoutPicker, setShowLayoutPicker] = useState(false);
+  const [editingRoom, setEditingRoom] = useState<{ building: string; floor: string; room: string } | null>(null);
   const [showSiteRulesModal, setShowSiteRulesModal] = useState(false);
   // 사이트(장소) 컨텍스트
   const [currentSite, setCurrentSite] = useState<SiteId>('all');
@@ -314,6 +321,9 @@ export default function App() {
         if (savedSites && typeof savedSites === 'object') {
           setSitesOverrides(savedSites as SitesOverrides);
         }
+        // 레이아웃 스토어 복원
+        const savedLayouts = (ensuredSettings as any)?.layouts;
+        setLayoutsStore(ensureStore(savedLayouts));
         const lastLookup = ensuredSettings?.bulkUpdate?.lastLookupColumn;
         const schemaCols = result.schema;
         if (typeof lastLookup === 'string' && schemaCols.includes(lastLookup)) {
@@ -684,6 +694,25 @@ export default function App() {
     setCombinedQuickTask(false);
   }, [effectiveSites]);
 
+  // 레이아웃 저장 — Notion 설정 페이지에 layouts.rooms[key] 로 저장
+  const handleSaveRoomLayout = useCallback(async (key: string, layout: RoomLayout) => {
+    const next: LayoutsStore = {
+      ...layoutsStore,
+      rooms: { ...layoutsStore.rooms, [key]: layout },
+    };
+    setLayoutsStore(next);
+    const merged = { ...(appSettings || {}), layouts: next };
+    setAppSettings(merged);
+    if (notionClient) {
+      try {
+        await notionClient.saveSettings(merged);
+      } catch (e) {
+        console.error('[App] 레이아웃 저장 실패:', e);
+        throw e;
+      }
+    }
+  }, [layoutsStore, appSettings, notionClient]);
+
   // 사이트 룰 저장: Notion 설정 페이지에 영구 저장.
   // 저장 직후 effectiveSites 가 재계산되어 분류/카운트가 즉시 반영됩니다.
   const handleSaveSitesOverrides = useCallback(async (next: SitesOverrides) => {
@@ -1053,6 +1082,7 @@ export default function App() {
               onSourceImport={() => setShowSourceImportModal(true)}
               onOpenDBManagement={() => setShowDBManagementModal(true)}
               onSubmitFieldSupport={() => setShowFieldSupportModal(true)}
+              onEditLayout={() => setShowLayoutPicker(true)}
               onDashboard={() => {
                 setDashboardMode('all');
                 setShowDashboardModal(true);
@@ -1352,6 +1382,46 @@ export default function App() {
           schemaProperties={schemaProperties}
           onUpdate={handleUpdateAsset}
         />
+
+        {/* 레이아웃: 연구실 선택 → 편집기 */}
+        <LayoutRoomPickerModal
+          visible={showLayoutPicker}
+          onClose={() => setShowLayoutPicker(false)}
+          assets={assets}
+          existingRoomKeys={new Set(Object.keys(layoutsStore.rooms))}
+          titleField={Object.keys(schemaProperties).find(k => schemaProperties[k].type === 'title') || 'Name'}
+          onSelect={(b, f, r) => {
+            setShowLayoutPicker(false);
+            setEditingRoom({ building: b, floor: f, room: r });
+          }}
+        />
+
+        {editingRoom && (() => {
+          const k = roomKey(editingRoom.building, editingRoom.floor, editingRoom.room);
+          const roomAssets = assets.filter(a => {
+            const v = a.values as any;
+            return v['L)건물'] === editingRoom.building
+              && v['L)층'] === editingRoom.floor
+              && v['L)연구실'] === editingRoom.room;
+          });
+          const titleField = Object.keys(schemaProperties).find(p => schemaProperties[p].type === 'title') || 'Name';
+          return (
+            <LayoutEditorModal
+              visible
+              onClose={() => setEditingRoom(null)}
+              building={editingRoom.building}
+              floor={editingRoom.floor}
+              room={editingRoom.room}
+              initialLayout={layoutsStore.rooms[k] || null}
+              roomAssets={roomAssets}
+              titleField={titleField}
+              onSave={async (lay) => {
+                await handleSaveRoomLayout(k, lay);
+                setEditingRoom(null);
+              }}
+            />
+          );
+        })()}
 
         <TaskDashboardModal
           visible={showTaskDashboardModal}
