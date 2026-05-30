@@ -22,7 +22,7 @@ import {
     TextInput,
     FlatList,
 } from 'react-native';
-import { X, Search, ClipboardCheck, MapPin, Check, ChevronDown, ChevronRight } from 'lucide-react-native';
+import { X, Search, ClipboardCheck, MapPin, Check, ChevronDown, ChevronRight, FoldVertical, UnfoldVertical } from 'lucide-react-native';
 import { Asset, NotionProperty } from '../lib/notion';
 import {
     QUICK_TASKS,
@@ -30,6 +30,7 @@ import {
     getMatchingQuickTasks,
     HISTORY_FIELD_NAME,
 } from '../lib/quickTasks';
+import { SiteId, SITES_DEFAULTS, getAssetSite, SiteDef } from '../lib/sites';
 
 interface Props {
     visible: boolean;
@@ -39,13 +40,30 @@ interface Props {
     onCompleteQuickTask: (asset: Asset, task: QuickTaskDef) => Promise<void>;
     /** 카드 모드로 점프하고 싶을 때 (행 클릭) */
     onJumpToAsset?: (asset: Asset) => void;
+    /** 현재 사이트 컨텍스트. 'all' 일 때만 트리에 사이트 단계가 추가됨. */
+    currentSite?: SiteId;
+    effectiveSites?: SiteDef[];
 }
 
 interface AssetRow {
     asset: Asset;
     matched: QuickTaskDef[];
-    locationKey: string;
-    location: string;
+    siteId: SiteId;
+    building: string;
+    floor: string;
+    room: string;
+}
+
+// 재귀 트리 노드 — 사이트/건물/층/연구실 단계
+type TreeLevel = 'site' | 'building' | 'floor' | 'room';
+interface TreeNode {
+    key: string;       // 경로 기반 unique key (토글 식별용)
+    label: string;     // 표시 라벨
+    level: TreeLevel;
+    rowCount: number;
+    taskCount: number;
+    children?: TreeNode[];
+    rows?: AssetRow[]; // 연구실 단계에만 존재
 }
 
 export const TaskDashboardModal: React.FC<Props> = ({
@@ -55,35 +73,37 @@ export const TaskDashboardModal: React.FC<Props> = ({
     schemaProperties,
     onCompleteQuickTask,
     onJumpToAsset,
+    currentSite = 'all',
+    effectiveSites,
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTaskFilter, setActiveTaskFilter] = useState<string | null>(null);
     const [completingKey, setCompletingKey] = useState<string | null>(null);
-    const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+    // 펼쳐진 노드 key 집합. 기본 비어있음 = 모두 접힘.
+    const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
 
     const titleField = useMemo(() => {
         return Object.keys(schemaProperties).find(k => schemaProperties[k].type === 'title') || 'Name';
     }, [schemaProperties]);
 
-    // 매칭되는 과제가 1건 이상인 자산만 추출 + 위치 키 계산
+    // 매칭되는 과제가 1건 이상인 자산만 추출 + 위치 정보
     const allRows = useMemo<AssetRow[]>(() => {
         const rows: AssetRow[] = [];
         for (const asset of assets) {
             const matched = getMatchingQuickTasks(asset);
             if (matched.length === 0) continue;
             const v = asset.values as any;
-            const b = String(v['L)건물'] ?? '').trim() || '(건물 미상)';
-            const f = String(v['L)층'] ?? '').trim() || '(층 미상)';
-            const r = String(v['L)연구실'] ?? '').trim() || '(연구실 미상)';
             rows.push({
                 asset,
                 matched,
-                locationKey: `${b}__${f}`,
-                location: `${b} · ${f} · ${r}`,
+                siteId: getAssetSite(asset, effectiveSites),
+                building: String(v['L)건물'] ?? '').trim() || '(건물 미상)',
+                floor: String(v['L)층'] ?? '').trim() || '(층 미상)',
+                room: String(v['L)연구실'] ?? '').trim() || '(연구실 미상)',
             });
         }
         return rows;
-    }, [assets]);
+    }, [assets, effectiveSites]);
 
     // 검색 + Quick Task 필터 적용
     const filteredRows = useMemo(() => {
@@ -93,10 +113,11 @@ export const TaskDashboardModal: React.FC<Props> = ({
         }
         if (searchQuery.trim()) {
             const q = searchQuery.toLowerCase();
-            result = result.filter(r =>
-                String((r.asset.values as any)[titleField] ?? '').toLowerCase().includes(q) ||
-                r.location.toLowerCase().includes(q)
-            );
+            result = result.filter(r => {
+                const name = String((r.asset.values as any)[titleField] ?? '').toLowerCase();
+                const loc = `${r.building} ${r.floor} ${r.room}`.toLowerCase();
+                return name.includes(q) || loc.includes(q);
+            });
         }
         return result;
     }, [allRows, activeTaskFilter, searchQuery, titleField]);
@@ -115,23 +136,122 @@ export const TaskDashboardModal: React.FC<Props> = ({
         return { totalAssets, totalTaskCount, perTask, maxPerTask };
     }, [allRows]);
 
-    // 위치별 그룹화
-    const grouped = useMemo(() => {
-        const map = new Map<string, { key: string; building: string; floor: string; rows: AssetRow[] }>();
+    // 4단계 트리 구조 — 사이트 단계는 currentSite === 'all' 일 때만 포함
+    const tree = useMemo<TreeNode[]>(() => {
+        const includeSite = currentSite === 'all';
+        // 임시 nested map: site → building → floor → room → rows
+        const root: Record<string, Record<string, Record<string, Record<string, AssetRow[]>>>> = {};
         for (const r of filteredRows) {
-            const v = r.asset.values as any;
-            const b = String(v['L)건물'] ?? '').trim() || '(건물 미상)';
-            const f = String(v['L)층'] ?? '').trim() || '(층 미상)';
-            const k = `${b}__${f}`;
-            if (!map.has(k)) map.set(k, { key: k, building: b, floor: f, rows: [] });
-            map.get(k)!.rows.push(r);
+            const siteKey = includeSite ? r.siteId : '_';
+            if (!root[siteKey]) root[siteKey] = {};
+            if (!root[siteKey][r.building]) root[siteKey][r.building] = {};
+            if (!root[siteKey][r.building][r.floor]) root[siteKey][r.building][r.floor] = {};
+            if (!root[siteKey][r.building][r.floor][r.room]) root[siteKey][r.building][r.floor][r.room] = [];
+            root[siteKey][r.building][r.floor][r.room].push(r);
         }
-        return Array.from(map.values()).sort((a, b) => {
-            const c = a.building.localeCompare(b.building, 'ko');
-            if (c !== 0) return c;
-            return a.floor.localeCompare(b.floor, 'ko', { numeric: true });
+        // 변환: 카운트 + 정렬
+        const krSort = (a: string, b: string) => a.localeCompare(b, 'ko', { numeric: true });
+        const taskCount = (rows: AssetRow[]) => rows.reduce((a, r) => a + r.matched.length, 0);
+        const siteNodes: TreeNode[] = [];
+        for (const siteKey of Object.keys(root).sort()) {
+            const buildings = root[siteKey];
+            const siteLabel = includeSite
+                ? (SITES_DEFAULTS.find(s => s.id === (siteKey as SiteId))?.name || siteKey)
+                : '';
+            const buildingNodes: TreeNode[] = [];
+            for (const b of Object.keys(buildings).sort(krSort)) {
+                const floors = buildings[b];
+                const floorNodes: TreeNode[] = [];
+                for (const f of Object.keys(floors).sort(krSort)) {
+                    const rooms = floors[f];
+                    const roomNodes: TreeNode[] = [];
+                    for (const rm of Object.keys(rooms).sort(krSort)) {
+                        const rows = rooms[rm].sort((a, b) =>
+                            String((a.asset.values as any)[titleField] ?? '').localeCompare(
+                                String((b.asset.values as any)[titleField] ?? ''),
+                                'ko',
+                                { numeric: true },
+                            )
+                        );
+                        roomNodes.push({
+                            key: `${siteKey}/${b}/${f}/${rm}`,
+                            label: rm,
+                            level: 'room',
+                            rowCount: rows.length,
+                            taskCount: taskCount(rows),
+                            rows,
+                        });
+                    }
+                    const fRowCount = roomNodes.reduce((a, n) => a + n.rowCount, 0);
+                    const fTaskCount = roomNodes.reduce((a, n) => a + n.taskCount, 0);
+                    floorNodes.push({
+                        key: `${siteKey}/${b}/${f}`,
+                        label: f,
+                        level: 'floor',
+                        rowCount: fRowCount,
+                        taskCount: fTaskCount,
+                        children: roomNodes,
+                    });
+                }
+                const bRowCount = floorNodes.reduce((a, n) => a + n.rowCount, 0);
+                const bTaskCount = floorNodes.reduce((a, n) => a + n.taskCount, 0);
+                buildingNodes.push({
+                    key: `${siteKey}/${b}`,
+                    label: b,
+                    level: 'building',
+                    rowCount: bRowCount,
+                    taskCount: bTaskCount,
+                    children: floorNodes,
+                });
+            }
+            if (includeSite) {
+                const sRowCount = buildingNodes.reduce((a, n) => a + n.rowCount, 0);
+                const sTaskCount = buildingNodes.reduce((a, n) => a + n.taskCount, 0);
+                siteNodes.push({
+                    key: `site/${siteKey}`,
+                    label: siteLabel,
+                    level: 'site',
+                    rowCount: sRowCount,
+                    taskCount: sTaskCount,
+                    children: buildingNodes,
+                });
+            } else {
+                // 사이트 단계 생략 시 buildings 가 최상위
+                siteNodes.push(...buildingNodes);
+            }
+        }
+        return siteNodes;
+    }, [filteredRows, currentSite, titleField]);
+
+    // 트리 안 모든 노드 key 수집 (펼치기 토글용)
+    const allNodeKeys = useMemo(() => {
+        const keys: string[] = [];
+        const walk = (nodes: TreeNode[]) => {
+            for (const n of nodes) {
+                keys.push(n.key);
+                if (n.children) walk(n.children);
+            }
+        };
+        walk(tree);
+        return keys;
+    }, [tree]);
+
+    const allExpanded = expandedKeys.size > 0 && expandedKeys.size === allNodeKeys.length;
+    const toggleAll = () => {
+        if (allExpanded || expandedKeys.size > 0) {
+            setExpandedKeys(new Set());
+        } else {
+            setExpandedKeys(new Set(allNodeKeys));
+        }
+    };
+    const toggleNode = (key: string) => {
+        setExpandedKeys(prev => {
+            const next = new Set(prev);
+            if (next.has(key)) next.delete(key);
+            else next.add(key);
+            return next;
         });
-    }, [filteredRows]);
+    };
 
     const handleCompleteInline = useCallback(async (asset: Asset, task: QuickTaskDef) => {
         const key = `${asset.id}-${task.id}`;
@@ -144,15 +264,102 @@ export const TaskDashboardModal: React.FC<Props> = ({
         }
     }, [completingKey, onCompleteQuickTask]);
 
-    const toggleGroup = (k: string) => {
-        setCollapsedGroups(prev => ({ ...prev, [k]: !prev[k] }));
-    };
-
-    // 최근 처리이력 한 줄 (위)
+    // 최근 처리이력 한 줄
     const getLastHistoryLine = (asset: Asset): string => {
         const h = String((asset.values as any)[HISTORY_FIELD_NAME] ?? '').trim();
         if (!h) return '';
         return h.split('\n').filter(Boolean)[0] || '';
+    };
+
+    // 자산 행 렌더
+    const renderAssetRow = (row: AssetRow) => {
+        const name = String((row.asset.values as any)[titleField] ?? '');
+        const lastHistory = getLastHistoryLine(row.asset);
+        return (
+            <View key={row.asset.id} style={styles.tableRow}>
+                <TouchableOpacity
+                    style={styles.rowNameCell}
+                    onPress={() => onJumpToAsset?.(row.asset)}
+                    activeOpacity={0.7}
+                >
+                    <Text style={styles.rowName}>{name || '(이름 없음)'}</Text>
+                </TouchableOpacity>
+                <View style={styles.rowTaskCell}>
+                    {row.matched.map(t => {
+                        const isCompleting = completingKey === `${row.asset.id}-${t.id}`;
+                        return (
+                            <View
+                                key={t.id}
+                                style={[styles.rowTaskChip, { backgroundColor: t.bgColor }]}
+                            >
+                                <Text style={styles.rowTaskChipEmoji}>{t.emoji}</Text>
+                                <Text
+                                    style={[styles.rowTaskChipName, { color: t.color }]}
+                                    numberOfLines={1}
+                                >
+                                    {t.name}
+                                </Text>
+                                <TouchableOpacity
+                                    style={[styles.rowTaskDoneBtn, { backgroundColor: t.color }]}
+                                    onPress={() => handleCompleteInline(row.asset, t)}
+                                    disabled={isCompleting}
+                                >
+                                    <Check size={10} color="#ffffff" />
+                                    <Text style={styles.rowTaskDoneText}>
+                                        {isCompleting ? '…' : '완료'}
+                                    </Text>
+                                </TouchableOpacity>
+                            </View>
+                        );
+                    })}
+                    {!!lastHistory && (
+                        <Text style={styles.rowHistory} numberOfLines={1}>
+                            최근: {lastHistory}
+                        </Text>
+                    )}
+                </View>
+            </View>
+        );
+    };
+
+    // 트리 노드 재귀 렌더
+    const renderNode = (node: TreeNode, depth: number = 0): React.ReactNode => {
+        const expanded = expandedKeys.has(node.key);
+        const indent = depth * 14;
+        // 단계별 색상
+        const headerStyle = node.level === 'site'
+            ? styles.nodeHeaderSite
+            : node.level === 'building'
+                ? styles.nodeHeaderBuilding
+                : node.level === 'floor'
+                    ? styles.nodeHeaderFloor
+                    : styles.nodeHeaderRoom;
+        return (
+            <View key={node.key} style={[styles.nodeBlock, { marginLeft: indent }]}>
+                <TouchableOpacity
+                    style={[styles.nodeHeader, headerStyle]}
+                    onPress={() => toggleNode(node.key)}
+                    activeOpacity={0.7}
+                >
+                    {expanded
+                        ? <ChevronDown size={13} color="#475569" />
+                        : <ChevronRight size={13} color="#475569" />}
+                    <MapPin size={11} color="#6366f1" />
+                    <Text style={styles.nodeLabel} numberOfLines={1}>{node.label}</Text>
+                    <Text style={styles.nodeCount}>
+                        {node.rowCount}대 / {node.taskCount}건
+                    </Text>
+                </TouchableOpacity>
+                {expanded && node.children && (
+                    <View>{node.children.map(c => renderNode(c, depth + 1))}</View>
+                )}
+                {expanded && node.rows && (
+                    <View style={styles.nodeRows}>
+                        {node.rows.map(renderAssetRow)}
+                    </View>
+                )}
+            </View>
+        );
     };
 
     return (
@@ -222,6 +429,21 @@ export const TaskDashboardModal: React.FC<Props> = ({
                     </ScrollView>
                 </View>
 
+                {/* 전체 펼치기/접기 */}
+                <View style={styles.expandAllRow}>
+                    <TouchableOpacity style={styles.expandAllBtn} onPress={toggleAll}>
+                        {expandedKeys.size > 0
+                            ? <FoldVertical size={12} color="#475569" />
+                            : <UnfoldVertical size={12} color="#475569" />}
+                        <Text style={styles.expandAllText}>
+                            {expandedKeys.size > 0 ? '모두 접기' : '모두 펼치기'}
+                        </Text>
+                    </TouchableOpacity>
+                    <Text style={styles.expandAllHint}>
+                        {expandedKeys.size > 0 ? `${expandedKeys.size}개 펼침` : '모두 접힘'}
+                    </Text>
+                </View>
+
                 {/* Quick Task별 진행바 */}
                 <View style={styles.progressSection}>
                     {QUICK_TASKS.map(t => {
@@ -241,9 +463,9 @@ export const TaskDashboardModal: React.FC<Props> = ({
                     })}
                 </View>
 
-                {/* 위치별 그룹화 자산 테이블 */}
+                {/* 위치 4단계 트리 자산 테이블 */}
                 <ScrollView style={styles.tableScroll} contentContainerStyle={styles.tableContent}>
-                    {grouped.length === 0 ? (
+                    {tree.length === 0 ? (
                         <View style={styles.emptyBox}>
                             <Text style={styles.emptyText}>
                                 {allRows.length === 0
@@ -252,84 +474,7 @@ export const TaskDashboardModal: React.FC<Props> = ({
                             </Text>
                         </View>
                     ) : (
-                        grouped.map(group => {
-                            const collapsed = !!collapsedGroups[group.key];
-                            const totalTasks = group.rows.reduce((a, r) => a + r.matched.length, 0);
-                            return (
-                                <View key={group.key} style={styles.groupBlock}>
-                                    <TouchableOpacity
-                                        style={styles.groupHeader}
-                                        onPress={() => toggleGroup(group.key)}
-                                        activeOpacity={0.7}
-                                    >
-                                        {collapsed
-                                            ? <ChevronRight size={14} color="#475569" />
-                                            : <ChevronDown size={14} color="#475569" />}
-                                        <MapPin size={13} color="#6366f1" />
-                                        <Text style={styles.groupTitle}>
-                                            {group.building} · {group.floor}
-                                        </Text>
-                                        <Text style={styles.groupCount}>
-                                            {group.rows.length}대 / {totalTasks}건
-                                        </Text>
-                                    </TouchableOpacity>
-
-                                    {!collapsed && group.rows.map(row => {
-                                        const name = String((row.asset.values as any)[titleField] ?? '');
-                                        const room = String((row.asset.values as any)['L)연구실'] ?? '').trim();
-                                        const lastHistory = getLastHistoryLine(row.asset);
-                                        return (
-                                            <View key={row.asset.id} style={styles.tableRow}>
-                                                <TouchableOpacity
-                                                    style={styles.rowNameCell}
-                                                    onPress={() => onJumpToAsset?.(row.asset)}
-                                                    activeOpacity={0.7}
-                                                >
-                                                    <Text style={styles.rowName}>{name || '(이름 없음)'}</Text>
-                                                    {!!room && (
-                                                        <Text style={styles.rowRoom} numberOfLines={1}>{room}</Text>
-                                                    )}
-                                                </TouchableOpacity>
-                                                <View style={styles.rowTaskCell}>
-                                                    {row.matched.map(t => {
-                                                        const isCompleting = completingKey === `${row.asset.id}-${t.id}`;
-                                                        return (
-                                                            <View
-                                                                key={t.id}
-                                                                style={[styles.rowTaskChip, { backgroundColor: t.bgColor }]}
-                                                            >
-                                                                <Text style={styles.rowTaskChipEmoji}>{t.emoji}</Text>
-                                                                <Text
-                                                                    style={[styles.rowTaskChipName, { color: t.color }]}
-                                                                    numberOfLines={1}
-                                                                >
-                                                                    {t.name}
-                                                                </Text>
-                                                                <TouchableOpacity
-                                                                    style={[styles.rowTaskDoneBtn, { backgroundColor: t.color }]}
-                                                                    onPress={() => handleCompleteInline(row.asset, t)}
-                                                                    disabled={isCompleting}
-                                                                >
-                                                                    <Check size={10} color="#ffffff" />
-                                                                    <Text style={styles.rowTaskDoneText}>
-                                                                        {isCompleting ? '…' : '완료'}
-                                                                    </Text>
-                                                                </TouchableOpacity>
-                                                            </View>
-                                                        );
-                                                    })}
-                                                    {!!lastHistory && (
-                                                        <Text style={styles.rowHistory} numberOfLines={1}>
-                                                            최근: {lastHistory}
-                                                        </Text>
-                                                    )}
-                                                </View>
-                                            </View>
-                                        );
-                                    })}
-                                </View>
-                            );
-                        })
+                        tree.map(n => renderNode(n, 0))
                     )}
                 </ScrollView>
             </View>
@@ -403,33 +548,52 @@ const styles = StyleSheet.create({
     emptyBox: { padding: 40, alignItems: 'center' },
     emptyText: { fontSize: 13, color: '#94a3b8' },
 
-    groupBlock: {
+    expandAllRow: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        paddingHorizontal: 12,
+        paddingVertical: 6,
         backgroundColor: '#ffffff',
-        borderRadius: 10,
-        overflow: 'hidden',
-        borderWidth: 1,
-        borderColor: '#e5e7eb',
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
     },
-    groupHeader: {
+    expandAllBtn: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
-        paddingHorizontal: 12,
-        paddingVertical: 10,
-        backgroundColor: '#eef2ff',
-        borderBottomWidth: 1,
-        borderBottomColor: '#e0e7ff',
+        gap: 4,
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 8,
+        backgroundColor: '#f1f5f9',
     },
-    groupTitle: { fontSize: 13, fontWeight: '700', color: '#4338ca', flex: 1 },
-    groupCount: {
-        fontSize: 11,
+    expandAllText: { fontSize: 11, color: '#475569', fontWeight: '700' },
+    expandAllHint: { fontSize: 11, color: '#94a3b8' },
+
+    nodeBlock: { marginBottom: 4 },
+    nodeHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        borderRadius: 8,
+    },
+    nodeHeaderSite: { backgroundColor: '#e0e7ff' },
+    nodeHeaderBuilding: { backgroundColor: '#eef2ff' },
+    nodeHeaderFloor: { backgroundColor: '#f5f3ff' },
+    nodeHeaderRoom: { backgroundColor: '#f8fafc' },
+    nodeLabel: { fontSize: 12, fontWeight: '700', color: '#1f2937', flex: 1 },
+    nodeCount: {
+        fontSize: 10,
         fontWeight: '700',
         color: '#6366f1',
         backgroundColor: '#ffffff',
-        paddingHorizontal: 8,
+        paddingHorizontal: 7,
         paddingVertical: 2,
         borderRadius: 8,
     },
+    nodeRows: { paddingLeft: 16, paddingTop: 4 },
     tableRow: {
         flexDirection: 'row',
         gap: 8,

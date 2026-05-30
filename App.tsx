@@ -97,6 +97,8 @@ export default function App() {
   // 대시보드 모드: 'all' = 전체장비, 'filtered' = 작업대상(워크 필터 적용)
   const [dashboardMode, setDashboardMode] = useState<'all' | 'filtered'>('all');
   const [showTaskDashboardModal, setShowTaskDashboardModal] = useState(false);
+  // 카드 뷰에서 '대시보드로 돌아가기' 버튼을 보여줄지
+  const [returnToDashboard, setReturnToDashboard] = useState(false);
   const [showSiteRulesModal, setShowSiteRulesModal] = useState(false);
   // 사이트(장소) 컨텍스트
   const [currentSite, setCurrentSite] = useState<SiteId>('all');
@@ -797,6 +799,18 @@ export default function App() {
     setLocationFilters({});
     setActiveQuickTask(null);
     setCombinedQuickTask(false);
+    setReturnToDashboard(false);
+  }, []);
+
+  // 카드뷰에서 대시보드로 돌아가기 — 워크모드 닫고 대시보드 모달 재오픈
+  const backToTaskDashboard = useCallback(() => {
+    setIsWorkMode(false);
+    setLocationSelectedAssets([]);
+    setLocationFilters({});
+    setActiveQuickTask(null);
+    setCombinedQuickTask(false);
+    setReturnToDashboard(false);
+    setShowTaskDashboardModal(true);
   }, []);
 
   // 자유 메모 — 자산의 처리이력에 한 줄 prepend.
@@ -1291,15 +1305,19 @@ export default function App() {
           assets={siteFilteredAssets}
           schemaProperties={schemaProperties}
           onCompleteQuickTask={handleCompleteQuickTask}
+          currentSite={currentSite}
+          effectiveSites={effectiveSites}
           onJumpToAsset={(asset) => {
             setShowTaskDashboardModal(false);
             // 카드 뷰로 점프 — 통합 큐 모드로 진입해 해당 자산을 시작점으로
             handleCombinedQuickTask();
             setLocationSelectedAssets([asset]);
+            // 카드에서 '대시보드로' 버튼이 보이도록 표시
+            setReturnToDashboard(true);
           }}
         />
 
-        {/* 글로벌 플로팅 버튼 - 홈, 새로고침 */}
+        {/* 글로벌 플로팅 버튼 - 홈, 대시보드(있을 때), 새로고침 */}
         <View style={styles.globalFloatingBar}>
           <TouchableOpacity
             style={styles.globalFloatingButton}
@@ -1307,6 +1325,14 @@ export default function App() {
           >
             <Home size={22} color="#ffffff" />
           </TouchableOpacity>
+          {returnToDashboard && (
+            <TouchableOpacity
+              style={[styles.globalFloatingButton, { backgroundColor: '#4338ca' }]}
+              onPress={backToTaskDashboard}
+            >
+              <Text style={{ color: '#ffffff', fontSize: 16 }}>📊</Text>
+            </TouchableOpacity>
+          )}
           <TouchableOpacity
             style={[styles.globalFloatingButton, refreshing && styles.globalFloatingButtonActive]}
             onPress={() => {
