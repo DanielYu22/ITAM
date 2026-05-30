@@ -114,6 +114,8 @@ export default function App() {
   const [showDBManagementModal, setShowDBManagementModal] = useState(false);
   const [showFieldSupportModal, setShowFieldSupportModal] = useState(false);
   const [showMonthlyResetModal, setShowMonthlyResetModal] = useState(false);
+  // 테스트 이력 정리 진행 상태 (UI 인디케이터용)
+  const [cleanupProgress, setCleanupProgress] = useState<{ current: number; total: number } | null>(null);
   // 레이아웃 편집
   const [layoutsStore, setLayoutsStore] = useState<LayoutsStore>({ rooms: {} });
   const [showLayoutPicker, setShowLayoutPicker] = useState(false);
@@ -931,6 +933,41 @@ export default function App() {
     setShowTaskDashboardModal(true);
   }, []);
 
+  // 테스트 이력 일괄 삭제 — 처리이력에서 특정 날짜로 시작하는 줄만 제거
+  // dates: ['2026-05-30', '2026-05-31'] 같은 ISO 날짜 배열
+  const handleCleanupHistoryDates = useCallback(async (dates: string[]) => {
+    if (!notionClient) return { changed: 0, scanned: 0 };
+    const prefixes = dates.map(d => `[${d}]`);
+    const candidates = assets.filter(a => {
+      const h = String((a.values as any)[HISTORY_FIELD_NAME] ?? '');
+      return prefixes.some(p => h.includes(p));
+    });
+    setCleanupProgress({ current: 0, total: candidates.length });
+    let changed = 0;
+    for (let i = 0; i < candidates.length; i++) {
+      const a = candidates[i];
+      const h = String((a.values as any)[HISTORY_FIELD_NAME] ?? '');
+      const lines = h.split('\n');
+      const kept = lines.filter(l => !prefixes.some(p => l.startsWith(p)));
+      const next = kept.join('\n').replace(/^\n+/, '').replace(/\n+$/, '');
+      if (next !== h) {
+        try {
+          await notionClient.updatePage(a.id, HISTORY_FIELD_NAME, next, 'rich_text');
+          // 로컬 상태 동기화
+          setAssets(prev => prev.map(x =>
+            x.id === a.id ? { ...x, values: { ...x.values, [HISTORY_FIELD_NAME]: next } } : x
+          ));
+          changed++;
+        } catch (e) {
+          console.error('[Cleanup] 실패:', a.id, e);
+        }
+      }
+      setCleanupProgress({ current: i + 1, total: candidates.length });
+    }
+    setCleanupProgress(null);
+    return { changed, scanned: candidates.length };
+  }, [notionClient, assets]);
+
   // 자유 메모 — 자산의 처리이력에 한 줄 prepend.
   // 사용자가 현장에서 우발 콜이나 추가 작업 메모를 카드에서 바로 남길 수 있게.
   const handleAddNote = useCallback(async (asset: Asset, note: string) => {
@@ -1427,6 +1464,8 @@ export default function App() {
           onExport={() => setShowExportModal(true)}
           onBulkUpdate={() => setShowBulkUpdateModal(true)}
           onSourceImport={() => setShowSourceImportModal(true)}
+          onCleanupHistoryDates={handleCleanupHistoryDates}
+          cleanupProgress={cleanupProgress}
         />
 
         <FieldSupportSubmitModal
