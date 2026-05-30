@@ -40,6 +40,7 @@ import { ExportPreviewModal } from './src/components/ExportPreviewModal';
 import { BulkUpdateModal } from './src/components/BulkUpdateModal';
 import { SourceImportModal } from './src/components/SourceImportModal';
 import { DashboardModal } from './src/components/DashboardModal';
+import { TaskDashboardModal } from './src/components/TaskDashboardModal';
 import { SiteRulesModal } from './src/components/SiteRulesModal';
 import {
   SiteId,
@@ -94,6 +95,7 @@ export default function App() {
   const [showDashboardModal, setShowDashboardModal] = useState(false);
   // 대시보드 모드: 'all' = 전체장비, 'filtered' = 작업대상(워크 필터 적용)
   const [dashboardMode, setDashboardMode] = useState<'all' | 'filtered'>('all');
+  const [showTaskDashboardModal, setShowTaskDashboardModal] = useState(false);
   const [showSiteRulesModal, setShowSiteRulesModal] = useState(false);
   // 사이트(장소) 컨텍스트
   const [currentSite, setCurrentSite] = useState<SiteId>('all');
@@ -987,6 +989,7 @@ export default function App() {
               onDeleteTemplate={deleteTemplate}
               onQuickTask={handleQuickTask}
               onCombinedQuickTask={handleCombinedQuickTask}
+              onTaskDashboard={() => setShowTaskDashboardModal(true)}
               onEditAsset={(asset) => {
                 // 검색에서 선택한 자산을 편집하기 위해 작업 모드로 전환
                 setLocationSelectedAssets([asset]);
@@ -1274,6 +1277,20 @@ export default function App() {
           onClose={() => setShowSiteRulesModal(false)}
           overrides={sitesOverrides}
           onSave={handleSaveSitesOverrides}
+        />
+
+        <TaskDashboardModal
+          visible={showTaskDashboardModal}
+          onClose={() => setShowTaskDashboardModal(false)}
+          assets={siteFilteredAssets}
+          schemaProperties={schemaProperties}
+          onCompleteQuickTask={handleCompleteQuickTask}
+          onJumpToAsset={(asset) => {
+            setShowTaskDashboardModal(false);
+            // 카드 뷰로 점프 — 통합 큐 모드로 진입해 해당 자산을 시작점으로
+            handleCombinedQuickTask();
+            setLocationSelectedAssets([asset]);
+          }}
         />
 
         {/* 글로벌 플로팅 버튼 - 홈, 새로고침 */}

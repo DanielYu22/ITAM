@@ -58,6 +58,8 @@ interface HomeScreenProps {
     onQuickTask?: (task: QuickTaskDef) => void;
     // 모든 Quick Task 통합 큐 시작 (메인 진입)
     onCombinedQuickTask?: () => void;
+    // 과제 대시보드 (테이블 뷰) 진입
+    onTaskDashboard?: () => void;
     // Tool section callbacks
     onExport?: () => void;
     onBulkUpdate?: () => void;
@@ -96,6 +98,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     onEditAsset,
     onQuickTask,
     onCombinedQuickTask,
+    onTaskDashboard,
     onExport,
     onBulkUpdate,
     onSourceImport,
@@ -483,6 +486,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
                     <TouchableOpacity
                         style={styles.toolCard}
+                        onPress={onTaskDashboard}
+                        disabled={!onTaskDashboard}
+                    >
+                        <View style={[styles.toolIconContainer, { backgroundColor: '#dbeafe' }]}>
+                            <Text style={{ fontSize: 26 }}>📊</Text>
+                        </View>
+                        <Text style={styles.toolLabel}>과제 대시보드</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.toolCard}
                         onPress={onEditSiteRules}
                         disabled={!onEditSiteRules}
                     >
@@ -532,7 +546,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                 <View style={styles.combinedHeader}>
                                     <Text style={styles.combinedEmoji}>🚶</Text>
                                     <View style={{ flex: 1 }}>
-                                        <Text style={styles.combinedName}>현장 통합 작업</Text>
+                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                            <Text style={styles.combinedName}>현장 통합 작업</Text>
+                                            {onTaskDashboard && (
+                                                <TouchableOpacity
+                                                    style={styles.combinedDashboardChip}
+                                                    onPress={(e) => {
+                                                        (e as any).stopPropagation?.();
+                                                        onTaskDashboard();
+                                                    }}
+                                                >
+                                                    <Text style={styles.combinedDashboardChipText}>📊 대시보드</Text>
+                                                </TouchableOpacity>
+                                            )}
+                                        </View>
                                         <Text style={styles.combinedDesc}>
                                             모든 정기 업무를 합쳐 한 동선으로 처리
                                         </Text>
@@ -1004,6 +1031,13 @@ const styles = StyleSheet.create({
     },
     combinedCountNum: { fontSize: 22, fontWeight: '800', color: '#4338ca' },
     combinedCountLabel: { fontSize: 10, color: '#6366f1', marginTop: -2 },
+    combinedDashboardChip: {
+        backgroundColor: 'rgba(255,255,255,0.18)',
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 10,
+    },
+    combinedDashboardChipText: { color: '#ffffff', fontSize: 10, fontWeight: '700' },
     combinedBreakdown: {
         flexDirection: 'row',
         flexWrap: 'wrap',
