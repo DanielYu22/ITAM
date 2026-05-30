@@ -218,44 +218,44 @@ export const LayoutEditorModal: React.FC<Props> = ({
                     </TouchableOpacity>
                 </View>
 
-                {/* 캔버스 — ScrollView 가 PanResponder 가로채기 때문에 일반 View 로 */}
+                {/* 캔버스 — TouchableOpacity 가 자식 PanResponder 가로채기 때문에 일반 View 로 */}
                 <View style={styles.canvasWrap}>
-                    <TouchableOpacity
-                        activeOpacity={1}
+                    <View
                         style={[
                             styles.canvas,
                             { width: canvasDisplayWidth, height: canvasDisplayHeight },
                             ({ touchAction: 'none' } as any),
                         ]}
-                        onPress={() => setSelectedId(null)}
                     >
-                        {/* 그리드 배경 */}
-                        {Array.from({ length: 11 }).map((_, i) => (
-                            <View
-                                key={`vg-${i}`}
-                                style={[
-                                    styles.gridLine,
-                                    {
-                                        left: (canvasDisplayWidth / 10) * i,
-                                        width: 1,
-                                        height: '100%',
-                                    },
-                                ]}
-                            />
-                        ))}
-                        {Array.from({ length: 9 }).map((_, i) => (
-                            <View
-                                key={`hg-${i}`}
-                                style={[
-                                    styles.gridLine,
-                                    {
-                                        top: (canvasDisplayHeight / 8) * i,
-                                        height: 1,
-                                        width: '100%',
-                                    },
-                                ]}
-                            />
-                        ))}
+                        {/* 그리드 배경 — pointerEvents none 으로 터치 가로채지 못하게 */}
+                        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                            {Array.from({ length: 11 }).map((_, i) => (
+                                <View
+                                    key={`vg-${i}`}
+                                    style={[
+                                        styles.gridLine,
+                                        {
+                                            left: (canvasDisplayWidth / 10) * i,
+                                            width: 1,
+                                            height: '100%',
+                                        },
+                                    ]}
+                                />
+                            ))}
+                            {Array.from({ length: 9 }).map((_, i) => (
+                                <View
+                                    key={`hg-${i}`}
+                                    style={[
+                                        styles.gridLine,
+                                        {
+                                            top: (canvasDisplayHeight / 8) * i,
+                                            height: 1,
+                                            width: '100%',
+                                        },
+                                    ]}
+                                />
+                            ))}
+                        </View>
 
                         {/* 객체들 */}
                         {layout.objects.map(obj => (
@@ -271,7 +271,7 @@ export const LayoutEditorModal: React.FC<Props> = ({
                                 })}
                             />
                         ))}
-                    </TouchableOpacity>
+                    </View>
                 </View>
 
                 {/* 선택된 객체 옵션 패널 */}
