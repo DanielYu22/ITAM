@@ -34,7 +34,7 @@ import {
 import { FilterConfig } from './FieldWorkFilter';
 import { Asset, NotionProperty } from '../lib/notion';
 import { APP_VERSION } from '../lib/version';
-import { QUICK_TASKS, QuickTaskDef } from '../lib/quickTasks';
+import { QUICK_TASKS, QuickTaskDef, getMatchingQuickTasks } from '../lib/quickTasks';
 import { SITES_DEFAULTS, SiteDef, SiteId, getSiteCounts } from '../lib/sites';
 
 interface HomeScreenProps {
@@ -56,6 +56,8 @@ interface HomeScreenProps {
     onEditAsset: (asset: Asset) => void;
     // Quick Task: 정기/현장 업무를 한 번에 시작
     onQuickTask?: (task: QuickTaskDef) => void;
+    // 모든 Quick Task 통합 큐 시작 (메인 진입)
+    onCombinedQuickTask?: () => void;
     // Tool section callbacks
     onExport?: () => void;
     onBulkUpdate?: () => void;
@@ -93,6 +95,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     onDeleteTemplate,
     onEditAsset,
     onQuickTask,
+    onCombinedQuickTask,
     onExport,
     onBulkUpdate,
     onSourceImport,
@@ -108,6 +111,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         () => getSiteCounts(allAssets, sites),
         [allAssets, sites]
     );
+    // 개별 큐 펼침 토글 — 기본 접힘 (통합이 기본 워크플로우)
+    const [showIndividualTasks, setShowIndividualTasks] = useState(false);
+    // 통합 큐 대상 자산 수 + Quick Task 별 매칭 수
+    const combinedStats = useMemo(() => {
+        const matchedTaskCounts: Record<string, number> = {};
+        let uniqueMatched = 0;
+        for (const asset of assets) {
+            const matched = getMatchingQuickTasks(asset);
+            if (matched.length === 0) continue;
+            uniqueMatched++;
+            for (const t of matched) {
+                matchedTaskCounts[t.id] = (matchedTaskCounts[t.id] || 0) + 1;
+            }
+        }
+        return { uniqueMatched, matchedTaskCounts };
+    }, [assets]);
     const [searchQuery, setSearchQuery] = useState('');
     const [showSearchResults, setShowSearchResults] = useState(false);
 
@@ -496,49 +515,107 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     </TouchableOpacity>
                 </View>
 
-                {/* Quick Task — 정기/현장 업무 바로 시작 (그룹별 묶음) */}
-                {onQuickTask && (() => {
-                    // 그룹 순서 보존 + 그룹별 묶음
-                    const groupOrder: string[] = [];
-                    const byGroup: Record<string, typeof QUICK_TASKS> = {};
-                    QUICK_TASKS.forEach(t => {
-                        if (!byGroup[t.group]) {
-                            byGroup[t.group] = [];
-                            groupOrder.push(t.group);
-                        }
-                        byGroup[t.group].push(t);
-                    });
-                    return (
-                        <View style={styles.section}>
-                            <View style={styles.sectionHeader}>
-                                <Text style={styles.sectionTitle}>정기 / 현장 업무</Text>
-                            </View>
-                            {groupOrder.map(group => (
-                                <View key={group} style={styles.quickTaskGroupBlock}>
-                                    <Text style={styles.quickTaskGroupLabel}>{group}</Text>
-                                    <View style={styles.quickTaskGrid}>
-                                        {byGroup[group].map(task => (
-                                            <TouchableOpacity
-                                                key={task.id}
-                                                style={[styles.quickTaskCard, { backgroundColor: task.bgColor }]}
-                                                onPress={() => onQuickTask(task)}
-                                                activeOpacity={0.7}
-                                            >
-                                                <Text style={styles.quickTaskEmoji}>{task.emoji}</Text>
-                                                <Text style={[styles.quickTaskName, { color: task.color }]} numberOfLines={2}>
-                                                    {task.name}
-                                                </Text>
-                                                <Text style={styles.quickTaskDesc} numberOfLines={2}>
-                                                    {task.description}
-                                                </Text>
-                                            </TouchableOpacity>
-                                        ))}
+                {/* Quick Task — 메인 통합 카드 + 개별 큐 펼침 */}
+                {onQuickTask && (
+                    <View style={styles.section}>
+                        <View style={styles.sectionHeader}>
+                            <Text style={styles.sectionTitle}>정기 / 현장 업무</Text>
+                        </View>
+
+                        {/* 메인 통합 카드 */}
+                        {onCombinedQuickTask && (
+                            <TouchableOpacity
+                                style={styles.combinedCard}
+                                onPress={onCombinedQuickTask}
+                                activeOpacity={0.85}
+                            >
+                                <View style={styles.combinedHeader}>
+                                    <Text style={styles.combinedEmoji}>🚶</Text>
+                                    <View style={{ flex: 1 }}>
+                                        <Text style={styles.combinedName}>현장 통합 작업</Text>
+                                        <Text style={styles.combinedDesc}>
+                                            모든 정기 업무를 합쳐 한 동선으로 처리
+                                        </Text>
+                                    </View>
+                                    <View style={styles.combinedCountBadge}>
+                                        <Text style={styles.combinedCountNum}>
+                                            {combinedStats.uniqueMatched}
+                                        </Text>
+                                        <Text style={styles.combinedCountLabel}>대상</Text>
                                     </View>
                                 </View>
-                            ))}
-                        </View>
-                    );
-                })()}
+                                <View style={styles.combinedBreakdown}>
+                                    {QUICK_TASKS.map(t => {
+                                        const cnt = combinedStats.matchedTaskCounts[t.id] || 0;
+                                        if (cnt === 0) return null;
+                                        return (
+                                            <View key={t.id} style={[styles.combinedChip, { backgroundColor: t.bgColor }]}>
+                                                <Text style={styles.combinedChipEmoji}>{t.emoji}</Text>
+                                                <Text style={[styles.combinedChipName, { color: t.color }]} numberOfLines={1}>
+                                                    {t.name}
+                                                </Text>
+                                                <Text style={[styles.combinedChipCount, { color: t.color }]}>
+                                                    {cnt}
+                                                </Text>
+                                            </View>
+                                        );
+                                    })}
+                                </View>
+                            </TouchableOpacity>
+                        )}
+
+                        {/* 개별 큐 펼침 토글 */}
+                        <TouchableOpacity
+                            style={styles.individualToggle}
+                            onPress={() => setShowIndividualTasks(v => !v)}
+                            activeOpacity={0.7}
+                        >
+                            <Text style={styles.individualToggleText}>
+                                {showIndividualTasks ? '▼' : '▶'} 개별 큐로 보기
+                            </Text>
+                        </TouchableOpacity>
+
+                        {/* 개별 Quick Task (그룹별) — 토글 시 표시 */}
+                        {showIndividualTasks && (() => {
+                            const groupOrder: string[] = [];
+                            const byGroup: Record<string, typeof QUICK_TASKS> = {};
+                            QUICK_TASKS.forEach(t => {
+                                if (!byGroup[t.group]) {
+                                    byGroup[t.group] = [];
+                                    groupOrder.push(t.group);
+                                }
+                                byGroup[t.group].push(t);
+                            });
+                            return (
+                                <View style={{ marginTop: 12 }}>
+                                    {groupOrder.map(group => (
+                                        <View key={group} style={styles.quickTaskGroupBlock}>
+                                            <Text style={styles.quickTaskGroupLabel}>{group}</Text>
+                                            <View style={styles.quickTaskGrid}>
+                                                {byGroup[group].map(task => (
+                                                    <TouchableOpacity
+                                                        key={task.id}
+                                                        style={[styles.quickTaskCard, { backgroundColor: task.bgColor }]}
+                                                        onPress={() => onQuickTask(task)}
+                                                        activeOpacity={0.7}
+                                                    >
+                                                        <Text style={styles.quickTaskEmoji}>{task.emoji}</Text>
+                                                        <Text style={[styles.quickTaskName, { color: task.color }]} numberOfLines={2}>
+                                                            {task.name}
+                                                        </Text>
+                                                        <Text style={styles.quickTaskDesc} numberOfLines={2}>
+                                                            {task.description}
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                ))}
+                                            </View>
+                                        </View>
+                                    ))}
+                                </View>
+                            );
+                        })()}
+                    </View>
+                )}
 
                 {/* 현재 필터 요약 */}
                 <View style={styles.section}>
@@ -903,6 +980,52 @@ const styles = StyleSheet.create({
         marginBottom: 20,
         flexWrap: 'wrap',
     },
+    combinedCard: {
+        backgroundColor: '#4338ca',
+        borderRadius: 16,
+        padding: 16,
+        marginBottom: 12,
+    },
+    combinedHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 12,
+        marginBottom: 12,
+    },
+    combinedEmoji: { fontSize: 32 },
+    combinedName: { fontSize: 18, fontWeight: '800', color: '#ffffff' },
+    combinedDesc: { fontSize: 12, color: '#c7d2fe', marginTop: 2 },
+    combinedCountBadge: {
+        backgroundColor: '#ffffff',
+        paddingHorizontal: 14,
+        paddingVertical: 8,
+        borderRadius: 12,
+        alignItems: 'center',
+    },
+    combinedCountNum: { fontSize: 22, fontWeight: '800', color: '#4338ca' },
+    combinedCountLabel: { fontSize: 10, color: '#6366f1', marginTop: -2 },
+    combinedBreakdown: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 6,
+    },
+    combinedChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 12,
+    },
+    combinedChipEmoji: { fontSize: 12 },
+    combinedChipName: { fontSize: 11, fontWeight: '700', maxWidth: 140 },
+    combinedChipCount: { fontSize: 11, fontWeight: '800' },
+    individualToggle: {
+        alignSelf: 'flex-start',
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+    },
+    individualToggleText: { fontSize: 12, color: '#6366f1', fontWeight: '600' },
     quickTaskGroupBlock: {
         marginBottom: 14,
     },

@@ -50,12 +50,14 @@ import {
 } from './src/lib/sites';
 import { APP_VERSION } from './src/lib/version';
 import {
+  QUICK_TASKS,
   QuickTaskDef,
   HISTORY_FIELD_NAME,
   SYNOLOGY_FIELD_NAME,
   SYNOLOGY_OPTIONS,
   computeClearUpdates,
   appendHistoryLine,
+  buildCombinedQuickTaskConfig,
 } from './src/lib/quickTasks';
 
 export default function App() {
@@ -113,6 +115,8 @@ export default function App() {
   const [fieldFilterAiSession, setFieldFilterAiSession] = useState<AiFilterSession | undefined>(undefined);
   // 현재 활성화된 Quick Task (홈에서 카드 누른 후 워크모드에 진입한 경우)
   const [activeQuickTask, setActiveQuickTask] = useState<QuickTaskDef | null>(null);
+  // 통합 모드 활성 (모든 Quick Task 통합 큐). activeQuickTask 와 동시 활성 안 됨.
+  const [combinedQuickTask, setCombinedQuickTask] = useState<boolean>(false);
 
   // Notion Client
   const [notionClient, setNotionClient] = useState<NotionClient | null>(null);
@@ -631,6 +635,7 @@ export default function App() {
     setLocationSelectedAssets([]);
     setLocationFilters({});
     setActiveQuickTask(null);
+    setCombinedQuickTask(false);
   }, [effectiveSites]);
 
   // 사이트 룰 저장: Notion 설정 페이지에 영구 저장.
@@ -654,6 +659,33 @@ export default function App() {
     }
   }, [appSettings, notionClient, currentSite]);
 
+  // 통합 모드 핸들러 — 모든 Quick Task 의 조건을 OR 로 합친 큐 시작.
+  // '현장 한 번 나가는 김에 그 기기의 모든 과제 처리' 워크플로우용.
+  const handleCombinedQuickTask = useCallback(() => {
+    const now = new Date();
+    const combinedConfig = buildCombinedQuickTaskConfig(QUICK_TASKS, now);
+    const sitePreset = buildSiteFilterConfig(currentSite, effectiveSites);
+    const config = sitePreset
+      ? {
+          ...combinedConfig,
+          globalLogicalOperator: 'and' as const,
+          targetGroups: [
+            ...sitePreset.targetGroups,
+            ...combinedConfig.targetGroups,
+          ],
+        }
+      : combinedConfig;
+    setActiveQuickTask(null);
+    setCombinedQuickTask(true);
+    setFieldWorkConfig(config);
+    setLocationSelectedAssets([]);
+    setLocationFilters({});
+    setIsWorkMode(true);
+    if (config.locationHierarchy && config.locationHierarchy.length > 0) {
+      setSkipLocationSelection(true);
+    }
+  }, [currentSite, effectiveSites]);
+
   // Quick Task 핸들러: 정기/현장 업무를 즉시 시작.
   // 현재 사이트의 프리셋이 있으면 사이트 그룹을 첫 번째 그룹으로 prepend해서
   // 두 조건이 모두 가시화되고, 워크 결과도 사이트 안으로 좁혀집니다.
@@ -675,6 +707,7 @@ export default function App() {
       : taskConfig;
 
     setActiveQuickTask(task);
+    setCombinedQuickTask(false);
     setFieldWorkConfig(config);
     setLocationSelectedAssets([]);
     setLocationFilters({});
@@ -755,7 +788,32 @@ export default function App() {
     setLocationSelectedAssets([]);
     setLocationFilters({});
     setActiveQuickTask(null);
+    setCombinedQuickTask(false);
   }, []);
+
+  // 자유 메모 — 자산의 처리이력에 한 줄 prepend.
+  // 사용자가 현장에서 우발 콜이나 추가 작업 메모를 카드에서 바로 남길 수 있게.
+  const handleAddNote = useCallback(async (asset: Asset, note: string) => {
+    if (!notionClient || !note.trim()) return;
+    const existing = String((asset.values as any)[HISTORY_FIELD_NAME] ?? '');
+    const next = appendHistoryLine(existing, `메모: ${note.trim()}`);
+    try {
+      await notionClient.updatePage(asset.id, HISTORY_FIELD_NAME, next, 'rich_text');
+      setAssets(prev => prev.map(a =>
+        a.id === asset.id
+          ? { ...a, values: { ...a.values, [HISTORY_FIELD_NAME]: next } }
+          : a
+      ));
+      setLocationSelectedAssets(prev => prev.map(a =>
+        a.id === asset.id
+          ? { ...a, values: { ...a.values, [HISTORY_FIELD_NAME]: next } }
+          : a
+      ));
+    } catch (e) {
+      console.error('[Note] 메모 저장 실패:', e);
+      Alert.alert('오류', '메모 저장 중 문제가 발생했습니다.');
+    }
+  }, [notionClient]);
 
   // Settings screen
   if (showSettings) {
@@ -928,6 +986,7 @@ export default function App() {
               onSaveTemplate={saveTemplate}
               onDeleteTemplate={deleteTemplate}
               onQuickTask={handleQuickTask}
+              onCombinedQuickTask={handleCombinedQuickTask}
               onEditAsset={(asset) => {
                 // 검색에서 선택한 자산을 편집하기 위해 작업 모드로 전환
                 setLocationSelectedAssets([asset]);
@@ -1108,6 +1167,8 @@ export default function App() {
                   filterConfig={fieldWorkConfig}
                   activeQuickTask={activeQuickTask}
                   onCompleteQuickTask={handleCompleteQuickTask}
+                  combinedMode={combinedQuickTask}
+                  onAddNote={handleAddNote}
                   locationHierarchy={fieldWorkConfig?.locationHierarchy}
                   locationFilters={locationFilters}
                   onRequestChangeLocation={() => {

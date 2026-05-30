@@ -20,7 +20,7 @@ import {
 import { Edit2, X, Check, Search, Plus, ChevronDown, ChevronRight, ChevronLeft, AlertCircle, CheckCircle, MapPin, ClipboardCheck, History } from 'lucide-react-native';
 import { Asset, NotionProperty } from '../lib/notion';
 import { FilterConfig, TargetCondition } from './FieldWorkFilter';
-import { QuickTaskDef, HISTORY_FIELD_NAME } from '../lib/quickTasks';
+import { QuickTaskDef, HISTORY_FIELD_NAME, getMatchingQuickTasks, QUICK_TASKS } from '../lib/quickTasks';
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
 // Explicit height calculation for web compatibility
@@ -39,6 +39,10 @@ interface MobileCardViewProps {
     // Quick Task 활성 시: 카드에 "완료" 버튼이 뜨고, 누르면 onCompleteQuickTask 호출
     activeQuickTask?: QuickTaskDef | null;
     onCompleteQuickTask?: (asset: Asset, task: QuickTaskDef) => Promise<void>;
+    // 통합 모드: 자산별로 매칭되는 모든 Quick Task 를 카드 상단에 칩으로 표시.
+    combinedMode?: boolean;
+    // 자유 메모 추가 (자산의 처리이력에 한 줄 prepend)
+    onAddNote?: (asset: Asset, note: string) => Promise<void>;
     // Location Navigation
     locationHierarchy?: string[];
     locationFilters?: Record<string, string>;
@@ -132,6 +136,8 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     onLocalUpdate,
     activeQuickTask = null,
     onCompleteQuickTask,
+    combinedMode = false,
+    onAddNote,
     locationHierarchy,
     locationFilters,
     onRequestChangeLocation,
@@ -139,8 +145,11 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
     // 처리이력 펼침 상태 (assetId별)
     const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({});
-    // 완료 처리 진행중 (assetId)
-    const [completingId, setCompletingId] = useState<string | null>(null);
+    // 완료 처리 진행중 (assetId-taskId 또는 assetId-all)
+    const [completingKey, setCompletingKey] = useState<string | null>(null);
+    // 자유 메모 입력 상태 (assetId별)
+    const [noteInput, setNoteInput] = useState<Record<string, string>>({});
+    const [savingNoteId, setSavingNoteId] = useState<string | null>(null);
 
     // Location Text Generation
     const locationText = useMemo(() => {
@@ -414,24 +423,82 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
 
         const historyValue = asset.values[HISTORY_FIELD_NAME] ?? '';
         const isHistoryExpanded = !!expandedHistory[asset.id];
-        const isCompleting = completingId === asset.id;
+        const isCompletingAll = completingKey === `${asset.id}-all`;
 
+        // 통합 모드 — 이 자산에 매칭되는 모든 Quick Task 목록
+        const matchedTasks = combinedMode ? getMatchingQuickTasks(asset) : [];
+
+        const advanceToNextCard = () => {
+            if (currentIndex < assets.length - 1) {
+                setTimeout(() => {
+                    flatListRef.current?.scrollToIndex({
+                        index: currentIndex + 1,
+                        animated: true,
+                    });
+                }, 400);
+            }
+        };
+
+        // 단일 모드 — activeQuickTask 한 개 완료
         const handleCompletePress = async () => {
-            if (!activeQuickTask || !onCompleteQuickTask || isCompleting) return;
-            setCompletingId(asset.id);
+            if (!activeQuickTask || !onCompleteQuickTask) return;
+            const key = `${asset.id}-${activeQuickTask.id}`;
+            if (completingKey === key) return;
+            setCompletingKey(key);
             try {
                 await onCompleteQuickTask(asset, activeQuickTask);
-                // 모든 조건이 해결되어 자동 이동되지 않을 수도 있으니, 다음 카드로 시도
-                if (currentIndex < assets.length - 1) {
-                    setTimeout(() => {
-                        flatListRef.current?.scrollToIndex({
-                            index: currentIndex + 1,
-                            animated: true,
-                        });
-                    }, 400);
-                }
+                advanceToNextCard();
             } finally {
-                setCompletingId(null);
+                setCompletingKey(null);
+            }
+        };
+
+        // 통합 모드 — 개별 칩의 완료
+        const handleCompleteOne = async (task: QuickTaskDef) => {
+            if (!onCompleteQuickTask) return;
+            const key = `${asset.id}-${task.id}`;
+            if (completingKey === key) return;
+            setCompletingKey(key);
+            try {
+                await onCompleteQuickTask(asset, task);
+                // 남은 매칭 Task 가 없으면 다음 카드로
+                const remaining = getMatchingQuickTasks({
+                    ...asset,
+                    values: { ...asset.values },
+                } as any);
+                if (remaining.length <= 1) advanceToNextCard();
+            } finally {
+                setCompletingKey(null);
+            }
+        };
+
+        // 통합 모드 — 매칭된 모든 Task 한 번에 완료
+        const handleCompleteAll = async () => {
+            if (!onCompleteQuickTask || matchedTasks.length === 0) return;
+            const key = `${asset.id}-all`;
+            if (completingKey === key) return;
+            setCompletingKey(key);
+            try {
+                for (const t of matchedTasks) {
+                    await onCompleteQuickTask(asset, t);
+                }
+                advanceToNextCard();
+            } finally {
+                setCompletingKey(null);
+            }
+        };
+
+        // 자유 메모 저장
+        const handleSaveNote = async () => {
+            if (!onAddNote) return;
+            const note = (noteInput[asset.id] || '').trim();
+            if (!note) return;
+            setSavingNoteId(asset.id);
+            try {
+                await onAddNote(asset, note);
+                setNoteInput(prev => ({ ...prev, [asset.id]: '' }));
+            } finally {
+                setSavingNoteId(null);
             }
         };
 
@@ -445,35 +512,97 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                             </Text>
                         </View>
 
-                        {/* Quick Task 활성 시: 완료 처리 배너 */}
-                        {activeQuickTask && (
-                            <View style={[styles.quickTaskBanner, { backgroundColor: activeQuickTask.bgColor }]}>
-                                <View style={styles.quickTaskBannerInfo}>
-                                    <Text style={styles.quickTaskBannerEmoji}>{activeQuickTask.emoji}</Text>
-                                    <View style={{ flex: 1 }}>
-                                        <Text style={[styles.quickTaskBannerName, { color: activeQuickTask.color }]} numberOfLines={1}>
-                                            {activeQuickTask.name}
-                                        </Text>
-                                        <Text style={styles.quickTaskBannerDesc} numberOfLines={1}>
-                                            완료 시 사전값 자동 클리어 + 이력 누적
-                                        </Text>
+                        {/* 단일 Quick Task 활성 시: 완료 배너 */}
+                        {activeQuickTask && !combinedMode && (() => {
+                            const isCompleting = completingKey === `${asset.id}-${activeQuickTask.id}`;
+                            return (
+                                <View style={[styles.quickTaskBanner, { backgroundColor: activeQuickTask.bgColor }]}>
+                                    <View style={styles.quickTaskBannerInfo}>
+                                        <Text style={styles.quickTaskBannerEmoji}>{activeQuickTask.emoji}</Text>
+                                        <View style={{ flex: 1 }}>
+                                            <Text style={[styles.quickTaskBannerName, { color: activeQuickTask.color }]} numberOfLines={1}>
+                                                {activeQuickTask.name}
+                                            </Text>
+                                            <Text style={styles.quickTaskBannerDesc} numberOfLines={1}>
+                                                완료 시 사전값 자동 클리어 + 이력 누적
+                                            </Text>
+                                        </View>
                                     </View>
+                                    <TouchableOpacity
+                                        style={[
+                                            styles.quickTaskCompleteBtn,
+                                            { backgroundColor: activeQuickTask.color },
+                                            isCompleting && styles.quickTaskCompleteBtnDisabled,
+                                        ]}
+                                        onPress={handleCompletePress}
+                                        disabled={isCompleting}
+                                        activeOpacity={0.7}
+                                    >
+                                        <ClipboardCheck size={18} color="#ffffff" />
+                                        <Text style={styles.quickTaskCompleteBtnText}>
+                                            {isCompleting ? '처리 중…' : activeQuickTask.shortLabel}
+                                        </Text>
+                                    </TouchableOpacity>
                                 </View>
-                                <TouchableOpacity
-                                    style={[
-                                        styles.quickTaskCompleteBtn,
-                                        { backgroundColor: activeQuickTask.color },
-                                        isCompleting && styles.quickTaskCompleteBtnDisabled,
-                                    ]}
-                                    onPress={handleCompletePress}
-                                    disabled={isCompleting}
-                                    activeOpacity={0.7}
-                                >
-                                    <ClipboardCheck size={18} color="#ffffff" />
-                                    <Text style={styles.quickTaskCompleteBtnText}>
-                                        {isCompleting ? '처리 중…' : activeQuickTask.shortLabel}
+                            );
+                        })()}
+
+                        {/* 통합 모드 — 매칭된 모든 Quick Task 칩 + 개별/모두 완료 */}
+                        {combinedMode && (
+                            <View style={styles.combinedBannerWrap}>
+                                {matchedTasks.length === 0 ? (
+                                    <Text style={styles.combinedNoneText}>
+                                        이 기기에는 현재 매칭되는 정기 업무가 없어요.
                                     </Text>
-                                </TouchableOpacity>
+                                ) : (
+                                    <>
+                                        <View style={styles.combinedTaskChips}>
+                                            {matchedTasks.map(t => {
+                                                const isCompleting = completingKey === `${asset.id}-${t.id}`;
+                                                return (
+                                                    <View
+                                                        key={t.id}
+                                                        style={[styles.combinedTaskChip, { backgroundColor: t.bgColor }]}
+                                                    >
+                                                        <Text style={styles.combinedTaskChipEmoji}>{t.emoji}</Text>
+                                                        <Text
+                                                            style={[styles.combinedTaskChipName, { color: t.color }]}
+                                                            numberOfLines={1}
+                                                        >
+                                                            {t.name}
+                                                        </Text>
+                                                        <TouchableOpacity
+                                                            style={[styles.combinedTaskChipDone, { backgroundColor: t.color }]}
+                                                            onPress={() => handleCompleteOne(t)}
+                                                            disabled={isCompleting}
+                                                        >
+                                                            <Check size={11} color="#ffffff" />
+                                                            <Text style={styles.combinedTaskChipDoneText}>
+                                                                {isCompleting ? '…' : '완료'}
+                                                            </Text>
+                                                        </TouchableOpacity>
+                                                    </View>
+                                                );
+                                            })}
+                                        </View>
+                                        <TouchableOpacity
+                                            style={[
+                                                styles.combinedAllBtn,
+                                                isCompletingAll && styles.quickTaskCompleteBtnDisabled,
+                                            ]}
+                                            onPress={handleCompleteAll}
+                                            disabled={isCompletingAll}
+                                            activeOpacity={0.85}
+                                        >
+                                            <ClipboardCheck size={16} color="#ffffff" />
+                                            <Text style={styles.combinedAllBtnText}>
+                                                {isCompletingAll
+                                                    ? '처리 중…'
+                                                    : `이 기기 ${matchedTasks.length}건 모두 완료`}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    </>
+                                )}
                             </View>
                         )}
 
@@ -541,6 +670,35 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
                                         </TouchableOpacity>
                                     );
                                 })}
+
+                            {/* 자유 메모 추가 — 현장에서 우발 콜 / 추가 사항 한 줄 기록 */}
+                            {onAddNote && schemaProperties[HISTORY_FIELD_NAME] && (
+                                <View style={styles.noteSection}>
+                                    <Text style={styles.noteSectionLabel}>현장 메모 추가</Text>
+                                    <View style={styles.noteInputRow}>
+                                        <TextInput
+                                            style={styles.noteInput}
+                                            value={noteInput[asset.id] ?? ''}
+                                            onChangeText={(t) => setNoteInput(prev => ({ ...prev, [asset.id]: t }))}
+                                            placeholder="메모, 추가 과제, 우발 콜 사항 등"
+                                            placeholderTextColor="#94a3b8"
+                                            multiline
+                                        />
+                                        <TouchableOpacity
+                                            style={[
+                                                styles.noteSaveBtn,
+                                                (!noteInput[asset.id]?.trim() || savingNoteId === asset.id) && styles.noteSaveBtnDisabled,
+                                            ]}
+                                            onPress={handleSaveNote}
+                                            disabled={!noteInput[asset.id]?.trim() || savingNoteId === asset.id}
+                                        >
+                                            <Text style={styles.noteSaveBtnText}>
+                                                {savingNoteId === asset.id ? '저장…' : '추가'}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                </View>
+                            )}
 
                             {/* 처리이력 (기기별 누적 내역) */}
                             {schemaProperties[HISTORY_FIELD_NAME] && (
@@ -970,6 +1128,83 @@ const styles = StyleSheet.create({
         fontSize: 13,
         fontWeight: '700',
     },
+    combinedBannerWrap: {
+        backgroundColor: '#eef2ff',
+        padding: 12,
+        gap: 10,
+        borderBottomWidth: 1,
+        borderBottomColor: '#e0e7ff',
+    },
+    combinedNoneText: { fontSize: 12, color: '#64748b', fontStyle: 'italic' },
+    combinedTaskChips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+    combinedTaskChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingLeft: 8,
+        paddingRight: 4,
+        paddingVertical: 4,
+        borderRadius: 14,
+    },
+    combinedTaskChipEmoji: { fontSize: 13 },
+    combinedTaskChipName: { fontSize: 11, fontWeight: '700', maxWidth: 140 },
+    combinedTaskChipDone: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 3,
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 10,
+        marginLeft: 4,
+    },
+    combinedTaskChipDoneText: { color: '#ffffff', fontSize: 10, fontWeight: '700' },
+    combinedAllBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 6,
+        paddingVertical: 10,
+        borderRadius: 10,
+        backgroundColor: '#4338ca',
+    },
+    combinedAllBtnText: { color: '#ffffff', fontSize: 13, fontWeight: '700' },
+    noteSection: {
+        marginTop: 14,
+        paddingTop: 10,
+        borderTopWidth: 1,
+        borderTopColor: '#f1f5f9',
+    },
+    noteSectionLabel: {
+        fontSize: 12,
+        fontWeight: '700',
+        color: '#475569',
+        letterSpacing: 0.5,
+        textTransform: 'uppercase',
+        marginBottom: 6,
+    },
+    noteInputRow: { flexDirection: 'row', alignItems: 'flex-start', gap: 6 },
+    noteInput: {
+        flex: 1,
+        backgroundColor: '#f8fafc',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderRadius: 8,
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        fontSize: 13,
+        color: '#1f2937',
+        minHeight: 40,
+    },
+    noteSaveBtn: {
+        paddingHorizontal: 14,
+        paddingVertical: 10,
+        borderRadius: 8,
+        backgroundColor: '#6366f1',
+        alignItems: 'center',
+        justifyContent: 'center',
+    },
+    noteSaveBtnDisabled: { backgroundColor: '#cbd5e1' },
+    noteSaveBtnText: { color: '#ffffff', fontSize: 12, fontWeight: '700' },
     historySection: {
         marginTop: 16,
         borderTopWidth: 1,

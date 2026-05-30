@@ -9,7 +9,8 @@
  * 안에서 동적으로 계산합니다.
  */
 
-import { FilterConfig } from '../components/FieldWorkFilter';
+import { FilterConfig, TargetCondition, TargetGroup } from '../components/FieldWorkFilter';
+import { Asset } from './notion';
 
 // 이력이 누적되는 Notion 필드 이름 (Rich Text)
 export const HISTORY_FIELD_NAME = '처리이력';
@@ -391,4 +392,99 @@ export const appendHistoryLine = (existing: string, label: string, now: Date = n
     const newLine = `[${date}] ${label}`;
     if (!existing || existing.trim() === '') return newLine;
     return `${newLine}\n${existing}`;
+};
+
+// ============================================================================
+// 통합(combined) 모드 헬퍼
+// ============================================================================
+
+/** 한 조건이 자산에 매칭되는지 평가 (FilterConfig 평가용) */
+const evaluateCondition = (asset: Asset, cond: TargetCondition): boolean => {
+    const columnKey = String(cond.column ?? '');
+    const val = String((asset.values as any)[columnKey] ?? '').toLowerCase();
+    switch (cond.type) {
+        case 'is_empty':
+            return !val || val === '';
+        case 'is_not_empty':
+            return val !== '';
+        case 'contains':
+        case 'text_contains':
+            if (cond.values && cond.values.length > 0) {
+                return cond.values.some(v => val.includes(String(v ?? '').toLowerCase()));
+            }
+            return true;
+        case 'not_contains':
+        case 'text_not_contains':
+            if (cond.values && cond.values.length > 0) {
+                return !cond.values.some(v => val.includes(String(v ?? '').toLowerCase()));
+            }
+            return true;
+        case 'equals':
+            if (cond.values && cond.values.length > 0) {
+                return cond.values.some(v => val === String(v ?? '').toLowerCase());
+            }
+            return true;
+        default:
+            return true;
+    }
+};
+
+/** 자산이 한 Quick Task에 매칭되는지 — buildConfig 의 targetGroups 평가 */
+export const assetMatchesQuickTask = (
+    asset: Asset,
+    task: QuickTaskDef,
+    now: Date = new Date(),
+): boolean => {
+    const config = task.buildConfig({ now });
+    const groups = config.targetGroups || [];
+    if (groups.length === 0) return false;
+    const isGlobalOr = config.globalLogicalOperator === 'or';
+    const groupResults = groups.map((g: TargetGroup) => {
+        if (!g.conditions || g.conditions.length === 0) return true;
+        const isGroupOr = g.operator === 'or';
+        const condResults = g.conditions.map(c => evaluateCondition(asset, c));
+        return isGroupOr ? condResults.some(r => r) : condResults.every(r => r);
+    });
+    return isGlobalOr ? groupResults.some(r => r) : groupResults.every(r => r);
+};
+
+/** 자산에 매칭되는 모든 Quick Task 반환 */
+export const getMatchingQuickTasks = (
+    asset: Asset,
+    tasks: QuickTaskDef[] = QUICK_TASKS,
+    now: Date = new Date(),
+): QuickTaskDef[] => {
+    return tasks.filter(task => assetMatchesQuickTask(asset, task, now));
+};
+
+/**
+ * 모든 Quick Task 의 조건을 OR 로 합친 통합 FilterConfig.
+ * '현장 한 번 나가는 김에 다 처리' 워크플로우용.
+ */
+export const buildCombinedQuickTaskConfig = (
+    tasks: QuickTaskDef[] = QUICK_TASKS,
+    now: Date = new Date(),
+): FilterConfig => {
+    const stamp = now.getTime();
+    const allGroups: TargetGroup[] = [];
+    for (const task of tasks) {
+        const c = task.buildConfig({ now });
+        for (const g of c.targetGroups || []) {
+            allGroups.push({ ...g, id: `combined-${task.id}-${g.id}-${stamp}` });
+        }
+    }
+    const editableSet = new Set<string>();
+    for (const task of tasks) {
+        const c = task.buildConfig({ now });
+        for (const f of c.editableFields || []) editableSet.add(f);
+    }
+    editableSet.add(HISTORY_FIELD_NAME);
+    return {
+        locationHierarchy: ['L)건물', 'L)층', 'L)연구실'],
+        sortColumn: 'L)연구실',
+        sortDirection: 'asc',
+        globalLogicalOperator: 'or',
+        targetGroups: allGroups,
+        editableFields: Array.from(editableSet),
+    };
 };
