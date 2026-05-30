@@ -42,6 +42,8 @@ import { SourceImportModal } from './src/components/SourceImportModal';
 import { DashboardModal } from './src/components/DashboardModal';
 import { TaskDashboardModal } from './src/components/TaskDashboardModal';
 import { SiteRulesModal } from './src/components/SiteRulesModal';
+import { DBManagementModal } from './src/components/DBManagementModal';
+import { FieldSupportSubmitModal } from './src/components/FieldSupportSubmitModal';
 import {
   SiteId,
   SitesOverrides,
@@ -56,6 +58,9 @@ import {
   HISTORY_FIELD_NAME,
   SYNOLOGY_FIELD_NAME,
   SYNOLOGY_OPTIONS,
+  FIELD_SUPPORT_STATUS_FIELD,
+  FIELD_SUPPORT_STATUS_OPTIONS,
+  FIELD_SUPPORT_MEMO_FIELD,
   computeClearUpdates,
   appendHistoryLine,
   buildCombinedQuickTaskConfig,
@@ -99,6 +104,9 @@ export default function App() {
   const [showTaskDashboardModal, setShowTaskDashboardModal] = useState(false);
   // 카드 뷰에서 '대시보드로 돌아가기' 버튼을 보여줄지
   const [returnToDashboard, setReturnToDashboard] = useState(false);
+  // 새 모달들
+  const [showDBManagementModal, setShowDBManagementModal] = useState(false);
+  const [showFieldSupportModal, setShowFieldSupportModal] = useState(false);
   const [showSiteRulesModal, setShowSiteRulesModal] = useState(false);
   // 사이트(장소) 컨텍스트
   const [currentSite, setCurrentSite] = useState<SiteId>('all');
@@ -178,6 +186,31 @@ export default function App() {
           }
         } catch (e) {
           console.warn(`[App] '${SYNOLOGY_FIELD_NAME}' 필드 자동 생성 실패:`, e);
+        }
+      }
+
+      // 현장지원 상태 필드 (select: 요청/완료)
+      if (!schemaProps[FIELD_SUPPORT_STATUS_FIELD]) {
+        try {
+          const created = await notionClient.createDatabaseProperty(FIELD_SUPPORT_STATUS_FIELD, 'select');
+          if (created) {
+            console.log(`[App] '${FIELD_SUPPORT_STATUS_FIELD}' 필드(select) 자동 생성. 옵션: ${FIELD_SUPPORT_STATUS_OPTIONS.join(', ')}`);
+            schemaChanged = true;
+          }
+        } catch (e) {
+          console.warn(`[App] '${FIELD_SUPPORT_STATUS_FIELD}' 필드 자동 생성 실패:`, e);
+        }
+      }
+      // 현장지원 메모 필드 (rich_text)
+      if (!schemaProps[FIELD_SUPPORT_MEMO_FIELD]) {
+        try {
+          const created = await notionClient.createDatabaseProperty(FIELD_SUPPORT_MEMO_FIELD, 'rich_text');
+          if (created) {
+            console.log(`[App] '${FIELD_SUPPORT_MEMO_FIELD}' 필드(rich_text) 자동 생성`);
+            schemaChanged = true;
+          }
+        } catch (e) {
+          console.warn(`[App] '${FIELD_SUPPORT_MEMO_FIELD}' 필드 자동 생성 실패:`, e);
         }
       }
 
@@ -1018,6 +1051,8 @@ export default function App() {
               onExport={() => setShowExportModal(true)}
               onBulkUpdate={() => setShowBulkUpdateModal(true)}
               onSourceImport={() => setShowSourceImportModal(true)}
+              onOpenDBManagement={() => setShowDBManagementModal(true)}
+              onSubmitFieldSupport={() => setShowFieldSupportModal(true)}
               onDashboard={() => {
                 setDashboardMode('all');
                 setShowDashboardModal(true);
@@ -1297,6 +1332,25 @@ export default function App() {
           onClose={() => setShowSiteRulesModal(false)}
           overrides={sitesOverrides}
           onSave={handleSaveSitesOverrides}
+        />
+
+        <DBManagementModal
+          visible={showDBManagementModal}
+          onClose={() => setShowDBManagementModal(false)}
+          onExport={() => setShowExportModal(true)}
+          onBulkUpdate={() => setShowBulkUpdateModal(true)}
+          onSourceImport={() => setShowSourceImportModal(true)}
+        />
+
+        <FieldSupportSubmitModal
+          visible={showFieldSupportModal}
+          onClose={() => {
+            setShowFieldSupportModal(false);
+            loadData(); // 접수 후 새로고침
+          }}
+          assets={assets}
+          schemaProperties={schemaProperties}
+          onUpdate={handleUpdateAsset}
         />
 
         <TaskDashboardModal

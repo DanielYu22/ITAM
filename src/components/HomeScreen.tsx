@@ -30,6 +30,8 @@ import {
     RefreshCw,
     FileUp,
     LayoutGrid,
+    Database,
+    Wrench,
 } from 'lucide-react-native';
 import { FilterConfig } from './FieldWorkFilter';
 import { Asset, NotionProperty } from '../lib/notion';
@@ -60,13 +62,17 @@ interface HomeScreenProps {
     onCombinedQuickTask?: () => void;
     // 과제 대시보드 (테이블 뷰) 진입
     onTaskDashboard?: () => void;
-    // Tool section callbacks
+    // Tool section callbacks (개별 액션 — DBManagementModal 안에서 호출)
     onExport?: () => void;
     onBulkUpdate?: () => void;
     onSourceImport?: () => void;
+    // DB 관리 액션시트 열기
+    onOpenDBManagement?: () => void;
     onDashboard?: () => void;
     onEditSiteRules?: () => void;
     onRefresh?: () => void;
+    // 현장지원 접수 모달 열기
+    onSubmitFieldSupport?: () => void;
     /** 사용자 오버라이드가 합성된 최종 사이트 정의 (카운트/표시용) */
     effectiveSites?: SiteDef[];
     /** 'all' = 전체장비, 'filtered' = 작업대상 대시보드 오픈 */
@@ -102,9 +108,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     onExport,
     onBulkUpdate,
     onSourceImport,
+    onOpenDBManagement,
     onDashboard,
     onEditSiteRules,
     onRefresh,
+    onSubmitFieldSupport,
     effectiveSites,
     onOpenDashboard,
     workTargetCount,
@@ -323,8 +331,19 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             <ScrollView style={styles.container} contentContainerStyle={styles.containerContent}>
                 {/* 헤더 */}
                 <View style={styles.header}>
-                    <Text style={styles.title}>NEXUS ITAM</Text>
-                    <Text style={styles.subtitle}>현장 작업 관리</Text>
+                    <View style={{ flex: 1 }}>
+                        <Text style={styles.title}>NEXUS ITAM</Text>
+                        <Text style={styles.subtitle}>현장 작업 관리</Text>
+                    </View>
+                    {onRefresh && (
+                        <TouchableOpacity
+                            style={styles.headerRefreshBtn}
+                            onPress={onRefresh}
+                            activeOpacity={0.7}
+                        >
+                            <RefreshCw size={16} color="#475569" />
+                        </TouchableOpacity>
+                    )}
                 </View>
 
                 {/* 사이트(장소) 토글 — 메인 컨텍스트 */}
@@ -449,39 +468,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     </View>
                 )}
 
-                {/* 도구 섹션 */}
+                {/* 도구 섹션 — DB 관리로 묶고 / 테이블로 보기 / 과제 대시보드 / 현장지원 / 사이트 설정 */}
                 <View style={styles.toolsSection}>
                     <TouchableOpacity
                         style={styles.toolCard}
-                        onPress={onExport}
-                        disabled={!onExport}
+                        onPress={onSubmitFieldSupport}
+                        disabled={!onSubmitFieldSupport}
                     >
-                        <View style={[styles.toolIconContainer, { backgroundColor: '#dcfce7' }]}>
-                            <Download size={28} color="#16a34a" />
+                        <View style={[styles.toolIconContainer, { backgroundColor: '#fee2e2' }]}>
+                            <Wrench size={26} color="#dc2626" />
                         </View>
-                        <Text style={styles.toolLabel}>내보내기</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.toolCard}
-                        onPress={onSourceImport}
-                        disabled={!onSourceImport}
-                    >
-                        <View style={[styles.toolIconContainer, { backgroundColor: '#ede9fe' }]}>
-                            <FileUp size={28} color="#7c3aed" />
-                        </View>
-                        <Text style={styles.toolLabel}>소스 임포트</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.toolCard}
-                        onPress={onDashboard}
-                        disabled={!onDashboard}
-                    >
-                        <View style={[styles.toolIconContainer, { backgroundColor: '#fce7f3' }]}>
-                            <LayoutGrid size={28} color="#be185d" />
-                        </View>
-                        <Text style={styles.toolLabel}>대시보드</Text>
+                        <Text style={styles.toolLabel}>현장지원 접수</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -497,35 +494,35 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
                     <TouchableOpacity
                         style={styles.toolCard}
+                        onPress={onDashboard}
+                        disabled={!onDashboard}
+                    >
+                        <View style={[styles.toolIconContainer, { backgroundColor: '#fce7f3' }]}>
+                            <LayoutGrid size={26} color="#be185d" />
+                        </View>
+                        <Text style={styles.toolLabel}>테이블로 보기</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.toolCard}
+                        onPress={onOpenDBManagement}
+                        disabled={!onOpenDBManagement}
+                    >
+                        <View style={[styles.toolIconContainer, { backgroundColor: '#e0f2fe' }]}>
+                            <Database size={26} color="#0369a1" />
+                        </View>
+                        <Text style={styles.toolLabel}>DB 관리</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.toolCard}
                         onPress={onEditSiteRules}
                         disabled={!onEditSiteRules}
                     >
                         <View style={[styles.toolIconContainer, { backgroundColor: '#e0e7ff' }]}>
-                            <Settings2 size={28} color="#4338ca" />
+                            <Settings2 size={26} color="#4338ca" />
                         </View>
                         <Text style={styles.toolLabel}>사이트 설정</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.toolCard}
-                        onPress={onBulkUpdate}
-                        disabled={!onBulkUpdate}
-                    >
-                        <View style={[styles.toolIconContainer, { backgroundColor: '#fef3c7' }]}>
-                            <Upload size={28} color="#d97706" />
-                        </View>
-                        <Text style={styles.toolLabel}>일괄 업데이트</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.toolCard}
-                        onPress={onRefresh}
-                        disabled={!onRefresh}
-                    >
-                        <View style={[styles.toolIconContainer, { backgroundColor: '#dbeafe' }]}>
-                            <RefreshCw size={28} color="#2563eb" />
-                        </View>
-                        <Text style={styles.toolLabel}>새로고침</Text>
                     </TouchableOpacity>
                 </View>
 
@@ -926,7 +923,19 @@ const styles = StyleSheet.create({
         padding: 20,
     },
     header: {
+        flexDirection: 'row',
+        alignItems: 'flex-start',
         marginBottom: 16,
+    },
+    headerRefreshBtn: {
+        width: 32,
+        height: 32,
+        borderRadius: 16,
+        backgroundColor: '#ffffff',
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     title: {
         fontSize: 28,

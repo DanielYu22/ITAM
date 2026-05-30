@@ -26,6 +26,11 @@ export const SYNOLOGY_OPTIONS = [
     '완료',
 ];
 
+// 현장지원 (고장/불편접수) 관리 필드
+export const FIELD_SUPPORT_STATUS_FIELD = 'M)현장지원 상태'; // select
+export const FIELD_SUPPORT_STATUS_OPTIONS = ['요청', '완료'];
+export const FIELD_SUPPORT_MEMO_FIELD = 'M)현장지원 메모';   // rich_text
+
 // 완료 시 어떻게 클리어할지에 대한 규칙
 export interface ClearRule {
     field: string;
@@ -37,7 +42,7 @@ export interface ClearRule {
     clearAll?: boolean;
 }
 
-export type QuickTaskGroup = '알약' | '분기 백업' | '시놀로지' | '개별';
+export type QuickTaskGroup = '알약' | '분기 백업' | '시놀로지' | '현장지원' | '개별';
 
 export interface QuickTaskDef {
     id: string;
@@ -321,6 +326,48 @@ export const QUICK_TASKS: QuickTaskDef[] = [
             },
         ],
         buildHistoryLabel: () => '시놀로지 실패로그 현장확인 처리',
+    },
+
+    // ------------------------------------------------------------------------
+    // 현장지원 (고장/불편접수)
+    // 사용자가 특정 기기에 대해 접수한 건들. 접수 모달에서 등록됨.
+    // 매칭: M)현장지원 상태 = '요청'
+    // 완료 시: 상태 = '완료' (메모는 유지)
+    // ------------------------------------------------------------------------
+    {
+        id: 'field-support',
+        group: '현장지원',
+        name: '현장지원 (고장/불편접수)',
+        shortLabel: '지원 완료',
+        emoji: '🛠️',
+        color: '#dc2626',
+        bgColor: '#fee2e2',
+        description: '접수된 고장/불편 현장 방문',
+        buildConfig: ({ now }) => ({
+            locationHierarchy: ['L)건물', 'L)층', 'L)연구실'],
+            sortColumn: 'L)연구실',
+            sortDirection: 'asc',
+            globalLogicalOperator: 'or',
+            targetGroups: [
+                {
+                    id: `qt-support-${now.getTime()}`,
+                    operator: 'or',
+                    conditions: [
+                        {
+                            id: `qt-support-c1-${now.getTime()}`,
+                            column: FIELD_SUPPORT_STATUS_FIELD,
+                            type: 'equals',
+                            values: ['요청'],
+                        },
+                    ],
+                },
+            ],
+            editableFields: [FIELD_SUPPORT_STATUS_FIELD, FIELD_SUPPORT_MEMO_FIELD],
+        }),
+        clearOnComplete: [
+            { field: FIELD_SUPPORT_STATUS_FIELD, setValue: '완료' },
+        ],
+        buildHistoryLabel: () => '현장지원 처리 완료',
     },
 ];
 
