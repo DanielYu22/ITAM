@@ -33,6 +33,7 @@ import {
     Database,
     Wrench,
     Map,
+    CalendarClock,
 } from 'lucide-react-native';
 import { FilterConfig } from './FieldWorkFilter';
 import { Asset, NotionProperty } from '../lib/notion';
@@ -74,6 +75,8 @@ interface HomeScreenProps {
     onRefresh?: () => void;
     // 현장지원 접수 모달 열기
     onSubmitFieldSupport?: () => void;
+    // 월간 정기 큐 초기화 (폐쇄망 등)
+    onMonthlyReset?: () => void;
     // 레이아웃 편집 진입
     onEditLayout?: () => void;
     /** 사용자 오버라이드가 합성된 최종 사이트 정의 (카운트/표시용) */
@@ -116,6 +119,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     onEditSiteRules,
     onRefresh,
     onSubmitFieldSupport,
+    onMonthlyReset,
     onEditLayout,
     effectiveSites,
     onOpenDashboard,
@@ -516,6 +520,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             <Database size={26} color="#0369a1" />
                         </View>
                         <Text style={styles.toolLabel}>DB 관리</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.toolCard}
+                        onPress={onMonthlyReset}
+                        disabled={!onMonthlyReset}
+                    >
+                        <View style={[styles.toolIconContainer, { backgroundColor: '#fef3c7' }]}>
+                            <CalendarClock size={26} color="#a16207" />
+                        </View>
+                        <Text style={styles.toolLabel}>월간 초기화</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity

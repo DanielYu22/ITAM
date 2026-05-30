@@ -139,7 +139,11 @@ export const QUICK_TASKS: QuickTaskDef[] = [
 
     // ------------------------------------------------------------------------
     // 알약 - 오프라인(폐쇄망) 현장 패치
-    // 스탠드얼론 알약 설치된 기기들 → 현장에서 직접 패치
+    // 매월 워크플로우:
+    //   1. '월간 초기화' 액션 → 폐쇄망 기기의 M)알약 현장조치에 '폐쇄망조치필요' 추가
+    //   2. 이 Quick Task / 통합 큐 / 과제 대시보드에서 매칭되어 표시됨
+    //   3. 현장에서 완료 → '폐쇄망조치필요' 제거 + '폐쇄망완료' 추가
+    //   4. 다음 달에 다시 초기화 → 사이클 반복
     // ------------------------------------------------------------------------
     {
         id: 'ahnlab-offline-patch',
@@ -149,12 +153,12 @@ export const QUICK_TASKS: QuickTaskDef[] = [
         emoji: '📴',
         color: '#a16207',
         bgColor: '#fef3c7',
-        description: '폐쇄망 기기 현장 보안 패치',
+        description: '폐쇄망조치필요 마킹된 기기 처리',
         buildConfig: ({ now }) => ({
             locationHierarchy: ['L)건물', 'L)층', 'L)연구실'],
             sortColumn: 'L)연구실',
             sortDirection: 'asc',
-            globalLogicalOperator: 'and',
+            globalLogicalOperator: 'or',
             targetGroups: [
                 {
                     id: `qt-offline-${now.getTime()}`,
@@ -162,22 +166,9 @@ export const QUICK_TASKS: QuickTaskDef[] = [
                     conditions: [
                         {
                             id: `qt-offline-c1-${now.getTime()}`,
-                            column: 'M)알약 온라인구분',
-                            type: 'equals',
-                            values: ['폐쇄망'],
-                        },
-                    ],
-                },
-                {
-                    // "완료" 표기 안 된 것만 (현장조치에 폐쇄망완료 들어있으면 제외)
-                    id: `qt-offline-g2-${now.getTime()}`,
-                    operator: 'or',
-                    conditions: [
-                        {
-                            id: `qt-offline-c2-${now.getTime()}`,
                             column: 'M)알약 현장조치',
-                            type: 'text_not_contains',
-                            values: ['폐쇄망완료'],
+                            type: 'contains',
+                            values: ['폐쇄망조치필요'],
                         },
                     ],
                 },
@@ -185,11 +176,15 @@ export const QUICK_TASKS: QuickTaskDef[] = [
             editableFields: ['M)알약 현장조치', 'M)알약 온라인구분', 'PC Hostname'],
         }),
         clearOnComplete: [
-            // "폐쇄망완료" 표기 추가하는 식 — 멀티셀렉트일 가능성 → setValue 대신 append?
-            // 안전하게 setValue로 덮어쓰기 (사용자가 원치 않으면 직접 편집 가능)
-            { field: 'M)알약 현장조치', setValue: '폐쇄망완료' },
+            // 멀티셀렉트: '폐쇄망조치필요' 제거 후 '폐쇄망완료' 추가
+            // computeClearUpdates 가 removeValues 와 setValue 를 합쳐서 처리해줌
+            {
+                field: 'M)알약 현장조치',
+                removeValues: ['폐쇄망조치필요'],
+                setValue: '폐쇄망완료',
+            },
         ],
-        buildHistoryLabel: ({ now }) => `${getCurrentMonthLabel(now)} 오프라인 알약 현장 패치`,
+        buildHistoryLabel: ({ now }) => `${getCurrentMonthLabel(now)} 오프라인 알약 현장 패치 완료`,
     },
 
     // ------------------------------------------------------------------------

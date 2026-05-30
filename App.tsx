@@ -47,6 +47,7 @@ import { FieldSupportSubmitModal } from './src/components/FieldSupportSubmitModa
 import { LayoutEditorModal } from './src/components/LayoutEditorModal';
 import { LayoutRoomPickerModal } from './src/components/LayoutRoomPickerModal';
 import { LayoutsStore, RoomLayout, ensureStore, roomKey } from './src/lib/layouts';
+import { MonthlyResetModal } from './src/components/MonthlyResetModal';
 import {
   SiteId,
   SitesOverrides,
@@ -110,6 +111,7 @@ export default function App() {
   // 새 모달들
   const [showDBManagementModal, setShowDBManagementModal] = useState(false);
   const [showFieldSupportModal, setShowFieldSupportModal] = useState(false);
+  const [showMonthlyResetModal, setShowMonthlyResetModal] = useState(false);
   // 레이아웃 편집
   const [layoutsStore, setLayoutsStore] = useState<LayoutsStore>({ rooms: {} });
   const [showLayoutPicker, setShowLayoutPicker] = useState(false);
@@ -1082,6 +1084,7 @@ export default function App() {
               onSourceImport={() => setShowSourceImportModal(true)}
               onOpenDBManagement={() => setShowDBManagementModal(true)}
               onSubmitFieldSupport={() => setShowFieldSupportModal(true)}
+              onMonthlyReset={() => setShowMonthlyResetModal(true)}
               onEditLayout={() => setShowLayoutPicker(true)}
               onDashboard={() => {
                 setDashboardMode('all');
@@ -1377,6 +1380,17 @@ export default function App() {
           onClose={() => {
             setShowFieldSupportModal(false);
             loadData(); // 접수 후 새로고침
+          }}
+          assets={assets}
+          schemaProperties={schemaProperties}
+          onUpdate={handleUpdateAsset}
+        />
+
+        <MonthlyResetModal
+          visible={showMonthlyResetModal}
+          onClose={() => {
+            setShowMonthlyResetModal(false);
+            loadData();
           }}
           assets={assets}
           schemaProperties={schemaProperties}
