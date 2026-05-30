@@ -443,37 +443,90 @@ const DraggableObject: React.FC<{
     onSelect: () => void;
     onMove: (dx: number, dy: number) => void;
 }> = ({ obj, scale, selected, onSelect, onMove }) => {
-    const lastMoveRef = useRef({ x: 0, y: 0 });
+    const ref = useRef<any>(null);
+    // 콜백을 ref 로 보관해서 listener 재등록 최소화
+    const cbRef = useRef({ onMove, onSelect, scale });
+    useEffect(() => {
+        cbRef.current = { onMove, onSelect, scale };
+    }, [onMove, onSelect, scale]);
 
-    const panResponder = useMemo(
-        () => PanResponder.create({
-            // 시작 터치와 자식 터치 모두 가로채서 부모(캔버스/모달/문서)가 끼어들지 못하게
-            onStartShouldSetPanResponder: () => true,
-            onStartShouldSetPanResponderCapture: () => true,
-            onMoveShouldSetPanResponder: () => true,
-            onMoveShouldSetPanResponderCapture: () => true,
-            onPanResponderGrant: () => {
-                lastMoveRef.current = { x: 0, y: 0 };
-                onSelect();
-            },
-            onPanResponderMove: (_, g) => {
-                const dx = (g.dx - lastMoveRef.current.x) / scale;
-                const dy = (g.dy - lastMoveRef.current.y) / scale;
-                lastMoveRef.current = { x: g.dx, y: g.dy };
-                onMove(dx, dy);
-            },
-            onPanResponderTerminationRequest: () => false,
-            onShouldBlockNativeResponder: () => true,
-        }),
-        [scale, onMove, onSelect]
-    );
+    // DOM Pointer Events 직접 — PanResponder 가 모바일 웹에서 잘 안 먹어서
+    useEffect(() => {
+        const node = ref.current as any;
+        if (!node || typeof node.addEventListener !== 'function') return;
+
+        let dragging = false;
+        let lastX = 0;
+        let lastY = 0;
+
+        const onDown = (e: any) => {
+            e.preventDefault?.();
+            e.stopPropagation?.();
+            dragging = true;
+            lastX = e.clientX;
+            lastY = e.clientY;
+            if (e.pointerId !== undefined && typeof node.setPointerCapture === 'function') {
+                try { node.setPointerCapture(e.pointerId); } catch { /* noop */ }
+            }
+            cbRef.current.onSelect();
+        };
+        const onMoveEvt = (e: any) => {
+            if (!dragging) return;
+            e.preventDefault?.();
+            const s = cbRef.current.scale || 1;
+            const dx = (e.clientX - lastX) / s;
+            const dy = (e.clientY - lastY) / s;
+            lastX = e.clientX;
+            lastY = e.clientY;
+            cbRef.current.onMove(dx, dy);
+        };
+        const onUp = (e: any) => {
+            dragging = false;
+            if (e.pointerId !== undefined && typeof node.releasePointerCapture === 'function') {
+                try { node.releasePointerCapture(e.pointerId); } catch { /* noop */ }
+            }
+        };
+
+        // passive:false 로 등록해야 preventDefault 가 모바일 사파리에서 동작
+        const optsNonPassive: any = { passive: false };
+        node.addEventListener('pointerdown', onDown, optsNonPassive);
+        node.addEventListener('pointermove', onMoveEvt, optsNonPassive);
+        node.addEventListener('pointerup', onUp, optsNonPassive);
+        node.addEventListener('pointercancel', onUp, optsNonPassive);
+        // Pointer Events 미지원 환경 폴백 (오래된 안드로이드)
+        node.addEventListener('mousedown', onDown, optsNonPassive);
+        node.addEventListener('mousemove', onMoveEvt, optsNonPassive);
+        node.addEventListener('mouseup', onUp, optsNonPassive);
+        node.addEventListener('touchstart', (e: any) => {
+            const t = e.touches?.[0];
+            if (!t) return;
+            onDown({ clientX: t.clientX, clientY: t.clientY, pointerId: undefined, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() });
+        }, optsNonPassive);
+        node.addEventListener('touchmove', (e: any) => {
+            const t = e.touches?.[0];
+            if (!t) return;
+            onMoveEvt({ clientX: t.clientX, clientY: t.clientY, preventDefault: () => e.preventDefault() });
+        }, optsNonPassive);
+        node.addEventListener('touchend', onUp, optsNonPassive);
+        node.addEventListener('touchcancel', onUp, optsNonPassive);
+
+        return () => {
+            node.removeEventListener('pointerdown', onDown);
+            node.removeEventListener('pointermove', onMoveEvt);
+            node.removeEventListener('pointerup', onUp);
+            node.removeEventListener('pointercancel', onUp);
+            node.removeEventListener('mousedown', onDown);
+            node.removeEventListener('mousemove', onMoveEvt);
+            node.removeEventListener('mouseup', onUp);
+        };
+    }, []);
 
     const isAsset = obj.type === 'asset';
     const bg = obj.color || DEFAULT_COLORS[obj.type];
 
     return (
         <View
-            {...panResponder.panHandlers}
+            ref={ref}
             style={{
                 position: 'absolute',
                 left: obj.x * scale,
