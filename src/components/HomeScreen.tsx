@@ -530,7 +530,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         <View style={[styles.toolIconContainer, { backgroundColor: '#fef3c7' }]}>
                             <CalendarClock size={26} color="#a16207" />
                         </View>
-                        <Text style={styles.toolLabel}>월간 초기화</Text>
+                        <Text style={styles.toolLabel}>정기 초기화</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity

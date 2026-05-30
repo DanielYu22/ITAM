@@ -1,12 +1,16 @@
 /**
- * MonthlyResetModal — 매월 정기 큐 초기화
+ * MonthlyResetModal (정기 초기화) — 사이클 큐 일괄 마킹
  *
- * 현재 지원:
- *  - 폐쇄망 알약: M)알약 온라인구분 = 폐쇄망 인 기기의 M)알약 현장조치에
- *    '폐쇄망조치필요'를 추가. 그러면 오프라인 Quick Task / 통합 큐 /
- *    과제 대시보드 모두에서 자동 매칭되어 이번 달 작업 대상으로 잡힘.
+ * 사용자가 매월/매분기 정기적으로 일을 다시 시작할 때 큐를 초기화.
  *
- * 향후 시놀로지·분기백업 등도 같은 패턴으로 한 카드 안에서 가지치기 가능.
+ * 지원 사이클:
+ *  - 폐쇄망 알약 (월간): M)알약 온라인구분=폐쇄망 인 기기의
+ *    M)알약 현장조치에 '폐쇄망조치필요' 추가
+ *  - IT/현장백업 (분기): QA)백업 방법 contains IT/현장백업 인 기기의
+ *    M)분기백업 상태에 '백업필요' 추가
+ *
+ * 같은 패턴: 처리 완료 표시는 따로 두고, 영구 분류 필드는 절대 건드리지 않음.
+ * 큐 매칭은 'XX필요' 태그가 있을 때만, 완료 시 'XX필요' 제거 + 'XX완료' 추가.
  */
 
 import React, { useState, useMemo, useCallback } from 'react';
@@ -19,9 +23,15 @@ import {
     Modal,
     Alert,
 } from 'react-native';
-import { X, RefreshCw, Check, AlertTriangle } from 'lucide-react-native';
+import { X, RefreshCw, Check, AlertTriangle, ChevronRight, ArrowLeft } from 'lucide-react-native';
 import { Asset, NotionProperty } from '../lib/notion';
-import { HISTORY_FIELD_NAME, appendHistoryLine, getCurrentMonthLabel } from '../lib/quickTasks';
+import {
+    HISTORY_FIELD_NAME,
+    BACKUP_STATUS_FIELD,
+    appendHistoryLine,
+    getCurrentMonthLabel,
+    getCurrentQuarterLabel,
+} from '../lib/quickTasks';
 
 interface Props {
     visible: boolean;
@@ -31,12 +41,63 @@ interface Props {
     onUpdate: (id: string, field: string, value: string, type: string) => Promise<void>;
 }
 
-const SITE_FIELD = 'M)알약 온라인구분';
-const ACTION_FIELD = 'M)알약 현장조치';
-const RESET_TAG = '폐쇄망조치필요';
-const COMPLETED_TAG = '폐쇄망완료';
+type Step = 'select' | 'preview' | 'running' | 'done';
+type CycleId = 'closed-network' | 'quarterly-backup';
 
-type Step = 'preview' | 'running' | 'done';
+// ---------------------------------------------------------------------------
+// 사이클 정의 — 새 사이클은 여기 한 곳에만 추가하면 됨
+// ---------------------------------------------------------------------------
+
+interface CycleDef {
+    id: CycleId;
+    title: string;
+    badge: string;        // '월간 - 5월' 같은 시점 라벨 — getter
+    emoji: string;
+    color: string;
+    bgColor: string;
+    description: string;
+    // 대상 자산 — 영구 분류 컬럼으로 판단
+    targetFilter: (asset: Asset) => boolean;
+    // 작업 상태 컬럼명
+    statusField: string;
+    // '...필요' 태그
+    needTag: string;
+    // '...완료' 태그 — 사이클 시작 시 이게 남아 있으면 제거
+    completedTag: string;
+    // 처리이력 라벨 (사이클 시작 시 한 줄)
+    historyLabel: (now: Date) => string;
+}
+
+const CYCLE_DEFS: CycleDef[] = [
+    {
+        id: 'closed-network',
+        title: '폐쇄망 알약 (월간)',
+        get badge() { return `월간 · ${getCurrentMonthLabel()}`; },
+        emoji: '📴',
+        color: '#a16207',
+        bgColor: '#fef3c7',
+        description: '폐쇄망 기기에 폐쇄망조치필요 마킹',
+        targetFilter: (a) => String((a.values as any)['M)알약 온라인구분'] ?? '').includes('폐쇄망'),
+        statusField: 'M)알약 현장조치',
+        needTag: '폐쇄망조치필요',
+        completedTag: '폐쇄망완료',
+        historyLabel: (now) => `${getCurrentMonthLabel(now)} 폐쇄망 큐 초기화 (폐쇄망조치필요 마킹)`,
+    },
+    {
+        id: 'quarterly-backup',
+        title: 'IT/현장백업 (분기)',
+        get badge() { return `분기 · ${getCurrentQuarterLabel()}`; },
+        emoji: '💾',
+        color: '#047857',
+        bgColor: '#d1fae5',
+        description: 'IT/현장백업 분류 기기에 백업필요 마킹',
+        targetFilter: (a) => String((a.values as any)['QA)백업 방법'] ?? '').includes('IT/현장백업'),
+        statusField: BACKUP_STATUS_FIELD,
+        needTag: '백업필요',
+        completedTag: '백업완료',
+        historyLabel: (now) => `${getCurrentQuarterLabel(now)} 분기백업 큐 초기화 (백업필요 마킹)`,
+    },
+];
 
 export const MonthlyResetModal: React.FC<Props> = ({
     visible,
@@ -45,102 +106,188 @@ export const MonthlyResetModal: React.FC<Props> = ({
     schemaProperties,
     onUpdate,
 }) => {
-    const [step, setStep] = useState<Step>('preview');
+    const [step, setStep] = useState<Step>('select');
+    const [activeCycleId, setActiveCycleId] = useState<CycleId | null>(null);
     const [progress, setProgress] = useState({ current: 0, total: 0 });
-    const [doneSummary, setDoneSummary] = useState<{ marked: number; skipped: number } | null>(null);
+    const [doneSummary, setDoneSummary] = useState<{ marked: number; skipped: number; cycle: CycleDef } | null>(null);
 
-    // 대상: 폐쇄망인 기기들
-    const targets = useMemo(() => {
-        return assets.filter(a => {
-            const v = a.values as any;
-            return String(v[SITE_FIELD] ?? '').includes('폐쇄망');
-        });
-    }, [assets]);
+    const activeCycle = useMemo(
+        () => CYCLE_DEFS.find(c => c.id === activeCycleId) || null,
+        [activeCycleId]
+    );
 
-    // 분류
-    const { alreadyMarked, willBeMarked } = useMemo(() => {
+    // 사이클 선택 후 대상 분류
+    const { allTargets, alreadyMarked, willBeMarked } = useMemo(() => {
+        if (!activeCycle) return { allTargets: [], alreadyMarked: [], willBeMarked: [] };
+        const targets = assets.filter(activeCycle.targetFilter);
         const already: Asset[] = [];
         const will: Asset[] = [];
         for (const a of targets) {
-            const cur = String((a.values as any)[ACTION_FIELD] ?? '');
+            const cur = String((a.values as any)[activeCycle.statusField] ?? '');
             const opts = cur.split(',').map(s => s.trim()).filter(Boolean);
-            if (opts.includes(RESET_TAG)) already.push(a);
+            if (opts.includes(activeCycle.needTag)) already.push(a);
             else will.push(a);
         }
-        return { alreadyMarked: already, willBeMarked: will };
-    }, [targets]);
+        return { allTargets: targets, alreadyMarked: already, willBeMarked: will };
+    }, [activeCycle, assets]);
+
+    // 각 사이클의 대상/마킹 예정 개수 (select 단계 카드 표시용)
+    const cycleStats = useMemo(() => {
+        const result: Record<CycleId, { total: number; pending: number }> = {} as any;
+        for (const c of CYCLE_DEFS) {
+            const targets = assets.filter(c.targetFilter);
+            let pending = 0;
+            for (const a of targets) {
+                const cur = String((a.values as any)[c.statusField] ?? '');
+                const opts = cur.split(',').map(s => s.trim()).filter(Boolean);
+                if (!opts.includes(c.needTag)) pending++;
+            }
+            result[c.id] = { total: targets.length, pending };
+        }
+        return result;
+    }, [assets]);
 
     const handleClose = useCallback(() => {
-        setStep('preview');
+        setStep('select');
+        setActiveCycleId(null);
         setProgress({ current: 0, total: 0 });
         setDoneSummary(null);
         onClose();
     }, [onClose]);
 
+    const handleSelectCycle = useCallback((id: CycleId) => {
+        setActiveCycleId(id);
+        setStep('preview');
+    }, []);
+
+    const handleBackToSelect = useCallback(() => {
+        setActiveCycleId(null);
+        setStep('select');
+    }, []);
+
     const handleRun = useCallback(async () => {
+        if (!activeCycle) return;
         if (willBeMarked.length === 0) {
-            Alert.alert('처리할 대상 없음', '모든 폐쇄망 기기가 이미 마킹되어 있어요.');
+            Alert.alert('처리할 대상 없음', '모든 대상 기기가 이미 마킹되어 있어요.');
             return;
         }
-        const actionType = schemaProperties[ACTION_FIELD]?.type || 'multi_select';
+        const statusType = schemaProperties[activeCycle.statusField]?.type || 'multi_select';
         setStep('running');
         setProgress({ current: 0, total: willBeMarked.length });
-        const monthLabel = getCurrentMonthLabel();
+        const now = new Date();
         let marked = 0;
         for (let i = 0; i < willBeMarked.length; i++) {
             const a = willBeMarked[i];
-            const cur = String((a.values as any)[ACTION_FIELD] ?? '');
+            const cur = String((a.values as any)[activeCycle.statusField] ?? '');
             const opts = cur.split(',').map(s => s.trim()).filter(Boolean);
-            // 폐쇄망완료가 남아 있으면 이번 달엔 다시 안 보이도록 제거 (사이클 깔끔)
-            const cleaned = opts.filter(o => o !== COMPLETED_TAG);
-            if (!cleaned.includes(RESET_TAG)) cleaned.push(RESET_TAG);
+            // 이전 사이클의 'XX완료'가 남아 있으면 깔끔하게 제거 (이력은 처리이력에 남음)
+            const cleaned = opts.filter(o => o !== activeCycle.completedTag);
+            if (!cleaned.includes(activeCycle.needTag)) cleaned.push(activeCycle.needTag);
             const next = cleaned.join(', ');
             try {
-                await onUpdate(a.id, ACTION_FIELD, next, actionType);
-                // 처리이력 한 줄
+                await onUpdate(a.id, activeCycle.statusField, next, statusType);
                 const histExisting = String((a.values as any)[HISTORY_FIELD_NAME] ?? '');
-                const histLabel = `${monthLabel} 폐쇄망 큐 초기화 (폐쇄망조치필요 마킹)`;
-                await onUpdate(a.id, HISTORY_FIELD_NAME, appendHistoryLine(histExisting, histLabel), 'rich_text');
+                await onUpdate(
+                    a.id,
+                    HISTORY_FIELD_NAME,
+                    appendHistoryLine(histExisting, activeCycle.historyLabel(now)),
+                    'rich_text',
+                );
                 marked++;
             } catch (e) {
-                console.error('[MonthlyReset] 실패:', a.id, e);
+                console.error('[ResetCycle] 실패:', a.id, e);
             }
             setProgress({ current: i + 1, total: willBeMarked.length });
         }
-        setDoneSummary({ marked, skipped: alreadyMarked.length });
+        setDoneSummary({ marked, skipped: alreadyMarked.length, cycle: activeCycle });
         setStep('done');
-    }, [willBeMarked, alreadyMarked.length, onUpdate, schemaProperties]);
+    }, [activeCycle, willBeMarked, alreadyMarked.length, onUpdate, schemaProperties]);
 
     return (
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
             <View style={styles.container}>
                 <View style={styles.header}>
-                    <View>
-                        <Text style={styles.title}>월간 초기화</Text>
-                        <Text style={styles.subtitle}>{getCurrentMonthLabel()} 폐쇄망 큐 시작</Text>
+                    {step === 'preview' ? (
+                        <TouchableOpacity style={styles.closeBtn} onPress={handleBackToSelect}>
+                            <ArrowLeft size={18} color="#475569" />
+                        </TouchableOpacity>
+                    ) : (
+                        <View style={{ width: 32 }} />
+                    )}
+                    <View style={{ flex: 1, alignItems: 'center' }}>
+                        <Text style={styles.title}>정기 초기화</Text>
+                        <Text style={styles.subtitle}>
+                            {step === 'select'
+                                ? '큐 사이클 시작'
+                                : activeCycle
+                                    ? activeCycle.title
+                                    : ''}
+                        </Text>
                     </View>
-                    <TouchableOpacity onPress={handleClose} style={styles.closeBtn}>
+                    <TouchableOpacity style={styles.closeBtn} onPress={handleClose}>
                         <X size={20} color="#475569" />
                     </TouchableOpacity>
                 </View>
 
                 <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
-                    {step === 'preview' && (
+                    {/* STEP: 사이클 선택 */}
+                    {step === 'select' && (
                         <>
-                            <View style={styles.intro}>
-                                <Text style={styles.introTitle}>이번 달 폐쇄망 사이클을 시작합니다</Text>
+                            <Text style={styles.intro}>
+                                매월/매분기 시즌 도래 시 처리 대상 기기를 일괄로 큐에 올립니다.
+                                초기화하면 Quick Task / 통합 큐 / 과제 대시보드 모두에서 자동으로 잡혀요.
+                            </Text>
+                            {CYCLE_DEFS.map(c => {
+                                const stat = cycleStats[c.id];
+                                return (
+                                    <TouchableOpacity
+                                        key={c.id}
+                                        style={[styles.cycleCard, { backgroundColor: c.bgColor }]}
+                                        onPress={() => handleSelectCycle(c.id)}
+                                        activeOpacity={0.7}
+                                    >
+                                        <View style={styles.cycleHeader}>
+                                            <Text style={styles.cycleEmoji}>{c.emoji}</Text>
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={[styles.cycleTitle, { color: c.color }]}>{c.title}</Text>
+                                                <Text style={styles.cycleBadge}>{c.badge}</Text>
+                                                <Text style={styles.cycleDesc}>{c.description}</Text>
+                                            </View>
+                                            <ChevronRight size={18} color={c.color} />
+                                        </View>
+                                        <View style={styles.cycleStats}>
+                                            <View style={styles.cycleStat}>
+                                                <Text style={[styles.cycleStatNum, { color: c.color }]}>{stat.total}</Text>
+                                                <Text style={styles.cycleStatLabel}>전체</Text>
+                                            </View>
+                                            <View style={styles.cycleStat}>
+                                                <Text style={[styles.cycleStatNum, { color: c.color }]}>{stat.pending}</Text>
+                                                <Text style={styles.cycleStatLabel}>마킹 예정</Text>
+                                            </View>
+                                        </View>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </>
+                    )}
+
+                    {/* STEP: 미리보기 */}
+                    {step === 'preview' && activeCycle && (
+                        <>
+                            <View style={styles.intro2Box}>
+                                <Text style={styles.introTitle}>{activeCycle.title}</Text>
                                 <Text style={styles.introBody}>
-                                    M)알약 온라인구분이 '폐쇄망'인 기기의 M)알약 현장조치에
-                                    '폐쇄망조치필요'를 추가해요. 그러면 오프라인 알약 Quick Task /
-                                    통합 큐 / 과제 대시보드에서 자동으로 잡혀요. 현장에서 ✓ 완료
-                                    누르면 폐쇄망조치필요가 제거되고 폐쇄망완료로 바뀝니다.
+                                    {activeCycle.targetFilter.toString().includes('폐쇄망')
+                                        ? `M)알약 온라인구분이 '폐쇄망'인 기기의 ${activeCycle.statusField}에 '${activeCycle.needTag}'를 추가합니다.`
+                                        : `QA)백업 방법에 'IT/현장백업'이 포함된 기기의 ${activeCycle.statusField}에 '${activeCycle.needTag}'를 추가합니다.`}
+                                    {' '}현장에서 ✓ 완료 누르면 '{activeCycle.needTag}'가 제거되고 '{activeCycle.completedTag}'로 바뀝니다.
                                 </Text>
                             </View>
 
                             <View style={styles.statsRow}>
-                                <View style={[styles.statBox, { backgroundColor: '#fef3c7' }]}>
-                                    <Text style={[styles.statNum, { color: '#b45309' }]}>{targets.length}</Text>
-                                    <Text style={styles.statLabel}>폐쇄망 기기</Text>
+                                <View style={[styles.statBox, { backgroundColor: activeCycle.bgColor }]}>
+                                    <Text style={[styles.statNum, { color: activeCycle.color }]}>{allTargets.length}</Text>
+                                    <Text style={styles.statLabel}>전체 대상</Text>
                                 </View>
                                 <View style={[styles.statBox, { backgroundColor: '#dcfce7' }]}>
                                     <Text style={[styles.statNum, { color: '#15803d' }]}>{willBeMarked.length}</Text>
@@ -155,8 +302,8 @@ export const MonthlyResetModal: React.FC<Props> = ({
                             <View style={styles.noticeBox}>
                                 <AlertTriangle size={14} color="#92400e" />
                                 <Text style={styles.noticeText}>
-                                    '폐쇄망완료'가 남아 있는 기기는 이번 사이클에서 그 마킹이 제거돼요.
-                                    필요 시 처리이력으로 추적 가능합니다.
+                                    이전 사이클의 '{activeCycle.completedTag}' 마킹이 남아있으면 이번 초기화에서 제거됩니다.
+                                    처리이력으로 과거 기록은 그대로 보존돼요.
                                 </Text>
                             </View>
 
@@ -173,48 +320,64 @@ export const MonthlyResetModal: React.FC<Props> = ({
                         </>
                     )}
 
-                    {step === 'running' && (
+                    {/* STEP: 진행 */}
+                    {step === 'running' && activeCycle && (
                         <View style={styles.runningBox}>
-                            <RefreshCw size={32} color="#a16207" />
+                            <RefreshCw size={32} color={activeCycle.color} />
                             <Text style={styles.runningTitle}>마킹 중…</Text>
-                            <Text style={styles.runningProgress}>
+                            <Text style={[styles.runningProgress, { color: activeCycle.color }]}>
                                 {progress.current} / {progress.total}
                             </Text>
                             <View style={styles.progressBar}>
                                 <View
                                     style={[
                                         styles.progressFill,
-                                        { width: `${progress.total ? (progress.current / progress.total) * 100 : 0}%` },
+                                        {
+                                            width: `${progress.total ? (progress.current / progress.total) * 100 : 0}%`,
+                                            backgroundColor: activeCycle.color,
+                                        },
                                     ]}
                                 />
                             </View>
                         </View>
                     )}
 
+                    {/* STEP: 완료 */}
                     {step === 'done' && doneSummary && (
                         <View style={styles.doneBox}>
-                            <View style={styles.doneIcon}>
-                                <Check size={28} color="#15803d" />
+                            <View style={[styles.doneIcon, { backgroundColor: doneSummary.cycle.bgColor }]}>
+                                <Check size={28} color={doneSummary.cycle.color} />
                             </View>
-                            <Text style={styles.doneTitle}>이번 달 사이클 시작 완료</Text>
+                            <Text style={[styles.doneTitle, { color: doneSummary.cycle.color }]}>
+                                {doneSummary.cycle.title} 시작 완료
+                            </Text>
                             <Text style={styles.doneStat}>
                                 {doneSummary.marked}대 마킹 · {doneSummary.skipped}대 이미 마킹됨
                             </Text>
                             <Text style={styles.helperText}>
-                                오프라인 알약 Quick Task / 통합 큐 / 과제 대시보드에서 확인하세요.
+                                Quick Task / 통합 큐 / 과제 대시보드에서 확인하세요.
                             </Text>
                         </View>
                     )}
                 </ScrollView>
 
                 <View style={styles.footer}>
-                    {step === 'preview' && (
+                    {step === 'select' && (
+                        <TouchableOpacity style={styles.cancelBtnFull} onPress={handleClose}>
+                            <Text style={styles.cancelBtnText}>닫기</Text>
+                        </TouchableOpacity>
+                    )}
+                    {step === 'preview' && activeCycle && (
                         <>
-                            <TouchableOpacity style={styles.cancelBtn} onPress={handleClose}>
-                                <Text style={styles.cancelBtnText}>취소</Text>
+                            <TouchableOpacity style={styles.cancelBtn} onPress={handleBackToSelect}>
+                                <Text style={styles.cancelBtnText}>뒤로</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
-                                style={[styles.runBtn, willBeMarked.length === 0 && styles.runBtnDisabled]}
+                                style={[
+                                    styles.runBtn,
+                                    { backgroundColor: activeCycle.color },
+                                    willBeMarked.length === 0 && styles.runBtnDisabled,
+                                ]}
                                 onPress={handleRun}
                                 disabled={willBeMarked.length === 0}
                             >
@@ -226,10 +389,15 @@ export const MonthlyResetModal: React.FC<Props> = ({
                             </TouchableOpacity>
                         </>
                     )}
-                    {step === 'done' && (
-                        <TouchableOpacity style={styles.runBtn} onPress={handleClose}>
-                            <Text style={styles.runBtnText}>닫기</Text>
-                        </TouchableOpacity>
+                    {step === 'done' && doneSummary && (
+                        <>
+                            <TouchableOpacity style={styles.cancelBtn} onPress={handleBackToSelect}>
+                                <Text style={styles.cancelBtnText}>다른 사이클</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={[styles.runBtn, { backgroundColor: doneSummary.cycle.color }]} onPress={handleClose}>
+                                <Text style={styles.runBtnText}>닫기</Text>
+                            </TouchableOpacity>
+                        </>
                     )}
                 </View>
             </View>
@@ -242,14 +410,14 @@ const styles = StyleSheet.create({
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
-        alignItems: 'flex-start',
-        padding: 14,
+        alignItems: 'center',
+        padding: 12,
         backgroundColor: '#ffffff',
         borderBottomWidth: 1,
         borderBottomColor: '#e5e7eb',
     },
-    title: { fontSize: 17, fontWeight: 'bold', color: '#a16207' },
-    subtitle: { fontSize: 12, color: '#6b7280', marginTop: 2 },
+    title: { fontSize: 16, fontWeight: 'bold', color: '#1f2937' },
+    subtitle: { fontSize: 11, color: '#6b7280', marginTop: 1 },
     closeBtn: {
         width: 32,
         height: 32,
@@ -260,8 +428,34 @@ const styles = StyleSheet.create({
     },
     body: { flex: 1 },
     bodyContent: { padding: 14, paddingBottom: 100 },
+    intro: { fontSize: 12, color: '#475569', lineHeight: 18, marginBottom: 16 },
 
-    intro: { gap: 6, marginBottom: 14 },
+    cycleCard: {
+        padding: 14,
+        borderRadius: 14,
+        marginBottom: 10,
+    },
+    cycleHeader: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+    cycleEmoji: { fontSize: 28 },
+    cycleTitle: { fontSize: 15, fontWeight: '700' },
+    cycleBadge: { fontSize: 10, color: '#94a3b8', marginTop: 1, fontWeight: '600' },
+    cycleDesc: { fontSize: 11, color: '#475569', marginTop: 2 },
+    cycleStats: {
+        flexDirection: 'row',
+        gap: 8,
+        marginTop: 10,
+    },
+    cycleStat: {
+        flex: 1,
+        backgroundColor: '#ffffff',
+        padding: 8,
+        borderRadius: 8,
+        alignItems: 'center',
+    },
+    cycleStatNum: { fontSize: 18, fontWeight: '800' },
+    cycleStatLabel: { fontSize: 9, color: '#475569' },
+
+    intro2Box: { gap: 6, marginBottom: 14 },
     introTitle: { fontSize: 14, fontWeight: '700', color: '#1f2937' },
     introBody: { fontSize: 12, color: '#475569', lineHeight: 18 },
 
@@ -299,7 +493,7 @@ const styles = StyleSheet.create({
 
     runningBox: { alignItems: 'center', padding: 30, gap: 10 },
     runningTitle: { fontSize: 15, fontWeight: '700', color: '#1f2937' },
-    runningProgress: { fontSize: 13, color: '#a16207', fontWeight: '700' },
+    runningProgress: { fontSize: 13, fontWeight: '700' },
     progressBar: {
         width: '100%',
         height: 8,
@@ -307,18 +501,17 @@ const styles = StyleSheet.create({
         borderRadius: 4,
         overflow: 'hidden',
     },
-    progressFill: { height: '100%', backgroundColor: '#a16207' },
+    progressFill: { height: '100%' },
 
     doneBox: { alignItems: 'center', padding: 30, gap: 8 },
     doneIcon: {
         width: 56,
         height: 56,
         borderRadius: 28,
-        backgroundColor: '#dcfce7',
         alignItems: 'center',
         justifyContent: 'center',
     },
-    doneTitle: { fontSize: 16, fontWeight: 'bold', color: '#15803d' },
+    doneTitle: { fontSize: 16, fontWeight: 'bold' },
     doneStat: { fontSize: 12, color: '#475569' },
 
     footer: {
@@ -336,12 +529,18 @@ const styles = StyleSheet.create({
         backgroundColor: '#f1f5f9',
         alignItems: 'center',
     },
+    cancelBtnFull: {
+        flex: 1,
+        padding: 12,
+        borderRadius: 10,
+        backgroundColor: '#f1f5f9',
+        alignItems: 'center',
+    },
     cancelBtnText: { fontSize: 14, color: '#475569', fontWeight: '600' },
     runBtn: {
         flex: 2,
         padding: 12,
         borderRadius: 10,
-        backgroundColor: '#a16207',
         alignItems: 'center',
     },
     runBtnDisabled: { backgroundColor: '#cbd5e1' },

@@ -31,6 +31,11 @@ export const FIELD_SUPPORT_STATUS_FIELD = 'M)현장지원 상태'; // select
 export const FIELD_SUPPORT_STATUS_OPTIONS = ['요청', '완료'];
 export const FIELD_SUPPORT_MEMO_FIELD = 'M)현장지원 메모';   // rich_text
 
+// 분기 백업 사이클 상태 (multi_select)
+// '백업필요' = 이번 분기 처리 필요. '백업완료' = 처리 완료.
+export const BACKUP_STATUS_FIELD = 'M)분기백업 상태';
+export const BACKUP_STATUS_OPTIONS = ['백업필요', '백업완료'];
+
 // 완료 시 어떻게 클리어할지에 대한 규칙
 export interface ClearRule {
     field: string;
@@ -189,7 +194,12 @@ export const QUICK_TASKS: QuickTaskDef[] = [
 
     // ------------------------------------------------------------------------
     // 분기 백업 - IT/현장백업 대상
-    // QA)백업 방법 = "IT/현장백업" 인 37대 → 사용자가 직접 백업
+    // 분기 사이클:
+    //   1. '정기 초기화 → 분기백업' → QA)백업 방법 = IT/현장백업 인 기기의
+    //      M)분기백업 상태에 '백업필요' 마킹
+    //   2. 이 Quick Task / 통합 큐 / 과제 대시보드에서 매칭되어 표시
+    //   3. 현장에서 ✓ 완료 → '백업필요' 제거 + '백업완료' 추가
+    //   4. 다음 분기 시즌 도래 시 초기화 → 사이클 반복
     // ------------------------------------------------------------------------
     {
         id: 'backup-it-onsite',
@@ -199,7 +209,7 @@ export const QUICK_TASKS: QuickTaskDef[] = [
         emoji: '💾',
         color: '#047857',
         bgColor: '#d1fae5',
-        description: 'IT/현장백업 분류 기기 백업 수행',
+        description: '백업필요 마킹된 IT/현장백업 분류 기기',
         buildConfig: ({ now }) => ({
             locationHierarchy: ['L)건물', 'L)층', 'L)연구실'],
             sortColumn: 'L)연구실',
@@ -212,18 +222,22 @@ export const QUICK_TASKS: QuickTaskDef[] = [
                     conditions: [
                         {
                             id: `qt-backup1-c1-${now.getTime()}`,
-                            column: 'QA)백업 방법',
-                            type: 'text_contains',
-                            values: ['IT/현장백업'],
+                            column: BACKUP_STATUS_FIELD,
+                            type: 'contains',
+                            values: ['백업필요'],
                         },
                     ],
                 },
             ],
-            editableFields: ['분기백업비고', '430백업', 'QA)백업 방법'],
+            editableFields: [BACKUP_STATUS_FIELD, '분기백업비고', 'QA)백업 방법'],
         }),
         clearOnComplete: [
-            // 분기백업비고에 분기 라벨 + 완료 마킹. 기존 값은 처리이력에 들어가므로 덮어써도 OK
-            { field: '분기백업비고', setValue: '' },
+            // 멀티셀렉트: '백업필요' 제거 후 '백업완료' 추가. computeClearUpdates 가 합쳐서 처리.
+            {
+                field: BACKUP_STATUS_FIELD,
+                removeValues: ['백업필요'],
+                setValue: '백업완료',
+            },
         ],
         buildHistoryLabel: ({ now }) => `${getCurrentQuarterLabel(now)} IT/현장백업 완료`,
     },

@@ -65,6 +65,8 @@ import {
   FIELD_SUPPORT_STATUS_FIELD,
   FIELD_SUPPORT_STATUS_OPTIONS,
   FIELD_SUPPORT_MEMO_FIELD,
+  BACKUP_STATUS_FIELD,
+  BACKUP_STATUS_OPTIONS,
   computeClearUpdates,
   appendHistoryLine,
   buildCombinedQuickTaskConfig,
@@ -220,6 +222,19 @@ export default function App() {
           }
         } catch (e) {
           console.warn(`[App] '${FIELD_SUPPORT_MEMO_FIELD}' 필드 자동 생성 실패:`, e);
+        }
+      }
+
+      // 분기 백업 상태 필드 (multi_select: 백업필요/백업완료)
+      if (!schemaProps[BACKUP_STATUS_FIELD]) {
+        try {
+          const created = await notionClient.createDatabaseProperty(BACKUP_STATUS_FIELD, 'multi_select');
+          if (created) {
+            console.log(`[App] '${BACKUP_STATUS_FIELD}' 필드(multi_select) 자동 생성. 옵션: ${BACKUP_STATUS_OPTIONS.join(', ')}`);
+            schemaChanged = true;
+          }
+        } catch (e) {
+          console.warn(`[App] '${BACKUP_STATUS_FIELD}' 필드 자동 생성 실패:`, e);
         }
       }
 
