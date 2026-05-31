@@ -44,15 +44,29 @@ import {
     RoomType,
     ROOM_TYPE_EMOJI,
 } from '../lib/infrastructure';
+import { RoomNode } from '../lib/infrastructureDb';
+import { CompanyInfo } from '../lib/companiesDb';
 import { RoomEditDialog } from './RoomEditDialog';
 
 interface Props {
     visible: boolean;
     onClose: () => void;
     data: InfrastructureData;
+    /** Phase B: roomId → RoomNode lookup (입주사 relation 등 노션 메타 포함) */
+    nodesById?: Map<string, RoomNode>;
+    /** 입주사 마스터 목록 (relation 선택용) */
+    companies?: CompanyInfo[];
     assets: Asset[];
     effectiveSites?: SiteDef[];
+    /** @deprecated Phase A 호환용. 사용되지 않음. */
     onSave: (next: InfrastructureData) => Promise<void>;
+    /** Phase B: row 단위 CRUD */
+    onCreateRoom?: (input: {
+        site: SiteId; building: string; floor: string; name: string; type: RoomType;
+    } & Partial<RoomNode>) => Promise<void>;
+    onUpdateRoom?: (roomId: string, patch: Partial<RoomNode>) => Promise<void>;
+    onArchiveRoom?: (roomId: string) => Promise<void>;
+    onReload?: () => Promise<void>;
     /** 실험실에서 레이아웃 편집 진입 — App.tsx가 모달 전환 처리 */
     onOpenLayout?: (building: string, floor: string, room: string) => void;
 }
@@ -66,9 +80,15 @@ export const InfrastructureModal: React.FC<Props> = ({
     visible,
     onClose,
     data,
+    nodesById,
+    companies,
     assets,
     effectiveSites,
     onSave,
+    onCreateRoom,
+    onUpdateRoom,
+    onArchiveRoom,
+    onReload,
     onOpenLayout,
 }) => {
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -109,72 +129,80 @@ export const InfrastructureModal: React.FC<Props> = ({
     };
 
     const handleSeed = useCallback(async () => {
-        const seeded = seedFromAssets(assets, effectiveSites);
-        const merged = data.buildings.length === 0
-            ? seeded
-            : mergeSeedIntoInfrastructure(data, seeded);
+        // Phase B: 자산 자동 시드는 새 row 들을 노션 DB 에 upsert
         setSaving(true);
         try {
-            await onSave(merged);
-            Alert.alert(
-                '자동 시드 완료',
-                `${merged.buildings.length}개 건물 · ${merged.buildings.reduce((a, b) => a + b.floors.length, 0)}개 층 · ${merged.buildings.reduce((a, b) => a + b.floors.reduce((c, f) => c + f.rooms.length, 0), 0)}개 공간 등록.`
-            );
+            const seeded = seedFromAssets(assets, effectiveSites);
+            // 현재 트리에 없는 룸만 추가 (이름+층+건물 기준)
+            const existingKeys = new Set<string>();
+            for (const b of data.buildings) for (const f of b.floors) for (const r of f.rooms) {
+                existingKeys.add(`${b.name}|${f.name}|${r.name}`);
+            }
+            let added = 0;
+            for (const b of seeded.buildings) {
+                for (const f of b.floors) {
+                    for (const r of f.rooms) {
+                        const key = `${b.name}|${f.name}|${r.name}`;
+                        if (existingKeys.has(key)) continue;
+                        if (onCreateRoom) {
+                            await onCreateRoom({
+                                site: b.siteId, building: b.name, floor: f.name,
+                                name: r.name, type: 'lab',
+                                autoSeeded: true, assetCount: r.assetCount,
+                            });
+                            added++;
+                        }
+                    }
+                }
+            }
+            if (onReload) await onReload();
+            Alert.alert('자동 시드 완료', `${added}개 공간 신규 등록.`);
         } catch (e) {
             Alert.alert('오류', '저장 실패. 잠시 후 다시 시도하세요.');
         } finally {
             setSaving(false);
         }
-    }, [assets, effectiveSites, data, onSave]);
+    }, [assets, effectiveSites, data, onCreateRoom, onReload]);
 
-    // ── 노드 편집/저장 헬퍼 ──────────────────────────────────
+    // ── 노드 편집/저장 헬퍼 (Phase B: row 단위 API) ──────────
+    const findNode = useCallback((building: string, floor: string, name: string): RoomNode | undefined => {
+        if (!nodesById) return undefined;
+        for (const n of nodesById.values()) {
+            if (n.building === building && n.floor === floor && n.name === name) return n;
+        }
+        return undefined;
+    }, [nodesById]);
+
     const updateRoom = useCallback(async (
         buildingName: string,
         floorName: string,
         oldRoomName: string,
         next: RoomInfo,
     ) => {
-        const cloned: InfrastructureData = {
-            ...data,
-            buildings: data.buildings.map(b => {
-                if (b.name !== buildingName) return b;
-                return {
-                    ...b,
-                    floors: b.floors.map(f => {
-                        if (f.name !== floorName) return f;
-                        return {
-                            ...f,
-                            rooms: f.rooms.map(r => r.name === oldRoomName ? next : r),
-                        };
-                    }),
-                };
-            }),
-            updatedAt: new Date().toISOString(),
-        };
-        await onSave(cloned);
-    }, [data, onSave]);
+        const node = findNode(buildingName, floorName, oldRoomName);
+        if (!node || !onUpdateRoom) return;
+        await onUpdateRoom(node.id, {
+            name: next.name,
+            type: next.type,
+            notes: next.notes ?? '',
+            features: next.features ?? [],
+            assignedTeam: next.assignedTeam ?? '',
+            serverRoom: next.serverRoom,
+            meetingRoom: next.meetingRoom,
+            // 입주사 relation 은 next 에 occupantIds 가 있으면 갱신
+            occupantIds: (next as any).occupantIds,
+        });
+    }, [findNode, onUpdateRoom]);
 
     const deleteRoom = useCallback(async (
         buildingName: string,
         floorName: string,
         roomName: string,
     ) => {
-        const cloned: InfrastructureData = {
-            ...data,
-            buildings: data.buildings.map(b => {
-                if (b.name !== buildingName) return b;
-                return {
-                    ...b,
-                    floors: b.floors.map(f => {
-                        if (f.name !== floorName) return f;
-                        return { ...f, rooms: f.rooms.filter(r => r.name !== roomName) };
-                    }),
-                };
-            }),
-            updatedAt: new Date().toISOString(),
-        };
-        await onSave(cloned);
-    }, [data, onSave]);
+        const node = findNode(buildingName, floorName, roomName);
+        if (!node || !onArchiveRoom) return;
+        await onArchiveRoom(node.id);
+    }, [findNode, onArchiveRoom]);
 
     const openAdd = (target: AddTarget) => {
         setAddTarget(target);
@@ -183,73 +211,46 @@ export const InfrastructureModal: React.FC<Props> = ({
     };
 
     const handleAdd = useCallback(async () => {
-        if (!addTarget) return;
+        if (!addTarget || !onCreateRoom) return;
         const name = addName.trim();
         if (!name) { Alert.alert('이름 필수', '이름을 입력해 주세요.'); return; }
 
-        let next: InfrastructureData = { ...data, updatedAt: new Date().toISOString() };
-
-        if (addTarget.kind === 'building') {
-            if (data.buildings.some(b => b.name === name)) {
-                Alert.alert('중복', '같은 이름의 건물이 이미 있어요.');
-                return;
-            }
-            next = {
-                ...next,
-                buildings: [
-                    ...data.buildings,
-                    { name, siteId: addTarget.siteId, floors: [] },
-                ],
-            };
-        } else if (addTarget.kind === 'floor') {
-            const b = data.buildings.find(x => x.name === addTarget.building);
-            if (!b) return;
-            if (b.floors.some(f => f.name === name)) {
-                Alert.alert('중복', '같은 이름의 층이 이미 있어요.');
-                return;
-            }
-            next = {
-                ...next,
-                buildings: data.buildings.map(b2 => {
-                    if (b2.name !== addTarget.building) return b2;
-                    return { ...b2, floors: [...b2.floors, { name, rooms: [] }] };
-                }),
-            };
-        } else if (addTarget.kind === 'room') {
-            const b = data.buildings.find(x => x.name === addTarget.building);
-            const f = b?.floors.find(f => f.name === addTarget.floor);
-            if (!f) return;
-            if (f.rooms.some(r => r.name === name)) {
-                Alert.alert('중복', '같은 이름의 공간이 이미 있어요.');
-                return;
-            }
-            next = {
-                ...next,
-                buildings: data.buildings.map(b2 => {
-                    if (b2.name !== addTarget.building) return b2;
-                    return {
-                        ...b2,
-                        floors: b2.floors.map(f2 => {
-                            if (f2.name !== addTarget.floor) return f2;
-                            return { ...f2, rooms: [...f2.rooms, { name, type: addType }] };
-                        }),
-                    };
-                }),
-            };
-        }
         try {
-            await onSave(next);
-            // 펼침 유지 & 새 노드 펼치기
             if (addTarget.kind === 'building') {
+                // 빈 빌딩 만들기 = placeholder 공간 1개 추가
+                await onCreateRoom({
+                    site: addTarget.siteId, building: name, floor: '1F',
+                    name: '신규 공간', type: 'other',
+                });
                 setExpanded(prev => new Set([...prev, `b:${name}`]));
             } else if (addTarget.kind === 'floor') {
+                const b = data.buildings.find(x => x.name === addTarget.building);
+                if (!b) return;
+                if (b.floors.some(f => f.name === name)) {
+                    Alert.alert('중복', '같은 이름의 층이 이미 있어요.'); return;
+                }
+                await onCreateRoom({
+                    site: b.siteId, building: addTarget.building, floor: name,
+                    name: '신규 공간', type: 'other',
+                });
                 setExpanded(prev => new Set([...prev, `b:${addTarget.building}`, `f:${addTarget.building}/${name}`]));
+            } else if (addTarget.kind === 'room') {
+                const b = data.buildings.find(x => x.name === addTarget.building);
+                const f = b?.floors.find(f => f.name === addTarget.floor);
+                if (!b || !f) return;
+                if (f.rooms.some(r => r.name === name)) {
+                    Alert.alert('중복', '같은 이름의 공간이 이미 있어요.'); return;
+                }
+                await onCreateRoom({
+                    site: b.siteId, building: addTarget.building, floor: addTarget.floor,
+                    name, type: addType,
+                });
             }
             setAddTarget(null);
         } catch (e) {
             Alert.alert('오류', '저장 실패. 잠시 후 다시 시도하세요.');
         }
-    }, [addTarget, addName, addType, data, onSave]);
+    }, [addTarget, addName, addType, data, onCreateRoom]);
 
     return (
         <>
@@ -346,26 +347,32 @@ export const InfrastructureModal: React.FC<Props> = ({
         </Modal>
 
         {/* 공간 편집 다이얼로그 */}
-        {editingRoom && (
-            <RoomEditDialog
-                visible
-                onClose={() => setEditingRoom(null)}
-                room={editingRoom.room}
-                building={editingRoom.building}
-                floor={editingRoom.floor}
-                onSave={async (next) => {
-                    await updateRoom(editingRoom.building, editingRoom.floor, editingRoom.room.name, next);
-                }}
-                onDelete={async () => {
-                    await deleteRoom(editingRoom.building, editingRoom.floor, editingRoom.room.name);
-                }}
-                onOpenLayout={onOpenLayout ? () => {
-                    const er = editingRoom;
-                    setEditingRoom(null);
-                    onOpenLayout(er.building, er.floor, er.room.name);
-                } : undefined}
-            />
-        )}
+        {editingRoom && (() => {
+            // Phase B: room 객체에 occupantIds 합쳐서 전달
+            const node = findNode(editingRoom.building, editingRoom.floor, editingRoom.room.name);
+            const roomWithRel = { ...editingRoom.room, occupantIds: node?.occupantIds };
+            return (
+                <RoomEditDialog
+                    visible
+                    onClose={() => setEditingRoom(null)}
+                    room={roomWithRel}
+                    building={editingRoom.building}
+                    floor={editingRoom.floor}
+                    companies={companies}
+                    onSave={async (next) => {
+                        await updateRoom(editingRoom.building, editingRoom.floor, editingRoom.room.name, next as any);
+                    }}
+                    onDelete={async () => {
+                        await deleteRoom(editingRoom.building, editingRoom.floor, editingRoom.room.name);
+                    }}
+                    onOpenLayout={onOpenLayout ? () => {
+                        const er = editingRoom;
+                        setEditingRoom(null);
+                        onOpenLayout(er.building, er.floor, er.room.name);
+                    } : undefined}
+                />
+            );
+        })()}
 
         {/* 추가 다이얼로그 */}
         <Modal visible={!!addTarget} transparent animationType="fade" onRequestClose={() => setAddTarget(null)}>

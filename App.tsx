@@ -53,7 +53,11 @@ import {
   InfrastructureData,
   ensureInfrastructure,
   emptyInfrastructure,
+  RoomInfo,
+  RoomType,
 } from './src/lib/infrastructure';
+import { InfrastructureDbClient, RoomNode } from './src/lib/infrastructureDb';
+import { CompaniesDbClient, CompanyInfo } from './src/lib/companiesDb';
 import {
   SiteId,
   SitesOverrides,
@@ -122,6 +126,11 @@ export default function App() {
   const [showMonthlyResetModal, setShowMonthlyResetModal] = useState(false);
   const [showInfrastructureModal, setShowInfrastructureModal] = useState(false);
   const [infrastructure, setInfrastructure] = useState<InfrastructureData>(emptyInfrastructure());
+  // Phase B: 노션 DB 기반 — Map<roomId, RoomNode> 로 빠른 lookup + 입주사 마스터 캐시
+  const [infraNodesById, setInfraNodesById] = useState<Map<string, RoomNode>>(new Map());
+  const [companies, setCompanies] = useState<CompanyInfo[]>([]);
+  const [infraDbClient] = useState(() => new InfrastructureDbClient());
+  const [companiesDbClient] = useState(() => new CompaniesDbClient());
   // 테스트 이력 정리 진행 상태 (UI 인디케이터용)
   const [cleanupProgress, setCleanupProgress] = useState<{ current: number; total: number } | null>(null);
   // 레이아웃 편집
@@ -353,9 +362,19 @@ export default function App() {
         // 레이아웃 스토어 복원
         const savedLayouts = (ensuredSettings as any)?.layouts;
         setLayoutsStore(ensureStore(savedLayouts));
-        // 인프라 데이터 복원
-        const savedInfra = (ensuredSettings as any)?.infrastructure;
-        setInfrastructure(ensureInfrastructure(savedInfra));
+        // Phase B: 인프라 데이터를 별도 노션 DB 에서 로드 (settings.infrastructure 는 백업)
+        infraDbClient.loadAsTree().then(({ data, nodesById }) => {
+          setInfrastructure(data);
+          setInfraNodesById(nodesById);
+        }).catch(err => {
+          console.warn('[InfraDB] load failed, fallback to settings.infrastructure', err);
+          const savedInfra = (ensuredSettings as any)?.infrastructure;
+          setInfrastructure(ensureInfrastructure(savedInfra));
+        });
+        // Companies 마스터 로드
+        companiesDbClient.listAll().then(setCompanies).catch(err => {
+          console.warn('[CompaniesDB] load failed', err);
+        });
         const lastLookup = ensuredSettings?.bulkUpdate?.lastLookupColumn;
         const schemaCols = result.schema;
         if (typeof lastLookup === 'string' && schemaCols.includes(lastLookup)) {
@@ -726,20 +745,35 @@ export default function App() {
     setCombinedQuickTask(false);
   }, [effectiveSites]);
 
-  // 인프라 데이터 저장 — Notion 설정 페이지에 infrastructure 로 저장
-  const handleSaveInfrastructure = useCallback(async (next: InfrastructureData) => {
-    setInfrastructure(next);
-    const merged = { ...(appSettings || {}), infrastructure: next };
-    setAppSettings(merged);
-    if (notionClient) {
-      try {
-        await notionClient.saveSettings(merged);
-      } catch (e) {
-        console.error('[App] 인프라 저장 실패:', e);
-        throw e;
-      }
-    }
-  }, [appSettings, notionClient]);
+  // Phase B: 인프라를 별도 노션 DB row 단위로 관리
+  const reloadInfraTree = useCallback(async () => {
+    const { data, nodesById } = await infraDbClient.loadAsTree();
+    setInfrastructure(data);
+    setInfraNodesById(nodesById);
+  }, [infraDbClient]);
+
+  const handleCreateRoom = useCallback(async (input: {
+    site: SiteId; building: string; floor: string; name: string;
+    type: RoomType;
+  } & Partial<RoomNode>) => {
+    await infraDbClient.createRoom(input);
+    await reloadInfraTree();
+  }, [infraDbClient, reloadInfraTree]);
+
+  const handleUpdateRoom = useCallback(async (roomId: string, patch: Partial<RoomNode>) => {
+    await infraDbClient.updateRoom(roomId, patch);
+    await reloadInfraTree();
+  }, [infraDbClient, reloadInfraTree]);
+
+  const handleArchiveRoom = useCallback(async (roomId: string) => {
+    await infraDbClient.archiveRoom(roomId);
+    await reloadInfraTree();
+  }, [infraDbClient, reloadInfraTree]);
+
+  // legacy — InfrastructureModal 의 기존 onSave 시그니처 호환용 (호출되지 않음)
+  const handleSaveInfrastructure = useCallback(async (_next: InfrastructureData) => {
+    console.warn('[App] handleSaveInfrastructure (legacy) called — ignored');
+  }, []);
 
   // 레이아웃 저장 — Notion 설정 페이지에 layouts.rooms[key] 로 저장
   const handleSaveRoomLayout = useCallback(async (key: string, layout: RoomLayout) => {
@@ -1522,9 +1556,15 @@ export default function App() {
           visible={showInfrastructureModal}
           onClose={() => setShowInfrastructureModal(false)}
           data={infrastructure}
+          nodesById={infraNodesById}
+          companies={companies}
           assets={assets}
           effectiveSites={effectiveSites}
           onSave={handleSaveInfrastructure}
+          onCreateRoom={handleCreateRoom}
+          onUpdateRoom={handleUpdateRoom}
+          onArchiveRoom={handleArchiveRoom}
+          onReload={reloadInfraTree}
           onOpenLayout={(b, f, r) => {
             // 인프라 닫고 레이아웃 편집기 띄움. 닫히면 인프라 다시 열기.
             setShowInfrastructureModal(false);

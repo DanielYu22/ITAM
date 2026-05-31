@@ -25,15 +25,18 @@ import {
     ServerRoomInfo,
     MeetingRoomInfo,
 } from '../lib/infrastructure';
+import { CompanyInfo } from '../lib/companiesDb';
 
 interface Props {
     visible: boolean;
     onClose: () => void;
-    room: RoomInfo;
+    room: RoomInfo & { occupantIds?: string[] };
     /** UI 표시용 경로 */
     building: string;
     floor: string;
-    onSave: (next: RoomInfo) => Promise<void>;
+    /** 입주사 마스터 (relation 선택용) */
+    companies?: CompanyInfo[];
+    onSave: (next: RoomInfo & { occupantIds?: string[] }) => Promise<void>;
     onDelete?: () => Promise<void>;
     onOpenLayout?: () => void;
 }
@@ -48,6 +51,7 @@ export const RoomEditDialog: React.FC<Props> = ({
     room,
     building,
     floor,
+    companies,
     onSave,
     onDelete,
     onOpenLayout,
@@ -57,7 +61,7 @@ export const RoomEditDialog: React.FC<Props> = ({
     const [notes, setNotes] = useState(room.notes || '');
     const [features, setFeatures] = useState<string[]>(room.features || []);
     const [featureInput, setFeatureInput] = useState('');
-    const [occupant, setOccupant] = useState(room.occupant || '');
+    const [occupantIds, setOccupantIds] = useState<string[]>(room.occupantIds || []);
     const [assignedTeam, setAssignedTeam] = useState(room.assignedTeam || '');
     const [server, setServer] = useState<ServerRoomInfo>(room.serverRoom || {});
     const [equipmentInput, setEquipmentInput] = useState('');
@@ -71,7 +75,7 @@ export const RoomEditDialog: React.FC<Props> = ({
         setType(room.type || 'lab');
         setNotes(room.notes || '');
         setFeatures(room.features || []);
-        setOccupant(room.occupant || '');
+        setOccupantIds(room.occupantIds || []);
         setAssignedTeam(room.assignedTeam || '');
         setServer(room.serverRoom || {});
         setMeeting(room.meetingRoom || {});
@@ -122,13 +126,13 @@ export const RoomEditDialog: React.FC<Props> = ({
         }
         setSaving(true);
         try {
-            const next: RoomInfo = {
+            const next: RoomInfo & { occupantIds?: string[] } = {
                 ...room,
                 name: name.trim(),
                 type,
                 notes: notes.trim() || undefined,
                 features: features.length > 0 ? features : undefined,
-                occupant: occupant.trim() || undefined,
+                occupantIds,  // Phase B: 입주사 relation ids
                 assignedTeam: assignedTeam.trim() || undefined,
                 serverRoom: type === 'server-room' && Object.keys(server).length > 0 ? server : undefined,
                 meetingRoom: type === 'meeting-room' && Object.keys(meeting).length > 0 ? meeting : undefined,
@@ -194,29 +198,49 @@ export const RoomEditDialog: React.FC<Props> = ({
                         })}
                     </View>
 
-                    {/* 입주사 / 할당팀 (모든 타입 공통) */}
-                    <View style={styles.row2}>
-                        <View style={{ flex: 1 }}>
-                            <Text style={styles.label}>입주사</Text>
-                            <TextInput
-                                style={styles.input}
-                                value={occupant}
-                                onChangeText={setOccupant}
-                                placeholder="예: 대웅제약"
-                                placeholderTextColor="#94a3b8"
-                            />
+                    {/* 입주사 (multi-relation) */}
+                    <Text style={styles.label}>입주사 (복수 선택)</Text>
+                    {(!companies || companies.length === 0) ? (
+                        <Text style={styles.helperText}>입주사 목록 로딩 중…</Text>
+                    ) : (
+                        <View style={styles.chipsRow}>
+                            {companies
+                                .slice()
+                                .sort((a, b) => {
+                                    // 입주완료 우선, 그 다음 입주예정, 희망
+                                    const order = { '입주완료': 0, '입주예정': 1, '희망': 2 } as Record<string, number>;
+                                    return (order[a.phase || ''] ?? 9) - (order[b.phase || ''] ?? 9)
+                                        || a.name.localeCompare(b.name, 'ko');
+                                })
+                                .map(c => {
+                                    const on = occupantIds.includes(c.id);
+                                    return (
+                                        <TouchableOpacity
+                                            key={c.id}
+                                            style={[styles.companyChip, on && styles.companyChipOn,
+                                                c.phase === '희망' && styles.companyChipHope]}
+                                            onPress={() => {
+                                                setOccupantIds(prev => on ? prev.filter(x => x !== c.id) : [...prev, c.id]);
+                                            }}
+                                        >
+                                            <Text style={[styles.companyChipText, on && styles.companyChipTextOn]}>
+                                                {c.name}
+                                            </Text>
+                                        </TouchableOpacity>
+                                    );
+                                })}
                         </View>
-                        <View style={{ flex: 1 }}>
-                            <Text style={styles.label}>할당팀</Text>
-                            <TextInput
-                                style={styles.input}
-                                value={assignedTeam}
-                                onChangeText={setAssignedTeam}
-                                placeholder="예: CMC2팀"
-                                placeholderTextColor="#94a3b8"
-                            />
-                        </View>
-                    </View>
+                    )}
+
+                    {/* 할당팀 */}
+                    <Text style={styles.label}>할당팀</Text>
+                    <TextInput
+                        style={styles.input}
+                        value={assignedTeam}
+                        onChangeText={setAssignedTeam}
+                        placeholder="예: CMC2팀"
+                        placeholderTextColor="#94a3b8"
+                    />
 
                     {/* 메모 */}
                     <Text style={styles.label}>메모</Text>
@@ -600,6 +624,19 @@ const styles = StyleSheet.create({
         borderRadius: 8,
     },
     addBtnText: { fontSize: 11, color: '#ffffff', fontWeight: '700' },
+
+    companyChip: {
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 12,
+        backgroundColor: '#f1f5f9',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    companyChipOn: { backgroundColor: '#0369a1', borderColor: '#0369a1' },
+    companyChipHope: { borderStyle: 'dashed', opacity: 0.85 },
+    companyChipText: { fontSize: 11, fontWeight: '600', color: '#475569' },
+    companyChipTextOn: { color: '#ffffff' },
 
     equipChip: {
         flexDirection: 'row',
