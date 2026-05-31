@@ -23,6 +23,7 @@ import {
     ROOM_TYPE_LABEL,
     ROOM_TYPE_EMOJI,
     ServerRoomInfo,
+    MeetingRoomInfo,
 } from '../lib/infrastructure';
 
 interface Props {
@@ -37,7 +38,9 @@ interface Props {
     onOpenLayout?: () => void;
 }
 
-const ROOM_TYPES: RoomType[] = ['lab', 'server-room', 'office', 'other'];
+const ROOM_TYPES: RoomType[] = ['lab', 'server-room', 'office', 'meeting-room', 'other'];
+
+const MEETING_EQUIP_PRESETS = ['TV', '스크린', '화상회의', '전화회의', '프로젝터', '음향'];
 
 export const RoomEditDialog: React.FC<Props> = ({
     visible,
@@ -54,8 +57,12 @@ export const RoomEditDialog: React.FC<Props> = ({
     const [notes, setNotes] = useState(room.notes || '');
     const [features, setFeatures] = useState<string[]>(room.features || []);
     const [featureInput, setFeatureInput] = useState('');
+    const [occupant, setOccupant] = useState(room.occupant || '');
+    const [assignedTeam, setAssignedTeam] = useState(room.assignedTeam || '');
     const [server, setServer] = useState<ServerRoomInfo>(room.serverRoom || {});
     const [equipmentInput, setEquipmentInput] = useState('');
+    const [meeting, setMeeting] = useState<MeetingRoomInfo>(room.meetingRoom || {});
+    const [meetingEquipInput, setMeetingEquipInput] = useState('');
     const [saving, setSaving] = useState(false);
 
     useEffect(() => {
@@ -64,10 +71,28 @@ export const RoomEditDialog: React.FC<Props> = ({
         setType(room.type || 'lab');
         setNotes(room.notes || '');
         setFeatures(room.features || []);
+        setOccupant(room.occupant || '');
+        setAssignedTeam(room.assignedTeam || '');
         setServer(room.serverRoom || {});
+        setMeeting(room.meetingRoom || {});
         setFeatureInput('');
         setEquipmentInput('');
+        setMeetingEquipInput('');
     }, [visible, room]);
+
+    const toggleMeetingEquip = (v: string) => {
+        const list = meeting.equipment || [];
+        const next = list.includes(v) ? list.filter(x => x !== v) : [...list, v];
+        setMeeting(prev => ({ ...prev, equipment: next.length ? next : undefined }));
+    };
+    const addMeetingEquip = () => {
+        const v = meetingEquipInput.trim();
+        if (!v) return;
+        const list = meeting.equipment || [];
+        if (list.includes(v)) { setMeetingEquipInput(''); return; }
+        setMeeting(prev => ({ ...prev, equipment: [...list, v] }));
+        setMeetingEquipInput('');
+    };
 
     const addFeature = () => {
         const v = featureInput.trim();
@@ -103,7 +128,10 @@ export const RoomEditDialog: React.FC<Props> = ({
                 type,
                 notes: notes.trim() || undefined,
                 features: features.length > 0 ? features : undefined,
+                occupant: occupant.trim() || undefined,
+                assignedTeam: assignedTeam.trim() || undefined,
                 serverRoom: type === 'server-room' && Object.keys(server).length > 0 ? server : undefined,
+                meetingRoom: type === 'meeting-room' && Object.keys(meeting).length > 0 ? meeting : undefined,
             };
             await onSave(next);
             onClose();
@@ -164,6 +192,30 @@ export const RoomEditDialog: React.FC<Props> = ({
                                 </TouchableOpacity>
                             );
                         })}
+                    </View>
+
+                    {/* 입주사 / 할당팀 (모든 타입 공통) */}
+                    <View style={styles.row2}>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.label}>입주사</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={occupant}
+                                onChangeText={setOccupant}
+                                placeholder="예: 대웅제약"
+                                placeholderTextColor="#94a3b8"
+                            />
+                        </View>
+                        <View style={{ flex: 1 }}>
+                            <Text style={styles.label}>할당팀</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={assignedTeam}
+                                onChangeText={setAssignedTeam}
+                                placeholder="예: CMC2팀"
+                                placeholderTextColor="#94a3b8"
+                            />
+                        </View>
                     </View>
 
                     {/* 메모 */}
@@ -323,6 +375,100 @@ export const RoomEditDialog: React.FC<Props> = ({
                         </>
                     )}
 
+                    {/* 미팅룸 전용 필드 */}
+                    {type === 'meeting-room' && (
+                        <>
+                            <Text style={styles.sectionDivider}>🤝 미팅룸 정보</Text>
+
+                            <View style={styles.row2}>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.label}>정원</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        value={meeting.capacity?.toString() || ''}
+                                        onChangeText={(v) => setMeeting(prev => ({ ...prev, capacity: v ? parseInt(v, 10) || undefined : undefined }))}
+                                        placeholder="0"
+                                        placeholderTextColor="#94a3b8"
+                                        keyboardType="numeric"
+                                    />
+                                </View>
+                                <View style={{ flex: 1 }}>
+                                    <Text style={styles.label}>평수</Text>
+                                    <TextInput
+                                        style={styles.input}
+                                        value={meeting.areaPyung?.toString() || ''}
+                                        onChangeText={(v) => setMeeting(prev => ({ ...prev, areaPyung: v ? parseFloat(v) || undefined : undefined }))}
+                                        placeholder="0"
+                                        placeholderTextColor="#94a3b8"
+                                        keyboardType="numeric"
+                                    />
+                                </View>
+                            </View>
+
+                            <Text style={styles.label}>장비</Text>
+                            <Text style={styles.helperText}>탭하면 켜짐/꺼짐 토글. 없는 항목은 직접 추가</Text>
+                            <View style={styles.chipsRow}>
+                                {MEETING_EQUIP_PRESETS.map(eq => {
+                                    const on = (meeting.equipment || []).includes(eq);
+                                    return (
+                                        <TouchableOpacity
+                                            key={eq}
+                                            style={[styles.equipChip, on && styles.equipChipOn]}
+                                            onPress={() => toggleMeetingEquip(eq)}
+                                        >
+                                            <Text style={[styles.equipChipText, on && styles.equipChipTextOn]}>{eq}</Text>
+                                        </TouchableOpacity>
+                                    );
+                                })}
+                                {(meeting.equipment || []).filter(e => !MEETING_EQUIP_PRESETS.includes(e)).map(eq => (
+                                    <View key={eq} style={[styles.equipChip, styles.equipChipOn]}>
+                                        <Text style={[styles.equipChipText, styles.equipChipTextOn]}>{eq}</Text>
+                                        <TouchableOpacity onPress={() => toggleMeetingEquip(eq)} style={{ marginLeft: 4 }}>
+                                            <X size={10} color="#ffffff" />
+                                        </TouchableOpacity>
+                                    </View>
+                                ))}
+                            </View>
+                            <View style={styles.addRow}>
+                                <TextInput
+                                    style={styles.smallInput}
+                                    value={meetingEquipInput}
+                                    onChangeText={setMeetingEquipInput}
+                                    onSubmitEditing={addMeetingEquip}
+                                    placeholder="기타 장비"
+                                    placeholderTextColor="#94a3b8"
+                                />
+                                <TouchableOpacity
+                                    style={[styles.addBtn, !meetingEquipInput.trim() && { opacity: 0.4 }]}
+                                    onPress={addMeetingEquip}
+                                    disabled={!meetingEquipInput.trim()}
+                                >
+                                    <Plus size={12} color="#ffffff" />
+                                    <Text style={styles.addBtnText}>추가</Text>
+                                </TouchableOpacity>
+                            </View>
+
+                            <Text style={styles.label}>예약 시스템 코드</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={meeting.reservationCode || ''}
+                                onChangeText={(v) => setMeeting(prev => ({ ...prev, reservationCode: v }))}
+                                placeholder="예: W401, E501, 컨퍼런스룸1"
+                                placeholderTextColor="#94a3b8"
+                            />
+
+                            <Text style={styles.label}>예약 페이지 URL (선택)</Text>
+                            <TextInput
+                                style={styles.input}
+                                value={meeting.bookingUrl || ''}
+                                onChangeText={(v) => setMeeting(prev => ({ ...prev, bookingUrl: v }))}
+                                placeholder="https://gw.idstrust.com/..."
+                                placeholderTextColor="#94a3b8"
+                                autoCapitalize="none"
+                            />
+                        </>
+                    )}
+
                     {/* 레이아웃 진입 */}
                     {onOpenLayout && type === 'lab' && (
                         <>
@@ -454,6 +600,20 @@ const styles = StyleSheet.create({
         borderRadius: 8,
     },
     addBtnText: { fontSize: 11, color: '#ffffff', fontWeight: '700' },
+
+    equipChip: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 12,
+        backgroundColor: '#f1f5f9',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+    },
+    equipChipOn: { backgroundColor: '#6366f1', borderColor: '#6366f1' },
+    equipChipText: { fontSize: 11, fontWeight: '700', color: '#475569' },
+    equipChipTextOn: { color: '#ffffff' },
 
     sectionDivider: {
         fontSize: 13,

@@ -16,13 +16,14 @@
 import { Asset } from './notion';
 import { SiteId, SiteDef, getAssetSite, SITES_DEFAULTS } from './sites';
 
-/** 공간(실험실/서버실/사무실/기타) 타입 */
-export type RoomType = 'lab' | 'server-room' | 'office' | 'other';
+/** 공간(실험실/서버실/사무실/미팅룸/기타) 타입 */
+export type RoomType = 'lab' | 'server-room' | 'office' | 'meeting-room' | 'other';
 
 export const ROOM_TYPE_LABEL: Record<RoomType, string> = {
     'lab': '실험실',
     'server-room': '서버실',
     'office': '사무실',
+    'meeting-room': '미팅룸',
     'other': '기타',
 };
 
@@ -30,6 +31,7 @@ export const ROOM_TYPE_EMOJI: Record<RoomType, string> = {
     'lab': '🧪',
     'server-room': '🖥️',
     'office': '💼',
+    'meeting-room': '🤝',
     'other': '📦',
 };
 
@@ -46,7 +48,16 @@ export interface ServerRoomInfo {
     contactPerson?: string;  // 담당자
 }
 
-/** 공간 메타데이터 (실험실/서버실 공통) */
+/** 미팅룸 전용 메타 — type === 'meeting-room' 일 때만 의미 있음 */
+export interface MeetingRoomInfo {
+    capacity?: number;             // 정원
+    equipment?: string[];          // 'TV','스크린','화상회의','전화회의' 등
+    reservationCode?: string;      // 예약 시스템 코드 (W401, E501, 컨퍼런스룸1 등)
+    areaPyung?: number;            // 평수 (선택)
+    bookingUrl?: string;           // 예약 페이지 URL (선택)
+}
+
+/** 공간 메타데이터 (모든 공간 공통) */
 export interface RoomInfo {
     name: string;
     type?: RoomType;         // 기본 'lab'
@@ -59,8 +70,14 @@ export interface RoomInfo {
     autoSeeded?: boolean;
     /** 마지막 자동 시드 시점에 매칭된 자산 수 */
     assetCount?: number;
+    /** 입주사 (모든 타입 공통) — 예: '대웅제약', '잉카인터넷' */
+    occupant?: string;
+    /** 할당팀 (모든 타입 공통) — 예: 'CMC2팀', 'IT인프라팀' */
+    assignedTeam?: string;
     /** 서버실 전용 메타 */
     serverRoom?: ServerRoomInfo;
+    /** 미팅룸 전용 메타 */
+    meetingRoom?: MeetingRoomInfo;
 }
 
 export interface FloorInfo {
@@ -223,7 +240,10 @@ export const mergeSeedIntoInfrastructure = (
                     layoutRef: exR?.layoutRef,
                     autoSeeded: sdR?.autoSeeded ?? exR?.autoSeeded,
                     assetCount: sdR?.assetCount ?? exR?.assetCount,
+                    occupant: exR?.occupant,
+                    assignedTeam: exR?.assignedTeam,
                     serverRoom: exR?.serverRoom,
+                    meetingRoom: exR?.meetingRoom,
                 });
             }
 
