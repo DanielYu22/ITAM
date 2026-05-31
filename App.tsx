@@ -48,6 +48,12 @@ import { LayoutEditorModal } from './src/components/LayoutEditorModal';
 import { LayoutRoomPickerModal } from './src/components/LayoutRoomPickerModal';
 import { LayoutsStore, RoomLayout, ensureStore, roomKey } from './src/lib/layouts';
 import { MonthlyResetModal } from './src/components/MonthlyResetModal';
+import { InfrastructureModal } from './src/components/InfrastructureModal';
+import {
+  InfrastructureData,
+  ensureInfrastructure,
+  emptyInfrastructure,
+} from './src/lib/infrastructure';
 import {
   SiteId,
   SitesOverrides,
@@ -114,6 +120,8 @@ export default function App() {
   const [showDBManagementModal, setShowDBManagementModal] = useState(false);
   const [showFieldSupportModal, setShowFieldSupportModal] = useState(false);
   const [showMonthlyResetModal, setShowMonthlyResetModal] = useState(false);
+  const [showInfrastructureModal, setShowInfrastructureModal] = useState(false);
+  const [infrastructure, setInfrastructure] = useState<InfrastructureData>(emptyInfrastructure());
   // 테스트 이력 정리 진행 상태 (UI 인디케이터용)
   const [cleanupProgress, setCleanupProgress] = useState<{ current: number; total: number } | null>(null);
   // 레이아웃 편집
@@ -343,6 +351,9 @@ export default function App() {
         // 레이아웃 스토어 복원
         const savedLayouts = (ensuredSettings as any)?.layouts;
         setLayoutsStore(ensureStore(savedLayouts));
+        // 인프라 데이터 복원
+        const savedInfra = (ensuredSettings as any)?.infrastructure;
+        setInfrastructure(ensureInfrastructure(savedInfra));
         const lastLookup = ensuredSettings?.bulkUpdate?.lastLookupColumn;
         const schemaCols = result.schema;
         if (typeof lastLookup === 'string' && schemaCols.includes(lastLookup)) {
@@ -712,6 +723,21 @@ export default function App() {
     setActiveQuickTask(null);
     setCombinedQuickTask(false);
   }, [effectiveSites]);
+
+  // 인프라 데이터 저장 — Notion 설정 페이지에 infrastructure 로 저장
+  const handleSaveInfrastructure = useCallback(async (next: InfrastructureData) => {
+    setInfrastructure(next);
+    const merged = { ...(appSettings || {}), infrastructure: next };
+    setAppSettings(merged);
+    if (notionClient) {
+      try {
+        await notionClient.saveSettings(merged);
+      } catch (e) {
+        console.error('[App] 인프라 저장 실패:', e);
+        throw e;
+      }
+    }
+  }, [appSettings, notionClient]);
 
   // 레이아웃 저장 — Notion 설정 페이지에 layouts.rooms[key] 로 저장
   const handleSaveRoomLayout = useCallback(async (key: string, layout: RoomLayout) => {
@@ -1177,6 +1203,7 @@ export default function App() {
               onSubmitFieldSupport={() => setShowFieldSupportModal(true)}
               onMonthlyReset={() => setShowMonthlyResetModal(true)}
               onEditLayout={() => setShowLayoutPicker(true)}
+              onOpenInfrastructure={() => setShowInfrastructureModal(true)}
               onDashboard={() => {
                 setDashboardMode('all');
                 setShowDashboardModal(true);
@@ -1488,6 +1515,15 @@ export default function App() {
           assets={assets}
           schemaProperties={schemaProperties}
           onUpdate={handleUpdateAsset}
+        />
+
+        <InfrastructureModal
+          visible={showInfrastructureModal}
+          onClose={() => setShowInfrastructureModal(false)}
+          data={infrastructure}
+          assets={assets}
+          effectiveSites={effectiveSites}
+          onSave={handleSaveInfrastructure}
         />
 
         {/* 레이아웃: 연구실 선택 → 편집기 */}

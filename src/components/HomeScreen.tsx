@@ -34,6 +34,7 @@ import {
     Wrench,
     Map,
     CalendarClock,
+    Building2,
 } from 'lucide-react-native';
 import { FilterConfig } from './FieldWorkFilter';
 import { Asset, NotionProperty } from '../lib/notion';
@@ -79,6 +80,8 @@ interface HomeScreenProps {
     onMonthlyReset?: () => void;
     // 레이아웃 편집 진입
     onEditLayout?: () => void;
+    // 인프라 트리 (사이트·건물·층·실험실) 진입
+    onOpenInfrastructure?: () => void;
     /** 사용자 오버라이드가 합성된 최종 사이트 정의 (카운트/표시용) */
     effectiveSites?: SiteDef[];
     /** 'all' = 전체장비, 'filtered' = 작업대상 대시보드 오픈 */
@@ -121,6 +124,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     onSubmitFieldSupport,
     onMonthlyReset,
     onEditLayout,
+    onOpenInfrastructure,
     effectiveSites,
     onOpenDashboard,
     workTargetCount,
@@ -542,6 +546,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             <Map size={22} color="#b45309" />
                         </View>
                         <Text style={styles.toolLabel}>레이아웃</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.toolCard}
+                        onPress={onOpenInfrastructure}
+                        disabled={!onOpenInfrastructure}
+                    >
+                        <View style={[styles.toolIconContainer, { backgroundColor: '#e0f2fe' }]}>
+                            <Building2 size={22} color="#0369a1" />
+                        </View>
+                        <Text style={styles.toolLabel}>인프라</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
