@@ -507,7 +507,7 @@ const FloorNode: React.FC<{
                 </TouchableOpacity>
             </View>
             {open && floor.rooms.map(r => (
-                <RoomNode
+                <RoomRow
                     key={r.name}
                     room={r}
                     onEdit={() => onEditRoom(r)}
@@ -517,7 +517,7 @@ const FloorNode: React.FC<{
     );
 };
 
-const RoomNode: React.FC<{ room: RoomInfo; onEdit: () => void }> = ({ room, onEdit }) => {
+const RoomRow: React.FC<{ room: RoomInfo; onEdit: () => void }> = ({ room, onEdit }) => {
     const type = room.type || 'lab';
     const emoji = ROOM_TYPE_EMOJI[type];
     return (
