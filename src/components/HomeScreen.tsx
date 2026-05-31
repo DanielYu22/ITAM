@@ -484,7 +484,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         disabled={!onSubmitFieldSupport}
                     >
                         <View style={[styles.toolIconContainer, { backgroundColor: '#fee2e2' }]}>
-                            <Wrench size={26} color="#dc2626" />
+                            <Wrench size={22} color="#dc2626" />
                         </View>
                         <Text style={styles.toolLabel}>현장지원 접수</Text>
                     </TouchableOpacity>
@@ -495,7 +495,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         disabled={!onTaskDashboard}
                     >
                         <View style={[styles.toolIconContainer, { backgroundColor: '#dbeafe' }]}>
-                            <Text style={{ fontSize: 26 }}>📊</Text>
+                            <Text style={{ fontSize: 22 }}>📊</Text>
                         </View>
                         <Text style={styles.toolLabel}>과제 대시보드</Text>
                     </TouchableOpacity>
@@ -506,7 +506,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         disabled={!onDashboard}
                     >
                         <View style={[styles.toolIconContainer, { backgroundColor: '#fce7f3' }]}>
-                            <LayoutGrid size={26} color="#be185d" />
+                            <LayoutGrid size={22} color="#be185d" />
                         </View>
                         <Text style={styles.toolLabel}>테이블로 보기</Text>
                     </TouchableOpacity>
@@ -517,7 +517,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         disabled={!onOpenDBManagement}
                     >
                         <View style={[styles.toolIconContainer, { backgroundColor: '#e0f2fe' }]}>
-                            <Database size={26} color="#0369a1" />
+                            <Database size={22} color="#0369a1" />
                         </View>
                         <Text style={styles.toolLabel}>DB 관리</Text>
                     </TouchableOpacity>
@@ -528,7 +528,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         disabled={!onMonthlyReset}
                     >
                         <View style={[styles.toolIconContainer, { backgroundColor: '#fef3c7' }]}>
-                            <CalendarClock size={26} color="#a16207" />
+                            <CalendarClock size={22} color="#a16207" />
                         </View>
                         <Text style={styles.toolLabel}>정기 초기화</Text>
                     </TouchableOpacity>
@@ -539,7 +539,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         disabled={!onEditLayout}
                     >
                         <View style={[styles.toolIconContainer, { backgroundColor: '#fef3c7' }]}>
-                            <Map size={26} color="#b45309" />
+                            <Map size={22} color="#b45309" />
                         </View>
                         <Text style={styles.toolLabel}>레이아웃</Text>
                     </TouchableOpacity>
@@ -550,7 +550,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         disabled={!onEditSiteRules}
                     >
                         <View style={[styles.toolIconContainer, { backgroundColor: '#e0e7ff' }]}>
-                            <Settings2 size={26} color="#4338ca" />
+                            <Settings2 size={22} color="#4338ca" />
                         </View>
                         <Text style={styles.toolLabel}>사이트 설정</Text>
                     </TouchableOpacity>
@@ -572,22 +572,11 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             >
                                 <View style={styles.combinedHeader}>
                                     <Text style={styles.combinedEmoji}>🚶</Text>
-                                    <View style={{ flex: 1 }}>
-                                        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                                            <Text style={styles.combinedName}>현장 통합 작업</Text>
-                                            {onTaskDashboard && (
-                                                <TouchableOpacity
-                                                    style={styles.combinedDashboardChip}
-                                                    onPress={(e) => {
-                                                        (e as any).stopPropagation?.();
-                                                        onTaskDashboard();
-                                                    }}
-                                                >
-                                                    <Text style={styles.combinedDashboardChipText}>📊 대시보드</Text>
-                                                </TouchableOpacity>
-                                            )}
-                                        </View>
-                                        <Text style={styles.combinedDesc}>
+                                    <View style={{ flex: 1, minWidth: 0 }}>
+                                        <Text style={styles.combinedName} numberOfLines={1}>
+                                            현장 통합 작업
+                                        </Text>
+                                        <Text style={styles.combinedDesc} numberOfLines={2}>
                                             모든 정기 업무를 합쳐 한 동선으로 처리
                                         </Text>
                                     </View>
@@ -598,6 +587,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                         <Text style={styles.combinedCountLabel}>대상</Text>
                                     </View>
                                 </View>
+                                {onTaskDashboard && (
+                                    <TouchableOpacity
+                                        style={styles.combinedDashboardBtn}
+                                        onPress={(e) => {
+                                            (e as any).stopPropagation?.();
+                                            onTaskDashboard();
+                                        }}
+                                    >
+                                        <Text style={styles.combinedDashboardBtnText}>📊 대시보드로 보기</Text>
+                                    </TouchableOpacity>
+                                )}
                                 <View style={styles.combinedBreakdown}>
                                     {QUICK_TASKS.map(t => {
                                         const cnt = combinedStats.matchedTaskCounts[t.id] || 0;
@@ -1062,7 +1062,7 @@ const styles = StyleSheet.create({
     },
     toolsSection: {
         flexDirection: 'row',
-        gap: 12,
+        gap: 10,
         marginBottom: 20,
         flexWrap: 'wrap',
     },
@@ -1090,13 +1090,16 @@ const styles = StyleSheet.create({
     },
     combinedCountNum: { fontSize: 22, fontWeight: '800', color: '#4338ca' },
     combinedCountLabel: { fontSize: 10, color: '#6366f1', marginTop: -2 },
-    combinedDashboardChip: {
+    combinedDashboardBtn: {
+        alignSelf: 'flex-start',
         backgroundColor: 'rgba(255,255,255,0.18)',
-        paddingHorizontal: 8,
-        paddingVertical: 3,
+        paddingHorizontal: 12,
+        paddingVertical: 6,
         borderRadius: 10,
+        marginTop: -4,
+        marginBottom: 10,
     },
-    combinedDashboardChipText: { color: '#ffffff', fontSize: 10, fontWeight: '700' },
+    combinedDashboardBtnText: { color: '#ffffff', fontSize: 12, fontWeight: '700' },
     combinedBreakdown: {
         flexDirection: 'row',
         flexWrap: 'wrap',
@@ -1166,10 +1169,12 @@ const styles = StyleSheet.create({
         lineHeight: 14,
     },
     toolCard: {
-        flex: 1,
+        // 3칸 그리드 (31% × 3 ≈ 93% + gap 약 7%) — 모바일에서 가로 스크롤 안 생기게
+        width: '31%',
         backgroundColor: '#ffffff',
-        borderRadius: 16,
-        padding: 16,
+        borderRadius: 14,
+        paddingVertical: 14,
+        paddingHorizontal: 6,
         alignItems: 'center',
         shadowColor: '#000',
         shadowOffset: { width: 0, height: 2 },
@@ -1178,15 +1183,15 @@ const styles = StyleSheet.create({
         elevation: 2,
     },
     toolIconContainer: {
-        width: 56,
-        height: 56,
-        borderRadius: 16,
+        width: 46,
+        height: 46,
+        borderRadius: 12,
         justifyContent: 'center',
         alignItems: 'center',
         marginBottom: 8,
     },
     toolLabel: {
-        fontSize: 13,
+        fontSize: 12,
         fontWeight: '600',
         color: '#374151',
         textAlign: 'center',
