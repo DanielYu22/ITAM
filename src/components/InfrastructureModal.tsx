@@ -43,6 +43,7 @@ import {
     RoomInfo,
     RoomType,
     ROOM_TYPE_EMOJI,
+    ROOM_TYPE_LABEL,
 } from '../lib/infrastructure';
 import { RoomNode } from '../lib/infrastructureDb';
 import { CompanyInfo } from '../lib/companiesDb';
@@ -101,9 +102,47 @@ export const InfrastructureModal: React.FC<Props> = ({
     const [addTarget, setAddTarget] = useState<AddTarget | null>(null);
     const [addName, setAddName] = useState('');
     const [addType, setAddType] = useState<RoomType>('lab');
+    // 타입 필터 — 빈 Set = 전체 보기
+    const [typeFilter, setTypeFilter] = useState<Set<RoomType>>(new Set());
 
-    const summary = useMemo(() => summarizeInfrastructure(data), [data]);
-    const grouped = useMemo(() => groupBuildingsBySite(data), [data]);
+    // 타입 필터가 적용된 트리 데이터
+    const filteredData = useMemo(() => {
+        if (typeFilter.size === 0) return data;
+        return {
+            ...data,
+            buildings: data.buildings.map(b => ({
+                ...b,
+                floors: b.floors
+                    .map(f => ({
+                        ...f,
+                        rooms: f.rooms.filter(r => typeFilter.has(r.type || 'lab')),
+                    }))
+                    .filter(f => f.rooms.length > 0),
+            })).filter(b => b.floors.length > 0),
+        };
+    }, [data, typeFilter]);
+
+    const summary = useMemo(() => summarizeInfrastructure(filteredData), [filteredData]);
+    const grouped = useMemo(() => groupBuildingsBySite(filteredData), [filteredData]);
+
+    // 전체 데이터 기준 타입별 카운트 (필터 칩 옆에 표시)
+    const typeCounts = useMemo(() => {
+        const counts: Record<RoomType, number> = {
+            'lab': 0, 'server-room': 0, 'office': 0, 'meeting-room': 0, 'other': 0,
+        };
+        for (const b of data.buildings) for (const f of b.floors) for (const r of f.rooms) {
+            counts[r.type || 'lab']++;
+        }
+        return counts;
+    }, [data]);
+
+    const toggleTypeFilter = (t: RoomType) => {
+        setTypeFilter(prev => {
+            const next = new Set(prev);
+            if (next.has(t)) next.delete(t); else next.add(t);
+            return next;
+        });
+    };
 
     const toggle = (key: string) => {
         setExpanded(prev => {
@@ -116,12 +155,12 @@ export const InfrastructureModal: React.FC<Props> = ({
 
     const allKeys = useMemo(() => {
         const keys: string[] = [];
-        for (const b of data.buildings) {
+        for (const b of filteredData.buildings) {
             keys.push(`b:${b.name}`);
             for (const f of b.floors) keys.push(`f:${b.name}/${f.name}`);
         }
         return keys;
-    }, [data]);
+    }, [filteredData]);
 
     const toggleAll = () => {
         if (expanded.size > 0) setExpanded(new Set());
@@ -292,6 +331,40 @@ export const InfrastructureModal: React.FC<Props> = ({
                         </TouchableOpacity>
                     )}
                 </View>
+
+                {/* 타입 필터 칩 */}
+                {data.buildings.length > 0 && (
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.typeFilterBar}
+                        contentContainerStyle={styles.typeFilterContent}
+                    >
+                        <TouchableOpacity
+                            style={[styles.typeFilterChip, typeFilter.size === 0 && styles.typeFilterChipActive]}
+                            onPress={() => setTypeFilter(new Set())}
+                        >
+                            <Text style={[styles.typeFilterText, typeFilter.size === 0 && styles.typeFilterTextActive]}>
+                                전체
+                            </Text>
+                        </TouchableOpacity>
+                        {(['meeting-room', 'lab', 'server-room', 'office', 'other'] as RoomType[]).map(t => {
+                            const active = typeFilter.has(t);
+                            const cnt = typeCounts[t];
+                            return (
+                                <TouchableOpacity
+                                    key={t}
+                                    style={[styles.typeFilterChip, active && styles.typeFilterChipActive]}
+                                    onPress={() => toggleTypeFilter(t)}
+                                >
+                                    <Text style={[styles.typeFilterText, active && styles.typeFilterTextActive]}>
+                                        {ROOM_TYPE_EMOJI[t]} {ROOM_TYPE_LABEL[t]} {cnt > 0 && <Text style={styles.typeFilterCount}>{cnt}</Text>}
+                                    </Text>
+                                </TouchableOpacity>
+                            );
+                        })}
+                    </ScrollView>
+                )}
 
                 <ScrollView style={styles.body} contentContainerStyle={styles.bodyContent}>
                     {data.buildings.length === 0 ? (
@@ -585,6 +658,31 @@ const styles = StyleSheet.create({
         backgroundColor: '#f1f5f9',
     },
     expandBtnText: { fontSize: 11, color: '#475569', fontWeight: '700' },
+
+    typeFilterBar: {
+        backgroundColor: '#ffffff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+        maxHeight: 44,
+    },
+    typeFilterContent: {
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+        gap: 6,
+    },
+    typeFilterChip: {
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 14,
+        backgroundColor: '#f1f5f9',
+        borderWidth: 1,
+        borderColor: 'transparent',
+        marginRight: 6,
+    },
+    typeFilterChipActive: { backgroundColor: '#0369a1', borderColor: '#0369a1' },
+    typeFilterText: { fontSize: 11, color: '#475569', fontWeight: '700' },
+    typeFilterTextActive: { color: '#ffffff' },
+    typeFilterCount: { fontWeight: '600', opacity: 0.7 },
 
     body: { flex: 1 },
     bodyContent: { padding: 12, gap: 12 },
