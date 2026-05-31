@@ -128,6 +128,8 @@ export default function App() {
   const [layoutsStore, setLayoutsStore] = useState<LayoutsStore>({ rooms: {} });
   const [showLayoutPicker, setShowLayoutPicker] = useState(false);
   const [editingRoom, setEditingRoom] = useState<{ building: string; floor: string; room: string } | null>(null);
+  // 인프라 → 레이아웃 진입 시 복귀 플래그 — 레이아웃 닫히면 인프라 다시 열기
+  const [returnToInfrastructure, setReturnToInfrastructure] = useState(false);
   const [showSiteRulesModal, setShowSiteRulesModal] = useState(false);
   // 사이트(장소) 컨텍스트
   const [currentSite, setCurrentSite] = useState<SiteId>('all');
@@ -1202,7 +1204,6 @@ export default function App() {
               onOpenDBManagement={() => setShowDBManagementModal(true)}
               onSubmitFieldSupport={() => setShowFieldSupportModal(true)}
               onMonthlyReset={() => setShowMonthlyResetModal(true)}
-              onEditLayout={() => setShowLayoutPicker(true)}
               onOpenInfrastructure={() => setShowInfrastructureModal(true)}
               onDashboard={() => {
                 setDashboardMode('all');
@@ -1524,6 +1525,12 @@ export default function App() {
           assets={assets}
           effectiveSites={effectiveSites}
           onSave={handleSaveInfrastructure}
+          onOpenLayout={(b, f, r) => {
+            // 인프라 닫고 레이아웃 편집기 띄움. 닫히면 인프라 다시 열기.
+            setShowInfrastructureModal(false);
+            setReturnToInfrastructure(true);
+            setEditingRoom({ building: b, floor: f, room: r });
+          }}
         />
 
         {/* 레이아웃: 연구실 선택 → 편집기 */}
@@ -1551,7 +1558,13 @@ export default function App() {
           return (
             <LayoutEditorModal
               visible
-              onClose={() => setEditingRoom(null)}
+              onClose={() => {
+                setEditingRoom(null);
+                if (returnToInfrastructure) {
+                  setReturnToInfrastructure(false);
+                  setShowInfrastructureModal(true);
+                }
+              }}
               building={editingRoom.building}
               floor={editingRoom.floor}
               room={editingRoom.room}
@@ -1561,6 +1574,10 @@ export default function App() {
               onSave={async (lay) => {
                 await handleSaveRoomLayout(k, lay);
                 setEditingRoom(null);
+                if (returnToInfrastructure) {
+                  setReturnToInfrastructure(false);
+                  setShowInfrastructureModal(true);
+                }
               }}
             />
           );

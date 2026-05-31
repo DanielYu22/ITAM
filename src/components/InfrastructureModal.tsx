@@ -1,8 +1,8 @@
 /**
- * InfrastructureModal — 인프라(사이트 → 건물 → 층 → 실험실) 트리 조회
+ * InfrastructureModal — 인프라(사이트 → 건물 → 층 → 공간) 트리
  *
- * Phase 1: 트리 펼침/접힘 + 자산에서 자동 시드 (기존 메모/특징은 보존).
- * 향후 Phase 2 에서 노드 클릭 시 편집 다이얼로그 추가 예정.
+ * Phase 2: 노드 클릭 → 편집 다이얼로그. 수동 추가/삭제. 실험실은 여기서
+ * 레이아웃 편집까지 진입. (이제 별도의 '레이아웃' 메뉴는 제거됨)
  */
 
 import React, { useState, useMemo, useCallback } from 'react';
@@ -14,6 +14,7 @@ import {
     StyleSheet,
     Modal,
     Alert,
+    TextInput,
 } from 'react-native';
 import {
     X,
@@ -25,6 +26,9 @@ import {
     MapPin,
     FoldVertical,
     UnfoldVertical,
+    Plus,
+    Pencil,
+    Map as MapIcon,
 } from 'lucide-react-native';
 import { Asset } from '../lib/notion';
 import { SiteDef, SiteId, SITES_DEFAULTS } from '../lib/sites';
@@ -37,7 +41,10 @@ import {
     BuildingInfo,
     FloorInfo,
     RoomInfo,
+    RoomType,
+    ROOM_TYPE_EMOJI,
 } from '../lib/infrastructure';
+import { RoomEditDialog } from './RoomEditDialog';
 
 interface Props {
     visible: boolean;
@@ -46,7 +53,14 @@ interface Props {
     assets: Asset[];
     effectiveSites?: SiteDef[];
     onSave: (next: InfrastructureData) => Promise<void>;
+    /** 실험실에서 레이아웃 편집 진입 — App.tsx가 모달 전환 처리 */
+    onOpenLayout?: (building: string, floor: string, room: string) => void;
 }
+
+type AddTarget =
+    | { kind: 'building'; siteId: SiteId }
+    | { kind: 'floor'; building: string }
+    | { kind: 'room'; building: string; floor: string };
 
 export const InfrastructureModal: React.FC<Props> = ({
     visible,
@@ -55,14 +69,22 @@ export const InfrastructureModal: React.FC<Props> = ({
     assets,
     effectiveSites,
     onSave,
+    onOpenLayout,
 }) => {
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
     const [saving, setSaving] = useState(false);
+    const [editingRoom, setEditingRoom] = useState<{
+        room: RoomInfo;
+        building: string;
+        floor: string;
+    } | null>(null);
+    const [addTarget, setAddTarget] = useState<AddTarget | null>(null);
+    const [addName, setAddName] = useState('');
+    const [addType, setAddType] = useState<RoomType>('lab');
 
     const summary = useMemo(() => summarizeInfrastructure(data), [data]);
     const grouped = useMemo(() => groupBuildingsBySite(data), [data]);
 
-    // 펼침 토글
     const toggle = (key: string) => {
         setExpanded(prev => {
             const next = new Set(prev);
@@ -72,28 +94,20 @@ export const InfrastructureModal: React.FC<Props> = ({
         });
     };
 
-    // 모든 노드 key 수집
     const allKeys = useMemo(() => {
         const keys: string[] = [];
         for (const b of data.buildings) {
             keys.push(`b:${b.name}`);
-            for (const f of b.floors) {
-                keys.push(`f:${b.name}/${f.name}`);
-            }
+            for (const f of b.floors) keys.push(`f:${b.name}/${f.name}`);
         }
         return keys;
     }, [data]);
 
-    const allExpanded = expanded.size === allKeys.length && expanded.size > 0;
     const toggleAll = () => {
-        if (expanded.size > 0) {
-            setExpanded(new Set());
-        } else {
-            setExpanded(new Set(allKeys));
-        }
+        if (expanded.size > 0) setExpanded(new Set());
+        else setExpanded(new Set(allKeys));
     };
 
-    // 자산에서 자동 시드 (기존 노드의 notes/features 는 보존)
     const handleSeed = useCallback(async () => {
         const seeded = seedFromAssets(assets, effectiveSites);
         const merged = data.buildings.length === 0
@@ -104,7 +118,7 @@ export const InfrastructureModal: React.FC<Props> = ({
             await onSave(merged);
             Alert.alert(
                 '자동 시드 완료',
-                `${merged.buildings.length}개 건물 · ${merged.buildings.reduce((a, b) => a + b.floors.length, 0)}개 층 · ${merged.buildings.reduce((a, b) => a + b.floors.reduce((c, f) => c + f.rooms.length, 0), 0)}개 실험실 등록.`
+                `${merged.buildings.length}개 건물 · ${merged.buildings.reduce((a, b) => a + b.floors.length, 0)}개 층 · ${merged.buildings.reduce((a, b) => a + b.floors.reduce((c, f) => c + f.rooms.length, 0), 0)}개 공간 등록.`
             );
         } catch (e) {
             Alert.alert('오류', '저장 실패. 잠시 후 다시 시도하세요.');
@@ -113,14 +127,139 @@ export const InfrastructureModal: React.FC<Props> = ({
         }
     }, [assets, effectiveSites, data, onSave]);
 
+    // ── 노드 편집/저장 헬퍼 ──────────────────────────────────
+    const updateRoom = useCallback(async (
+        buildingName: string,
+        floorName: string,
+        oldRoomName: string,
+        next: RoomInfo,
+    ) => {
+        const cloned: InfrastructureData = {
+            ...data,
+            buildings: data.buildings.map(b => {
+                if (b.name !== buildingName) return b;
+                return {
+                    ...b,
+                    floors: b.floors.map(f => {
+                        if (f.name !== floorName) return f;
+                        return {
+                            ...f,
+                            rooms: f.rooms.map(r => r.name === oldRoomName ? next : r),
+                        };
+                    }),
+                };
+            }),
+            updatedAt: new Date().toISOString(),
+        };
+        await onSave(cloned);
+    }, [data, onSave]);
+
+    const deleteRoom = useCallback(async (
+        buildingName: string,
+        floorName: string,
+        roomName: string,
+    ) => {
+        const cloned: InfrastructureData = {
+            ...data,
+            buildings: data.buildings.map(b => {
+                if (b.name !== buildingName) return b;
+                return {
+                    ...b,
+                    floors: b.floors.map(f => {
+                        if (f.name !== floorName) return f;
+                        return { ...f, rooms: f.rooms.filter(r => r.name !== roomName) };
+                    }),
+                };
+            }),
+            updatedAt: new Date().toISOString(),
+        };
+        await onSave(cloned);
+    }, [data, onSave]);
+
+    const openAdd = (target: AddTarget) => {
+        setAddTarget(target);
+        setAddName('');
+        setAddType('lab');
+    };
+
+    const handleAdd = useCallback(async () => {
+        if (!addTarget) return;
+        const name = addName.trim();
+        if (!name) { Alert.alert('이름 필수', '이름을 입력해 주세요.'); return; }
+
+        let next: InfrastructureData = { ...data, updatedAt: new Date().toISOString() };
+
+        if (addTarget.kind === 'building') {
+            if (data.buildings.some(b => b.name === name)) {
+                Alert.alert('중복', '같은 이름의 건물이 이미 있어요.');
+                return;
+            }
+            next = {
+                ...next,
+                buildings: [
+                    ...data.buildings,
+                    { name, siteId: addTarget.siteId, floors: [] },
+                ],
+            };
+        } else if (addTarget.kind === 'floor') {
+            const b = data.buildings.find(x => x.name === addTarget.building);
+            if (!b) return;
+            if (b.floors.some(f => f.name === name)) {
+                Alert.alert('중복', '같은 이름의 층이 이미 있어요.');
+                return;
+            }
+            next = {
+                ...next,
+                buildings: data.buildings.map(b2 => {
+                    if (b2.name !== addTarget.building) return b2;
+                    return { ...b2, floors: [...b2.floors, { name, rooms: [] }] };
+                }),
+            };
+        } else if (addTarget.kind === 'room') {
+            const b = data.buildings.find(x => x.name === addTarget.building);
+            const f = b?.floors.find(f => f.name === addTarget.floor);
+            if (!f) return;
+            if (f.rooms.some(r => r.name === name)) {
+                Alert.alert('중복', '같은 이름의 공간이 이미 있어요.');
+                return;
+            }
+            next = {
+                ...next,
+                buildings: data.buildings.map(b2 => {
+                    if (b2.name !== addTarget.building) return b2;
+                    return {
+                        ...b2,
+                        floors: b2.floors.map(f2 => {
+                            if (f2.name !== addTarget.floor) return f2;
+                            return { ...f2, rooms: [...f2.rooms, { name, type: addType }] };
+                        }),
+                    };
+                }),
+            };
+        }
+        try {
+            await onSave(next);
+            // 펼침 유지 & 새 노드 펼치기
+            if (addTarget.kind === 'building') {
+                setExpanded(prev => new Set([...prev, `b:${name}`]));
+            } else if (addTarget.kind === 'floor') {
+                setExpanded(prev => new Set([...prev, `b:${addTarget.building}`, `f:${addTarget.building}/${name}`]));
+            }
+            setAddTarget(null);
+        } catch (e) {
+            Alert.alert('오류', '저장 실패. 잠시 후 다시 시도하세요.');
+        }
+    }, [addTarget, addName, addType, data, onSave]);
+
     return (
+        <>
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
             <View style={styles.container}>
                 <View style={styles.header}>
-                    <View>
+                    <View style={{ flex: 1 }}>
                         <Text style={styles.title}>인프라</Text>
                         <Text style={styles.subtitle}>
-                            사이트 · 건물 · 층 · 실험실 트리
+                            사이트 · 건물 · 층 · 공간
                             {data.lastSeededAt && ` · 최근 시드 ${new Date(data.lastSeededAt).toLocaleString('ko-KR', { month: '2-digit', day: '2-digit' })}`}
                         </Text>
                     </View>
@@ -166,8 +305,8 @@ export const InfrastructureModal: React.FC<Props> = ({
                     ) : (
                         SITES_DEFAULTS.filter(s => s.id !== 'all').map(siteDef => {
                             const buildings = grouped[siteDef.id] || [];
-                            if (buildings.length === 0) return null;
                             const sum = summary[siteDef.id];
+                            // 빈 사이트라도 '건물 추가' 버튼은 보이게
                             return (
                                 <View key={siteDef.id} style={styles.siteBlock}>
                                     <View style={[styles.siteHeader, { backgroundColor: siteDef.bgColor }]}>
@@ -176,8 +315,15 @@ export const InfrastructureModal: React.FC<Props> = ({
                                             {siteDef.emoji ? `${siteDef.emoji} ` : ''}{siteDef.name}
                                         </Text>
                                         <Text style={styles.siteSummary}>
-                                            건물 {sum.buildings} · 층 {sum.floors} · 실험실 {sum.rooms}
+                                            건물 {sum.buildings} · 층 {sum.floors} · 공간 {sum.rooms}
                                         </Text>
+                                        <TouchableOpacity
+                                            style={styles.addInlineBtn}
+                                            onPress={() => openAdd({ kind: 'building', siteId: siteDef.id })}
+                                        >
+                                            <Plus size={11} color={siteDef.color} />
+                                            <Text style={[styles.addInlineText, { color: siteDef.color }]}>건물</Text>
+                                        </TouchableOpacity>
                                     </View>
                                     {buildings.map(b => (
                                         <BuildingNode
@@ -186,6 +332,9 @@ export const InfrastructureModal: React.FC<Props> = ({
                                             expanded={expanded}
                                             onToggle={toggle}
                                             siteColor={siteDef.color}
+                                            onAddFloor={() => openAdd({ kind: 'floor', building: b.name })}
+                                            onAddRoom={(floor) => openAdd({ kind: 'room', building: b.name, floor })}
+                                            onEditRoom={(floor, room) => setEditingRoom({ building: b.name, floor, room })}
                                         />
                                     ))}
                                 </View>
@@ -195,6 +344,78 @@ export const InfrastructureModal: React.FC<Props> = ({
                 </ScrollView>
             </View>
         </Modal>
+
+        {/* 공간 편집 다이얼로그 */}
+        {editingRoom && (
+            <RoomEditDialog
+                visible
+                onClose={() => setEditingRoom(null)}
+                room={editingRoom.room}
+                building={editingRoom.building}
+                floor={editingRoom.floor}
+                onSave={async (next) => {
+                    await updateRoom(editingRoom.building, editingRoom.floor, editingRoom.room.name, next);
+                }}
+                onDelete={async () => {
+                    await deleteRoom(editingRoom.building, editingRoom.floor, editingRoom.room.name);
+                }}
+                onOpenLayout={onOpenLayout ? () => {
+                    const er = editingRoom;
+                    setEditingRoom(null);
+                    onOpenLayout(er.building, er.floor, er.room.name);
+                } : undefined}
+            />
+        )}
+
+        {/* 추가 다이얼로그 */}
+        <Modal visible={!!addTarget} transparent animationType="fade" onRequestClose={() => setAddTarget(null)}>
+            <View style={styles.addOverlay}>
+                <View style={styles.addCard}>
+                    <Text style={styles.addTitle}>
+                        {addTarget?.kind === 'building' && '건물 추가'}
+                        {addTarget?.kind === 'floor' && `층 추가 — ${addTarget.building}`}
+                        {addTarget?.kind === 'room' && `공간 추가 — ${addTarget.building} ${addTarget.floor}`}
+                    </Text>
+                    <TextInput
+                        style={styles.addInput}
+                        value={addName}
+                        onChangeText={setAddName}
+                        placeholder={
+                            addTarget?.kind === 'building' ? '예: 바이오센터' :
+                            addTarget?.kind === 'floor' ? '예: 5층' :
+                            '예: 분석실 A'
+                        }
+                        placeholderTextColor="#94a3b8"
+                        autoFocus
+                    />
+                    {addTarget?.kind === 'room' && (
+                        <View style={styles.addTypeRow}>
+                            {(['lab', 'server-room', 'office', 'other'] as RoomType[]).map(t => {
+                                const active = addType === t;
+                                return (
+                                    <TouchableOpacity
+                                        key={t}
+                                        style={[styles.addTypeChip, active && styles.addTypeChipActive]}
+                                        onPress={() => setAddType(t)}
+                                    >
+                                        <Text style={styles.addTypeEmoji}>{ROOM_TYPE_EMOJI[t]}</Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+                    )}
+                    <View style={styles.addFooter}>
+                        <TouchableOpacity style={styles.addCancel} onPress={() => setAddTarget(null)}>
+                            <Text style={styles.addCancelText}>취소</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity style={styles.addConfirm} onPress={handleAdd}>
+                            <Text style={styles.addConfirmText}>추가</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+        </Modal>
+        </>
     );
 };
 
@@ -207,22 +428,34 @@ const BuildingNode: React.FC<{
     expanded: Set<string>;
     onToggle: (key: string) => void;
     siteColor: string;
-}> = ({ building, expanded, onToggle, siteColor }) => {
+    onAddFloor: () => void;
+    onAddRoom: (floor: string) => void;
+    onEditRoom: (floor: string, room: RoomInfo) => void;
+}> = ({ building, expanded, onToggle, siteColor, onAddFloor, onAddRoom, onEditRoom }) => {
     const key = `b:${building.name}`;
     const open = expanded.has(key);
     const roomCount = building.floors.reduce((a, f) => a + f.rooms.length, 0);
     return (
         <View style={styles.buildingBlock}>
-            <TouchableOpacity style={styles.buildingHeader} onPress={() => onToggle(key)}>
-                {open
-                    ? <ChevronDown size={13} color="#475569" />
-                    : <ChevronRight size={13} color="#475569" />}
-                <Building2 size={13} color={siteColor} />
-                <Text style={styles.buildingName}>{building.name}</Text>
-                <Text style={styles.buildingCount}>
-                    {building.floors.length}개 층 · {roomCount}개 실험실
-                </Text>
-            </TouchableOpacity>
+            <View style={styles.buildingHeader}>
+                <TouchableOpacity
+                    style={styles.buildingHeaderTap}
+                    onPress={() => onToggle(key)}
+                >
+                    {open
+                        ? <ChevronDown size={13} color="#475569" />
+                        : <ChevronRight size={13} color="#475569" />}
+                    <Building2 size={13} color={siteColor} />
+                    <Text style={styles.buildingName}>{building.name}</Text>
+                    <Text style={styles.buildingCount}>
+                        {building.floors.length}개 층 · {roomCount}개 공간
+                    </Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.miniBtn} onPress={onAddFloor}>
+                    <Plus size={11} color="#475569" />
+                    <Text style={styles.miniBtnText}>층</Text>
+                </TouchableOpacity>
+            </View>
             {open && building.floors.map(f => (
                 <FloorNode
                     key={f.name}
@@ -230,6 +463,8 @@ const BuildingNode: React.FC<{
                     buildingName={building.name}
                     expanded={expanded}
                     onToggle={onToggle}
+                    onAddRoom={() => onAddRoom(f.name)}
+                    onEditRoom={(room) => onEditRoom(f.name, room)}
                 />
             ))}
         </View>
@@ -241,37 +476,55 @@ const FloorNode: React.FC<{
     buildingName: string;
     expanded: Set<string>;
     onToggle: (key: string) => void;
-}> = ({ floor, buildingName, expanded, onToggle }) => {
+    onAddRoom: () => void;
+    onEditRoom: (room: RoomInfo) => void;
+}> = ({ floor, buildingName, expanded, onToggle, onAddRoom, onEditRoom }) => {
     const key = `f:${buildingName}/${floor.name}`;
     const open = expanded.has(key);
     return (
         <View style={styles.floorBlock}>
-            <TouchableOpacity style={styles.floorHeader} onPress={() => onToggle(key)}>
-                {open
-                    ? <ChevronDown size={11} color="#64748b" />
-                    : <ChevronRight size={11} color="#64748b" />}
-                <Text style={styles.floorName}>{floor.name}</Text>
-                <Text style={styles.floorCount}>{floor.rooms.length}개 실험실</Text>
-            </TouchableOpacity>
+            <View style={styles.floorHeader}>
+                <TouchableOpacity
+                    style={styles.floorHeaderTap}
+                    onPress={() => onToggle(key)}
+                >
+                    {open
+                        ? <ChevronDown size={11} color="#64748b" />
+                        : <ChevronRight size={11} color="#64748b" />}
+                    <Text style={styles.floorName}>{floor.name}</Text>
+                    <Text style={styles.floorCount}>{floor.rooms.length}개 공간</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.miniBtn} onPress={onAddRoom}>
+                    <Plus size={11} color="#475569" />
+                    <Text style={styles.miniBtnText}>공간</Text>
+                </TouchableOpacity>
+            </View>
             {open && floor.rooms.map(r => (
-                <RoomNode key={r.name} room={r} />
+                <RoomNode
+                    key={r.name}
+                    room={r}
+                    onEdit={() => onEditRoom(r)}
+                />
             ))}
         </View>
     );
 };
 
-const RoomNode: React.FC<{ room: RoomInfo }> = ({ room }) => {
+const RoomNode: React.FC<{ room: RoomInfo; onEdit: () => void }> = ({ room, onEdit }) => {
+    const type = room.type || 'lab';
+    const emoji = ROOM_TYPE_EMOJI[type];
     return (
-        <View style={styles.roomRow}>
-            <MapPin size={10} color="#94a3b8" />
+        <TouchableOpacity style={styles.roomRow} onPress={onEdit} activeOpacity={0.6}>
+            <Text style={styles.roomEmoji}>{emoji}</Text>
             <Text style={styles.roomName}>{room.name}</Text>
             {!!room.assetCount && (
                 <Text style={styles.roomMeta}>{room.assetCount}대</Text>
             )}
             {!!room.features?.length && (
-                <Text style={styles.roomMeta}>{room.features.join(' · ')}</Text>
+                <Text style={styles.roomMeta} numberOfLines={1}>{room.features.join(' · ')}</Text>
             )}
-        </View>
+            <Pencil size={10} color="#cbd5e1" />
+        </TouchableOpacity>
     );
 };
 
@@ -329,11 +582,7 @@ const styles = StyleSheet.create({
     body: { flex: 1 },
     bodyContent: { padding: 12, gap: 12 },
 
-    emptyState: {
-        alignItems: 'center',
-        padding: 40,
-        gap: 8,
-    },
+    emptyState: { alignItems: 'center', padding: 40, gap: 8 },
     emptyTitle: { fontSize: 14, color: '#475569', fontWeight: '700' },
     emptyDesc: { fontSize: 12, color: '#94a3b8', textAlign: 'center', lineHeight: 18 },
 
@@ -352,27 +601,59 @@ const styles = StyleSheet.create({
         paddingVertical: 10,
     },
     siteDot: { width: 8, height: 8, borderRadius: 4 },
-    siteName: { fontSize: 14, fontWeight: '800', flex: 1 },
-    siteSummary: { fontSize: 10, color: '#475569', fontWeight: '600' },
+    siteName: { fontSize: 14, fontWeight: '800' },
+    siteSummary: { fontSize: 10, color: '#475569', fontWeight: '600', flex: 1, textAlign: 'right' },
+    addInlineBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 2,
+        paddingHorizontal: 6,
+        paddingVertical: 3,
+        borderRadius: 8,
+        backgroundColor: 'rgba(255,255,255,0.7)',
+    },
+    addInlineText: { fontSize: 10, fontWeight: '700' },
 
     buildingBlock: { borderTopWidth: 1, borderTopColor: '#f1f5f9' },
     buildingHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
         paddingHorizontal: 14,
         paddingVertical: 8,
+        gap: 6,
+    },
+    buildingHeaderTap: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
     },
     buildingName: { fontSize: 13, fontWeight: '700', color: '#1f2937', flex: 1 },
     buildingCount: { fontSize: 10, color: '#64748b' },
+    miniBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 2,
+        paddingHorizontal: 6,
+        paddingVertical: 3,
+        borderRadius: 6,
+        backgroundColor: '#f1f5f9',
+    },
+    miniBtnText: { fontSize: 10, color: '#475569', fontWeight: '700' },
 
     floorBlock: { marginLeft: 14, borderTopWidth: 1, borderTopColor: '#f8fafc' },
     floorHeader: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
         paddingHorizontal: 12,
         paddingVertical: 6,
+        gap: 6,
+    },
+    floorHeaderTap: {
+        flex: 1,
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
     },
     floorName: { fontSize: 12, fontWeight: '600', color: '#475569', flex: 1 },
     floorCount: { fontSize: 10, color: '#94a3b8' },
@@ -382,8 +663,66 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: 6,
         paddingHorizontal: 22,
-        paddingVertical: 4,
+        paddingVertical: 6,
     },
+    roomEmoji: { fontSize: 11 },
     roomName: { fontSize: 12, color: '#1f2937', flex: 1 },
-    roomMeta: { fontSize: 10, color: '#94a3b8' },
+    roomMeta: { fontSize: 10, color: '#94a3b8', maxWidth: 100 },
+
+    // 추가 다이얼로그
+    addOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+    },
+    addCard: {
+        width: '100%',
+        maxWidth: 380,
+        backgroundColor: '#ffffff',
+        borderRadius: 16,
+        padding: 16,
+    },
+    addTitle: { fontSize: 14, fontWeight: '800', color: '#1f2937', marginBottom: 10 },
+    addInput: {
+        backgroundColor: '#f8fafc',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderRadius: 10,
+        paddingHorizontal: 12,
+        paddingVertical: 10,
+        fontSize: 13,
+        color: '#1f2937',
+    },
+    addTypeRow: { flexDirection: 'row', gap: 6, marginTop: 8 },
+    addTypeChip: {
+        flex: 1,
+        alignItems: 'center',
+        paddingVertical: 8,
+        backgroundColor: '#f1f5f9',
+        borderRadius: 10,
+        borderWidth: 1,
+        borderColor: 'transparent',
+    },
+    addTypeChipActive: { backgroundColor: '#e0f2fe', borderColor: '#0369a1' },
+    addTypeEmoji: { fontSize: 16 },
+
+    addFooter: { flexDirection: 'row', gap: 8, marginTop: 14 },
+    addCancel: {
+        flex: 1,
+        padding: 10,
+        borderRadius: 10,
+        backgroundColor: '#f1f5f9',
+        alignItems: 'center',
+    },
+    addCancelText: { fontSize: 13, color: '#475569', fontWeight: '700' },
+    addConfirm: {
+        flex: 1,
+        padding: 10,
+        borderRadius: 10,
+        backgroundColor: '#0369a1',
+        alignItems: 'center',
+    },
+    addConfirmText: { fontSize: 13, color: '#ffffff', fontWeight: '800' },
 });

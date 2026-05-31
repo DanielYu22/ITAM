@@ -32,7 +32,6 @@ import {
     LayoutGrid,
     Database,
     Wrench,
-    Map,
     CalendarClock,
     Building2,
 } from 'lucide-react-native';
@@ -539,24 +538,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
 
                     <TouchableOpacity
                         style={styles.toolCard}
-                        onPress={onEditLayout}
-                        disabled={!onEditLayout}
-                    >
-                        <View style={[styles.toolIconContainer, { backgroundColor: '#fef3c7' }]}>
-                            <Map size={22} color="#b45309" />
-                        </View>
-                        <Text style={styles.toolLabel}>레이아웃</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        style={styles.toolCard}
                         onPress={onOpenInfrastructure}
                         disabled={!onOpenInfrastructure}
                     >
                         <View style={[styles.toolIconContainer, { backgroundColor: '#e0f2fe' }]}>
                             <Building2 size={22} color="#0369a1" />
                         </View>
-                        <Text style={styles.toolLabel}>인프라</Text>
+                        <Text style={styles.toolLabel}>인프라 · 레이아웃</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity

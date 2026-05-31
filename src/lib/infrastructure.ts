@@ -16,9 +16,40 @@
 import { Asset } from './notion';
 import { SiteId, SiteDef, getAssetSite, SITES_DEFAULTS } from './sites';
 
-/** 실험실(연구실) 메타데이터 */
+/** 공간(실험실/서버실/사무실/기타) 타입 */
+export type RoomType = 'lab' | 'server-room' | 'office' | 'other';
+
+export const ROOM_TYPE_LABEL: Record<RoomType, string> = {
+    'lab': '실험실',
+    'server-room': '서버실',
+    'office': '사무실',
+    'other': '기타',
+};
+
+export const ROOM_TYPE_EMOJI: Record<RoomType, string> = {
+    'lab': '🧪',
+    'server-room': '🖥️',
+    'office': '💼',
+    'other': '📦',
+};
+
+/** 서버실 전용 메타 — type === 'server-room' 일 때만 의미 있음 */
+export interface ServerRoomInfo {
+    rackCount?: number;
+    serverCount?: number;
+    /** 주요 네트워크 장비 / UPS / 냉방 등 자유 라벨 */
+    equipment?: string[];
+    cooling?: string;        // 예: '항온항습 24/7'
+    ups?: string;            // 예: 'APC Symmetra 80kVA'
+    powerNotes?: string;     // 전원 회로 등
+    accessNotes?: string;    // 출입권한 / 키 / 카드
+    contactPerson?: string;  // 담당자
+}
+
+/** 공간 메타데이터 (실험실/서버실 공통) */
 export interface RoomInfo {
     name: string;
+    type?: RoomType;         // 기본 'lab'
     notes?: string;
     /** 안전등급, 분류, BSL 등급 같은 자유 라벨들 */
     features?: string[];
@@ -28,6 +59,8 @@ export interface RoomInfo {
     autoSeeded?: boolean;
     /** 마지막 자동 시드 시점에 매칭된 자산 수 */
     assetCount?: number;
+    /** 서버실 전용 메타 */
+    serverRoom?: ServerRoomInfo;
 }
 
 export interface FloorInfo {
@@ -184,11 +217,13 @@ export const mergeSeedIntoInfrastructure = (
                 const sdR = sdRooms.get(rname);
                 mergedRooms.push({
                     name: rname,
+                    type: exR?.type,
                     notes: exR?.notes,
                     features: exR?.features,
                     layoutRef: exR?.layoutRef,
                     autoSeeded: sdR?.autoSeeded ?? exR?.autoSeeded,
                     assetCount: sdR?.assetCount ?? exR?.assetCount,
+                    serverRoom: exR?.serverRoom,
                 });
             }
 
