@@ -560,6 +560,10 @@ export const LayoutEditorModal: React.FC<Props> = ({
                                     x: Math.max(0, Math.min(CANVAS_WIDTH - obj.width, obj.x + dx)),
                                     y: Math.max(0, Math.min(CANVAS_HEIGHT - obj.height, obj.y + dy)),
                                 })}
+                                onResize={(dw, dh) => updateObject(obj.id, {
+                                    width: Math.max(20, Math.min(CANVAS_WIDTH - obj.x, obj.width + dw)),
+                                    height: Math.max(20, Math.min(CANVAS_HEIGHT - obj.y, obj.height + dh)),
+                                })}
                             />
                         ))}
 
@@ -756,23 +760,45 @@ export const LayoutEditorModal: React.FC<Props> = ({
                                         : '검색 결과가 없거나 모두 배치된 상태예요.'}
                                 </Text>
                             ) : (
-                                filteredAssets.map(a => (
-                                    <TouchableOpacity
-                                        key={a.id}
-                                        style={styles.assetItem}
-                                        onPress={() => addAssetObject(a)}
-                                    >
-                                        <Cpu size={14} color="#4338ca" />
-                                        <View style={{ flex: 1 }}>
-                                            <Text style={styles.assetItemName}>
-                                                {(a.values as any)[titleField] ?? '(이름 없음)'}
-                                            </Text>
-                                            <Text style={styles.assetItemSub} numberOfLines={1}>
-                                                {(a.values as any)['PC Hostname'] || '—'}
-                                            </Text>
-                                        </View>
-                                    </TouchableOpacity>
-                                ))
+                                filteredAssets.map(a => {
+                                    // Phase 8: 자산 픽커 강화 — 모델·팀·IP·OS 메타 같이 노출
+                                    const v = a.values as any;
+                                    const team = v['User)소속팀'];
+                                    const ip = v['QA)기기 IP'] || v['QA)네트워크 IP'];
+                                    const model = v['기기상태'];
+                                    const os = v['OS type'];
+                                    const meta = [model, ip, os].filter(Boolean).join(' · ');
+                                    return (
+                                        <TouchableOpacity
+                                            key={a.id}
+                                            style={styles.assetItem}
+                                            onPress={() => addAssetObject(a)}
+                                        >
+                                            <Cpu size={14} color="#4338ca" />
+                                            <View style={{ flex: 1 }}>
+                                                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                                                    <Text style={styles.assetItemName} numberOfLines={1}>
+                                                        {v[titleField] ?? '(이름 없음)'}
+                                                    </Text>
+                                                    {team && (
+                                                        <View style={{
+                                                            backgroundColor: '#e0e7ff',
+                                                            paddingHorizontal: 5, paddingVertical: 1,
+                                                            borderRadius: 4,
+                                                        }}>
+                                                            <Text style={{ fontSize: 9, fontWeight: '700', color: '#4338ca' }}>
+                                                                {team}
+                                                            </Text>
+                                                        </View>
+                                                    )}
+                                                </View>
+                                                <Text style={styles.assetItemSub} numberOfLines={1}>
+                                                    {v['PC Hostname'] || '—'}{meta ? ` · ${meta}` : ''}
+                                                </Text>
+                                            </View>
+                                        </TouchableOpacity>
+                                    );
+                                })
                             )}
                         </ScrollView>
                     </View>
@@ -792,13 +818,52 @@ const DraggableObject: React.FC<{
     selected: boolean;
     onSelect: () => void;
     onMove: (dx: number, dy: number) => void;
-}> = ({ obj, scale, selected, onSelect, onMove }) => {
+    // Phase 8: 모서리 리사이즈
+    onResize?: (dw: number, dh: number) => void;
+}> = ({ obj, scale, selected, onSelect, onMove, onResize }) => {
     const ref = useRef<any>(null);
+    const handleRef = useRef<any>(null);
     // 콜백을 ref 로 보관해서 listener 재등록 최소화
-    const cbRef = useRef({ onMove, onSelect, scale });
+    const cbRef = useRef({ onMove, onSelect, scale, onResize });
     useEffect(() => {
-        cbRef.current = { onMove, onSelect, scale };
-    }, [onMove, onSelect, scale]);
+        cbRef.current = { onMove, onSelect, scale, onResize };
+    }, [onMove, onSelect, scale, onResize]);
+
+    // Phase 8: SE 핸들 드래그 — 리사이즈 전용
+    useEffect(() => {
+        if (!selected || !onResize) return;
+        const node = handleRef.current as any;
+        if (!node || typeof node.addEventListener !== 'function') return;
+        let dragging = false; let lx = 0; let ly = 0;
+        const down = (e: any) => {
+            e.preventDefault?.(); e.stopPropagation?.();
+            dragging = true; lx = e.clientX; ly = e.clientY;
+            if (e.pointerId !== undefined && typeof node.setPointerCapture === 'function') {
+                try { node.setPointerCapture(e.pointerId); } catch {}
+            }
+        };
+        const move = (e: any) => {
+            if (!dragging) return;
+            e.preventDefault?.();
+            const s = cbRef.current.scale || 1;
+            const dx = (e.clientX - lx) / s;
+            const dy = (e.clientY - ly) / s;
+            lx = e.clientX; ly = e.clientY;
+            cbRef.current.onResize?.(dx, dy);
+        };
+        const up = () => { dragging = false; };
+        const opts: any = { passive: false };
+        node.addEventListener('pointerdown', down, opts);
+        node.addEventListener('pointermove', move, opts);
+        node.addEventListener('pointerup', up, opts);
+        node.addEventListener('pointercancel', up, opts);
+        return () => {
+            node.removeEventListener('pointerdown', down);
+            node.removeEventListener('pointermove', move);
+            node.removeEventListener('pointerup', up);
+            node.removeEventListener('pointercancel', up);
+        };
+    }, [selected, onResize]);
 
     // DOM Pointer Events 직접 — PanResponder 가 모바일 웹에서 잘 안 먹어서
     useEffect(() => {
@@ -911,6 +976,26 @@ const DraggableObject: React.FC<{
                 >
                     {obj.label}
                 </Text>
+            )}
+            {/* Phase 8: 우하단 리사이즈 핸들 (선택된 경우만) */}
+            {selected && (
+                <View
+                    ref={handleRef as any}
+                    style={({
+                        position: 'absolute',
+                        right: -8,
+                        bottom: -8,
+                        width: 16,
+                        height: 16,
+                        backgroundColor: '#6366f1',
+                        borderRadius: 4,
+                        borderWidth: 2,
+                        borderColor: '#ffffff',
+                        cursor: 'nwse-resize',
+                        touchAction: 'none',
+                        userSelect: 'none',
+                    } as any)}
+                />
             )}
         </View>
     );

@@ -825,9 +825,27 @@ export default function App() {
   }, [infraDbClient, reloadInfraTree]);
 
   const handleUpdateRoom = useCallback(async (roomId: string, patch: Partial<RoomNode>) => {
+    // Phase 7: 룸 이름/건물/층 변경 시 자산 DB 의 같은 select 옵션도 같이 rename
+    // (cascade — 두 DB 간 옵션 이름이 갈라지지 않게)
+    const before = infraNodesById.get(roomId);
     await infraDbClient.updateRoom(roomId, patch);
+    if (notionClient && before) {
+      const propagate = async (col: string, oldVal?: string, newVal?: string) => {
+        if (oldVal === undefined || newVal === undefined || oldVal === newVal || !oldVal) return;
+        try {
+          await notionClient.renameSelectOption(col, oldVal, newVal);
+        } catch (e) {
+          console.warn('[Phase7] propagate failed', col, oldVal, '->', newVal, e);
+        }
+      };
+      await Promise.all([
+        propagate('L)건물', before.building, patch.building),
+        propagate('L)층', before.floor, patch.floor),
+        propagate('L)연구실', before.name, patch.name),
+      ]);
+    }
     await reloadInfraTree();
-  }, [infraDbClient, reloadInfraTree]);
+  }, [infraDbClient, reloadInfraTree, infraNodesById, notionClient]);
 
   const handleArchiveRoom = useCallback(async (roomId: string) => {
     // Phase 4 cascade: 룸 archive 전에 그 룸을 가리키는 인프라 자산을 같이 archive

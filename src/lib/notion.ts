@@ -422,6 +422,39 @@ export class NotionClient {
         }
     }
 
+    /**
+     * Phase 7: select/multi_select 옵션 이름 변경.
+     * 옵션 ID 로 추적되므로 옵션 이름만 바꾸면 그 옵션을 쓰는 모든 row 가 자동 따라감.
+     * Notion API: PATCH /databases/{id} 로 properties.{prop}.select.options 를 통째로 보내야 함.
+     * 성공 시 true, 옵션 없으면 false.
+     */
+    async renameSelectOption(propertyName: string, oldOptionName: string, newOptionName: string): Promise<boolean> {
+        if (oldOptionName === newOptionName) return true;
+        try {
+            const schemaProps = await this.getDatabaseSchema();
+            const prop = schemaProps[propertyName];
+            if (!prop) return false;
+            const kind = prop.type;
+            if (kind !== 'select' && kind !== 'multi_select') return false;
+            const cfg = (prop as any).select || (prop as any).multi_select;
+            const options = (cfg?.options || []).map((o: any) => {
+                if (o.name === oldOptionName) return { id: o.id, name: newOptionName, color: o.color };
+                return { id: o.id, name: o.name, color: o.color };
+            });
+            const resp = await fetch(`${API_BASE_URL}/api/notion/v1/databases/${this.databaseId}`, {
+                method: 'PATCH',
+                headers: this.getHeaders(),
+                body: JSON.stringify({
+                    properties: { [propertyName]: { [kind]: { options } } },
+                }),
+            });
+            return resp.ok;
+        } catch (e) {
+            console.warn('[Notion] renameSelectOption failed', propertyName, oldOptionName, newOptionName, e);
+            return false;
+        }
+    }
+
     private readonly SETTINGS_MARKER = '🔧_NEXUS_SETTINGS_';
 
     async loadSettings(): Promise<Record<string, any> | null> {

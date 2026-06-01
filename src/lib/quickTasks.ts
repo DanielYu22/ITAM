@@ -679,12 +679,33 @@ const evaluateCondition = (asset: Asset, cond: TargetCondition): boolean => {
         case 'is_not_empty':
             return val !== '' && !DUMMY_VALUES.has(val);
         case 'contains':
+            // Phase 6 통일: multi_select/select 는 콤마 split 아이템 단위 정확 매칭
+            // (FieldWorkFilter.tsx 평가 엔진과 시맨틱 동일)
+            if (cond.values && cond.values.length > 0) {
+                const items = val.split(',').map(s => s.trim()).filter(Boolean);
+                return cond.values.some(v => {
+                    const t = String(v ?? '').toLowerCase().trim();
+                    if (t === '') return val === '';
+                    return items.includes(t) || val.includes(t);
+                });
+            }
+            return true;
         case 'text_contains':
+            // 일반 텍스트 부분 일치
             if (cond.values && cond.values.length > 0) {
                 return cond.values.some(v => val.includes(String(v ?? '').toLowerCase()));
             }
             return true;
         case 'not_contains':
+            if (cond.values && cond.values.length > 0) {
+                const items = val.split(',').map(s => s.trim()).filter(Boolean);
+                return !cond.values.some(v => {
+                    const t = String(v ?? '').toLowerCase().trim();
+                    if (t === '') return false;
+                    return items.includes(t) || val.includes(t);
+                });
+            }
+            return true;
         case 'text_not_contains':
             if (cond.values && cond.values.length > 0) {
                 return !cond.values.some(v => val.includes(String(v ?? '').toLowerCase()));

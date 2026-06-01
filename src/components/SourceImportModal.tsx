@@ -232,6 +232,19 @@ export const SourceImportModal: React.FC<Props> = ({
                 const updates = p.fieldChanges.filter((c: any) => c.changed);
                 await Promise.all(updates.map((c: any) => {
                     const type = schemaProperties[c.field]?.type || 'rich_text';
+                    // Phase 6: multi_select 컬럼은 기존 값과 머지 (덮어쓰기 X)
+                    // export 시 콤마 join 된 값이 단일 select 로 잘못 들어가는 회귀 방지.
+                    if (type === 'multi_select') {
+                        const existing = String((p.matchedAsset.values as any)[c.field] ?? '');
+                        const set = new Set<string>(
+                            existing.split(',').map(s => s.trim()).filter(Boolean)
+                        );
+                        const incoming = String(c.newValue ?? '')
+                            .split(',').map(s => s.trim()).filter(Boolean);
+                        incoming.forEach(v => set.add(v));
+                        const merged = Array.from(set).join(', ');
+                        return onUpdate(p.matchedAsset.id, c.field, merged, type);
+                    }
                     return onUpdate(p.matchedAsset.id, c.field, c.newValue, type);
                 }));
 
