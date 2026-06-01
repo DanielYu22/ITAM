@@ -42,7 +42,10 @@ interface Props {
 }
 
 type Step = 'select' | 'preview' | 'running' | 'done';
-type CycleId = 'closed-network' | 'quarterly-backup';
+type CycleId = 'closed-network' | 'quarterly-backup' | 'alyak-status-check';
+
+// 알약 온라인구분의 정상 운영 값 — 이 값이 아니거나 비어있으면 점검 대상
+const ALYAK_STATUS_NORMAL = ['온라인', '폐쇄망', '오프라인', '알약대상아님', '알약대상아님(나보타)'];
 
 // ---------------------------------------------------------------------------
 // 사이클 정의 — 새 사이클은 여기 한 곳에만 추가하면 됨
@@ -96,6 +99,24 @@ const CYCLE_DEFS: CycleDef[] = [
         needTag: '백업필요',
         completedTag: '백업완료',
         historyLabel: (now) => `${getCurrentQuarterLabel(now)} 분기백업 큐 초기화 (백업필요 마킹)`,
+    },
+    {
+        id: 'alyak-status-check',
+        title: '알약 온라인구분 점검 (월간)',
+        get badge() { return `월간 · ${getCurrentMonthLabel()}`; },
+        emoji: '❓',
+        color: '#9333ea',
+        bgColor: '#f3e8ff',
+        description: '온라인구분이 비어있거나 비정상값인 기기에 점검 마킹',
+        targetFilter: (a) => {
+            const v = String((a.values as any)['M)알약 온라인구분'] ?? '').trim();
+            // 빈 값이거나 정상값 list 에 없으면 점검 대상
+            return v === '' || !ALYAK_STATUS_NORMAL.includes(v);
+        },
+        statusField: 'M)알약 현장조치',
+        needTag: '온라인구분점검필요',
+        completedTag: '온라인구분확인완료',
+        historyLabel: (now) => `${getCurrentMonthLabel(now)} 알약 온라인구분 점검 큐 초기화`,
     },
 ];
 

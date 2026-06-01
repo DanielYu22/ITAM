@@ -378,6 +378,102 @@ export const QUICK_TASKS: QuickTaskDef[] = [
         ],
         buildHistoryLabel: () => '현장지원 처리 완료',
     },
+
+    // ------------------------------------------------------------------------
+    // 알약 - 온라인구분 점검 (월간 사이클)
+    // 정기 초기화 → 비어있거나 비정상값인 기기에 '온라인구분점검필요' 마킹
+    //   1. 정기 초기화에서 '알약 온라인구분 점검' 사이클 실행
+    //   2. 이 Quick Task / 통합 큐 / 과제 대시보드에 매칭되어 표시
+    //   3. 현장 확인 후 정확한 값으로 채움 → '온라인구분점검필요' 제거 + '온라인구분확인완료' 추가
+    // ------------------------------------------------------------------------
+    {
+        id: 'ahnlab-status-check',
+        group: '알약',
+        name: '알약 온라인구분 점검',
+        shortLabel: '구분 확인',
+        emoji: '❓',
+        color: '#7c3aed',
+        bgColor: '#ede9fe',
+        description: '온라인구분이 비었거나 비정상값인 기기 확인',
+        buildConfig: ({ now }) => ({
+            locationHierarchy: ['L)건물', 'L)층', 'L)연구실'],
+            sortColumn: 'L)연구실',
+            sortDirection: 'asc',
+            globalLogicalOperator: 'or',
+            targetGroups: [
+                {
+                    id: `qt-alyakchk-${now.getTime()}`,
+                    operator: 'or',
+                    conditions: [
+                        {
+                            id: `qt-alyakchk-c1-${now.getTime()}`,
+                            column: 'M)알약 현장조치',
+                            type: 'contains',
+                            values: ['온라인구분점검필요'],
+                        },
+                    ],
+                },
+            ],
+            editableFields: ['M)알약 온라인구분', 'M)알약 현장조치', 'PC Hostname'],
+        }),
+        clearOnComplete: [
+            {
+                field: 'M)알약 현장조치',
+                removeValues: ['온라인구분점검필요'],
+                setValue: '온라인구분확인완료',
+            },
+        ],
+        buildHistoryLabel: ({ now }) => `${getCurrentMonthLabel(now)} 알약 온라인구분 점검 완료`,
+    },
+
+    // ------------------------------------------------------------------------
+    // 필수정보 누락 — 운영 필수 컬럼이 비어있는 기기 자동 작업대상
+    // 정기 초기화 불필요. 컬럼이 채워지면 자동으로 매칭 해제됨 (조건 = is_empty).
+    // 누락 가능 컬럼:
+    //   L)건물 / L)층 / L)연구실 (위치)
+    //   PC Hostname / QA)기기 IP (식별)
+    //   User)기기관리자 / User)소속팀 (담당)
+    // ------------------------------------------------------------------------
+    {
+        id: 'data-completeness',
+        group: '개별',
+        name: '필수정보 누락 기기',
+        shortLabel: '정보 채움',
+        emoji: '📝',
+        color: '#0891b2',
+        bgColor: '#cffafe',
+        description: '위치·호스트·IP·담당자·팀 중 비어있는 컬럼이 있는 기기',
+        buildConfig: ({ now }) => ({
+            locationHierarchy: ['L)건물', 'L)층', 'L)연구실'],
+            sortColumn: 'L)연구실',
+            sortDirection: 'asc',
+            globalLogicalOperator: 'or',
+            targetGroups: [
+                {
+                    id: `qt-complete-${now.getTime()}`,
+                    operator: 'or',
+                    conditions: [
+                        { id: `qt-complete-b-${now.getTime()}`,   column: 'L)건물',          type: 'is_empty', values: [] },
+                        { id: `qt-complete-f-${now.getTime()}`,   column: 'L)층',            type: 'is_empty', values: [] },
+                        { id: `qt-complete-r-${now.getTime()}`,   column: 'L)연구실',        type: 'is_empty', values: [] },
+                        { id: `qt-complete-h-${now.getTime()}`,   column: 'PC Hostname',     type: 'is_empty', values: [] },
+                        { id: `qt-complete-i-${now.getTime()}`,   column: 'QA)기기 IP',      type: 'is_empty', values: [] },
+                        { id: `qt-complete-m-${now.getTime()}`,   column: 'User)기기관리자', type: 'is_empty', values: [] },
+                        { id: `qt-complete-t-${now.getTime()}`,   column: 'User)소속팀',     type: 'is_empty', values: [] },
+                    ],
+                },
+            ],
+            editableFields: [
+                'L)건물', 'L)층', 'L)연구실',
+                'PC Hostname', 'QA)기기 IP',
+                'User)기기관리자', 'User)소속팀',
+            ],
+        }),
+        // 빈 컬럼을 채우면 조건 (is_empty) 이 false 가 되어 자동으로 매칭 해제됨.
+        // 별도 clearOnComplete 액션 불필요.
+        clearOnComplete: [],
+        buildHistoryLabel: () => '필수정보 누락 채움',
+    },
 ];
 
 // ============================================================================
