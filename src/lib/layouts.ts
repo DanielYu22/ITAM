@@ -61,13 +61,23 @@ export interface LayoutObject {
     color?: string;
 }
 
+/** Phase 5: 동선 (작업자가 한 점씩 찍어 만드는 폴리라인) */
+export interface LayoutPath {
+    id: string;
+    points: Array<{ x: number; y: number }>;
+    color?: string;
+    label?: string;
+    /** 두께 (선 width) */
+    strokeWidth?: number;
+}
+
 export interface RoomLayout {
     canvasWidth: number;
     canvasHeight: number;
     objects: LayoutObject[];
+    /** Phase 5: 동선 (여러 개 가능) */
+    paths?: LayoutPath[];
     updatedAt: string;
-    // Phase B 예정:
-    // path?: { points: Array<{ x: number; y: number }> };  // 동선
 }
 
 export interface LayoutsStore {

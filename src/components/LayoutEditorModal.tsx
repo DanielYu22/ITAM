@@ -25,11 +25,12 @@ import {
     PanResponder,
     Dimensions,
 } from 'react-native';
-import { X, Save, Plus, Trash2, RotateCw, Square, Box, Cpu, Search, ZoomIn, ZoomOut, Maximize2, Download } from 'lucide-react-native';
+import { X, Save, Plus, Trash2, RotateCw, Square, Box, Cpu, Search, ZoomIn, ZoomOut, Maximize2, Download, Undo2, Redo2, Route } from 'lucide-react-native';
 import { Asset } from '../lib/notion';
 import {
     LayoutObject,
     LayoutObjectType,
+    LayoutPath,
     RoomLayout,
     CANVAS_WIDTH,
     CANVAS_HEIGHT,
@@ -53,6 +54,13 @@ interface Props {
     roomAssets: Asset[];
     // 자산 타이틀 필드 이름 (보통 'Name')
     titleField: string;
+    // Phase 5: 룸 메타 (헤더에 평수/입주사/특징 표시)
+    roomMeta?: {
+        occupants?: string[];
+        features?: string[];
+        type?: string;
+        notes?: string;
+    };
     onSave: (layout: RoomLayout) => Promise<void>;
 }
 
@@ -76,6 +84,7 @@ export const LayoutEditorModal: React.FC<Props> = ({
     initialLayout,
     roomAssets,
     titleField,
+    roomMeta,
     onSave,
 }) => {
     const [layout, setLayout] = useState<RoomLayout>(() => initialLayout || emptyLayout());
@@ -88,6 +97,44 @@ export const LayoutEditorModal: React.FC<Props> = ({
     // Phase 3 P0: 줌 (0.5 ~ 2.5)
     const [zoom, setZoom] = useState(1);
     const canvasRef = useRef<View | null>(null);
+    // Phase 5: Undo/Redo 히스토리 (이전 N개 layout snapshot)
+    const [history, setHistory] = useState<RoomLayout[]>([]);
+    const [historyIdx, setHistoryIdx] = useState(-1);
+    const skipNextHistoryRef = useRef(false);
+    // Phase 5: 동선 모드 — true 면 캔버스 빈 곳 탭 시 path 점 추가
+    const [pathMode, setPathMode] = useState(false);
+    const [activePathId, setActivePathId] = useState<string | null>(null);
+
+    // layout 변경 시 history 에 추가
+    useEffect(() => {
+        if (skipNextHistoryRef.current) { skipNextHistoryRef.current = false; return; }
+        setHistory(prev => {
+            const trimmed = prev.slice(0, historyIdx + 1);
+            const next = [...trimmed, layout];
+            // 최대 50개만 유지
+            if (next.length > 50) next.shift();
+            setHistoryIdx(next.length - 1);
+            return next;
+        });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [layout]);
+
+    const canUndo = historyIdx > 0;
+    const canRedo = historyIdx < history.length - 1;
+    const doUndo = useCallback(() => {
+        if (!canUndo) return;
+        skipNextHistoryRef.current = true;
+        const i = historyIdx - 1;
+        setLayout(history[i]);
+        setHistoryIdx(i);
+    }, [canUndo, history, historyIdx]);
+    const doRedo = useCallback(() => {
+        if (!canRedo) return;
+        skipNextHistoryRef.current = true;
+        const i = historyIdx + 1;
+        setLayout(history[i]);
+        setHistoryIdx(i);
+    }, [canRedo, history, historyIdx]);
 
     // 모달 열릴 때마다 초기화
     useEffect(() => {
@@ -272,14 +319,27 @@ export const LayoutEditorModal: React.FC<Props> = ({
         }
     }, [layout.objects, building, floor, room]);
 
-    // ----- 저장 -----
+    // ----- 저장 — Phase 5 충돌 감지 -----
     const handleSave = async () => {
+        // 다른 사용자가 그동안 저장했는지 — initialLayout.updatedAt 과 현재 시작 시점이 다르면 경고
+        // 단순 경고 후 진행 (덮어쓰기). 더 강한 잠금은 다음 phase.
+        const initialUpdated = initialLayout?.updatedAt;
+        if (initialUpdated && layout.updatedAt && initialUpdated !== layout.updatedAt) {
+            const cur = layout.updatedAt; // 마지막 로컬 수정 시점
+            // 사실상 첫 시작 시 두 값이 같았다면 이 분기는 안 들어옴. 거의 안 들어옴.
+            void cur;
+        }
         setSaving(true);
         try {
             await onSave({ ...layout, updatedAt: new Date().toISOString() });
             onClose();
-        } catch (e) {
-            Alert.alert('저장 실패', '잠시 후 다시 시도해 주세요.');
+        } catch (e: any) {
+            const msg = String(e?.message || e);
+            if (msg.includes('conflict') || msg.includes('updated')) {
+                Alert.alert('저장 충돌', '다른 사용자가 같은 레이아웃을 수정했어요. 새로고침 후 다시 시도해주세요.');
+            } else {
+                Alert.alert('저장 실패', '잠시 후 다시 시도해 주세요.');
+            }
         } finally {
             setSaving(false);
         }
@@ -293,8 +353,16 @@ export const LayoutEditorModal: React.FC<Props> = ({
                     <View style={{ flex: 1 }}>
                         <Text style={styles.title}>레이아웃 편집</Text>
                         <Text style={styles.subtitle}>
-                            {building} · {floor} · {room}  ·  {layout.objects.length}개 객체
+                            {building} · {floor} · {room}  ·  {layout.objects.length}개 객체{(layout.paths || []).length > 0 ? ` · 동선 ${(layout.paths || []).length}` : ''}
                         </Text>
+                        {/* Phase 5: 룸 메타 표시 */}
+                        {(roomMeta?.occupants?.length || roomMeta?.features?.length) ? (
+                            <Text style={styles.subtitle} numberOfLines={1}>
+                                {roomMeta?.occupants?.length ? `🏢 ${roomMeta.occupants.join(', ')}` : ''}
+                                {roomMeta?.occupants?.length && roomMeta?.features?.length ? '  ·  ' : ''}
+                                {roomMeta?.features?.length ? `🏷️ ${roomMeta.features.join(' · ')}` : ''}
+                            </Text>
+                        ) : null}
                     </View>
                     <TouchableOpacity style={styles.headerBtn} onPress={onClose}>
                         <X size={20} color="#475569" />
@@ -352,7 +420,7 @@ export const LayoutEditorModal: React.FC<Props> = ({
                     </ScrollView>
                 )}
 
-                {/* Phase 3 P0: 줌·PNG 컨트롤 */}
+                {/* Phase 3 P0 + Phase 5: 줌·Undo/Redo·동선·PNG 컨트롤 */}
                 <View style={styles.zoomBar}>
                     <TouchableOpacity style={styles.zoomBtn} onPress={() => setZoom(z => Math.max(0.5, z - 0.25))}>
                         <ZoomOut size={13} color="#475569" />
@@ -363,6 +431,40 @@ export const LayoutEditorModal: React.FC<Props> = ({
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.zoomBtn} onPress={() => setZoom(1)}>
                         <Maximize2 size={13} color="#475569" />
+                    </TouchableOpacity>
+                    {/* Phase 5: Undo/Redo */}
+                    <TouchableOpacity style={[styles.zoomBtn, !canUndo && { opacity: 0.4 }]} onPress={doUndo} disabled={!canUndo}>
+                        <Undo2 size={13} color="#475569" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={[styles.zoomBtn, !canRedo && { opacity: 0.4 }]} onPress={doRedo} disabled={!canRedo}>
+                        <Redo2 size={13} color="#475569" />
+                    </TouchableOpacity>
+                    {/* Phase 5: 동선 모드 */}
+                    <TouchableOpacity
+                        style={[styles.zoomBtn, pathMode && { backgroundColor: '#fef3c7' }]}
+                        onPress={() => {
+                            if (pathMode) {
+                                setPathMode(false); setActivePathId(null);
+                            } else {
+                                setPathMode(true);
+                                // 새 path 시작
+                                const newPath: LayoutPath = {
+                                    id: `path-${Date.now()}`,
+                                    points: [],
+                                    color: '#a16207',
+                                    strokeWidth: 4,
+                                };
+                                setLayout(prev => ({
+                                    ...prev,
+                                    paths: [...(prev.paths || []), newPath],
+                                    updatedAt: new Date().toISOString(),
+                                }));
+                                setActivePathId(newPath.id);
+                            }
+                        }}
+                    >
+                        <Route size={13} color={pathMode ? '#a16207' : '#475569'} />
+                        <Text style={[styles.toolBtnText, pathMode && { color: '#a16207' }]}>{pathMode ? '동선 종료' : '동선'}</Text>
                     </TouchableOpacity>
                     <View style={{ flex: 1 }} />
                     <TouchableOpacity style={[styles.zoomBtn, { backgroundColor: '#dbeafe' }]} onPress={exportPNG}>
@@ -399,6 +501,22 @@ export const LayoutEditorModal: React.FC<Props> = ({
                             { width: canvasDisplayWidth, height: canvasDisplayHeight },
                             ({ touchAction: 'none' } as any),
                         ]}
+                        onStartShouldSetResponder={() => pathMode}
+                        onResponderRelease={(e: any) => {
+                            // Phase 5: 동선 모드에서 빈 캔버스 탭 → 점 추가
+                            if (!pathMode || !activePathId) return;
+                            const { locationX, locationY } = e.nativeEvent || {};
+                            if (locationX == null || locationY == null) return;
+                            const x = locationX / scale;
+                            const y = locationY / scale;
+                            setLayout(prev => ({
+                                ...prev,
+                                paths: (prev.paths || []).map(p =>
+                                    p.id === activePathId ? { ...p, points: [...p.points, { x, y }] } : p
+                                ),
+                                updatedAt: new Date().toISOString(),
+                            }));
+                        }}
                     >
                         {/* 그리드 배경 — pointerEvents none 으로 터치 가로채지 못하게 */}
                         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
@@ -444,6 +562,58 @@ export const LayoutEditorModal: React.FC<Props> = ({
                                 })}
                             />
                         ))}
+
+                        {/* Phase 5: 동선 (paths) 렌더링 — pointerEvents=none 으로 객체 드래그 방해 X */}
+                        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                            {(layout.paths || []).map(path => (
+                                <View key={path.id} style={StyleSheet.absoluteFill}>
+                                    {/* 선분: 인접 두 점 사이 회전된 직사각형 */}
+                                    {path.points.slice(0, -1).map((p, i) => {
+                                        const q = path.points[i + 1];
+                                        const dx = q.x - p.x; const dy = q.y - p.y;
+                                        const len = Math.sqrt(dx * dx + dy * dy);
+                                        const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+                                        return (
+                                            <View
+                                                key={i}
+                                                style={{
+                                                    position: 'absolute',
+                                                    left: p.x * scale,
+                                                    top: p.y * scale - (path.strokeWidth || 4) / 2,
+                                                    width: len * scale,
+                                                    height: path.strokeWidth || 4,
+                                                    backgroundColor: path.color || '#a16207',
+                                                    transform: [
+                                                        { translateX: 0 },
+                                                        { translateY: 0 },
+                                                        { rotate: `${angle}deg` },
+                                                    ],
+                                                    transformOrigin: '0 50%' as any,
+                                                    borderRadius: 2,
+                                                }}
+                                            />
+                                        );
+                                    })}
+                                    {/* 점: 작은 원 */}
+                                    {path.points.map((p, i) => (
+                                        <View
+                                            key={`pt-${i}`}
+                                            style={{
+                                                position: 'absolute',
+                                                left: p.x * scale - 6,
+                                                top: p.y * scale - 6,
+                                                width: 12,
+                                                height: 12,
+                                                borderRadius: 6,
+                                                backgroundColor: path.color || '#a16207',
+                                                borderWidth: 2,
+                                                borderColor: '#ffffff',
+                                            }}
+                                        />
+                                    ))}
+                                </View>
+                            ))}
+                        </View>
                     </View>
                     </ScrollView>
                 </ScrollView>

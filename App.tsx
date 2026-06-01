@@ -1738,6 +1738,24 @@ export default function App() {
               initialLayout={layoutsStore.rooms[k] || null}
               roomAssets={roomAssets}
               titleField={titleField}
+              roomMeta={(() => {
+                // Phase 5: 인프라 DB에서 룸 정보 찾아 메타 전달
+                const node = Array.from(infraNodesById.values()).find(n =>
+                  n.building === editingRoom.building &&
+                  n.floor === editingRoom.floor &&
+                  n.name === editingRoom.room
+                );
+                if (!node) return undefined;
+                const occNames = (node.occupantIds || [])
+                  .map(id => companies.find(c => c.id === id)?.name)
+                  .filter((x): x is string => !!x);
+                return {
+                  occupants: occNames,
+                  features: node.features,
+                  type: node.type,
+                  notes: node.notes,
+                };
+              })()}
               onSave={async (lay) => {
                 await handleSaveRoomLayout(k, lay);
                 setEditingRoom(null);
