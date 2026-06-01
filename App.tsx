@@ -72,6 +72,7 @@ import {
   QuickTaskDef,
   HISTORY_FIELD_NAME,
   SYNOLOGY_FIELD_NAME,
+  UNREGISTERED_MEMO_FIELD,
   SYNOLOGY_OPTIONS,
   FIELD_SUPPORT_STATUS_FIELD,
   FIELD_SUPPORT_STATUS_OPTIONS,
@@ -246,6 +247,19 @@ export default function App() {
           }
         } catch (e) {
           console.warn(`[App] '${FIELD_SUPPORT_MEMO_FIELD}' 필드 자동 생성 실패:`, e);
+        }
+      }
+
+      // 미등록 처리비고 필드 (rich_text)
+      if (!schemaProps[UNREGISTERED_MEMO_FIELD]) {
+        try {
+          const created = await notionClient.createDatabaseProperty(UNREGISTERED_MEMO_FIELD, 'rich_text');
+          if (created) {
+            console.log(`[App] '${UNREGISTERED_MEMO_FIELD}' 필드(rich_text) 자동 생성`);
+            schemaChanged = true;
+          }
+        } catch (e) {
+          console.warn(`[App] '${UNREGISTERED_MEMO_FIELD}' 필드 자동 생성 실패:`, e);
         }
       }
 

@@ -36,6 +36,13 @@ export const FIELD_SUPPORT_MEMO_FIELD = 'M)현장지원 메모';   // rich_text
 export const BACKUP_STATUS_FIELD = 'M)분기백업 상태';
 export const BACKUP_STATUS_OPTIONS = ['백업필요', '백업완료'];
 
+// 미등록 기기 처리비고 (rich_text) — 미등록 사용자 임포트 시 작성하는 작업비고
+export const UNREGISTERED_MEMO_FIELD = 'M)미등록 처리비고';
+
+// 알약 온라인구분의 정상 운영 값 — 이 값이 아니거나 비어있으면 점검 대상
+// '미등록'은 별도 흐름(임포트 → Quick Task 'unregistered-check')이므로 여기서 제외
+export const ALYAK_STATUS_NORMAL = ['온라인', '폐쇄망', '오프라인', '알약대상아님', '알약대상아님(나보타)'];
+
 // 완료 시 어떻게 클리어할지에 대한 규칙
 export interface ClearRule {
     field: string;
@@ -473,6 +480,66 @@ export const QUICK_TASKS: QuickTaskDef[] = [
         // 별도 clearOnComplete 액션 불필요.
         clearOnComplete: [],
         buildHistoryLabel: () => '필수정보 누락 채움',
+    },
+
+    // ------------------------------------------------------------------------
+    // 알약 - 미등록 사용자 Agent 확인 (수시)
+    // 사용자가 알약 ASM에서 추출한 '미등록 사용자' 엑셀을 임포트하면,
+    // 대상 기기의 M)알약 현장조치에 '미등록현장확인필요' 자동 마킹.
+    // (sourceImports.ts 의 ahnlab-unregistered 가 임포트 시점에 마킹)
+    //
+    // 사용자 워크플로우:
+    //   1. ASM 콘솔 → 미등록 사용자 list 추출 → 엑셀 다운로드
+    //   2. DB 관리 → 소스 임포트 → 자동 감지로 'ahnlab-unregistered' 매칭
+    //   3. 매칭된 자산엔 PC Hostname/OS/IP + '미등록현장확인필요' 자동 추가
+    //   4. 이 Quick Task / 통합 큐 / 과제 대시보드에서 매칭되어 표시
+    //   5. 현장에서 Agent 이름 확인 → 작업비고 입력 후 완료
+    //      ('미등록현장확인필요' 제거 + '미등록확인완료' 추가)
+    // ------------------------------------------------------------------------
+    {
+        id: 'unregistered-check',
+        group: '알약',
+        name: '미등록 사용자 Agent 확인',
+        shortLabel: 'Agent 확인',
+        emoji: '🪪',
+        color: '#be123c',
+        bgColor: '#ffe4e6',
+        description: 'ASM 미등록 — Agent 이름 / 실제 사용자 확인',
+        buildConfig: ({ now }) => ({
+            locationHierarchy: ['L)건물', 'L)층', 'L)연구실'],
+            sortColumn: 'L)연구실',
+            sortDirection: 'asc',
+            globalLogicalOperator: 'or',
+            targetGroups: [
+                {
+                    id: `qt-unreg-${now.getTime()}`,
+                    operator: 'or',
+                    conditions: [
+                        {
+                            id: `qt-unreg-c1-${now.getTime()}`,
+                            column: 'M)알약 현장조치',
+                            type: 'contains',
+                            values: ['미등록현장확인필요'],
+                        },
+                    ],
+                },
+            ],
+            editableFields: [
+                'PC Hostname',
+                'M)알약 온라인구분',
+                'M)알약 현장조치',
+                UNREGISTERED_MEMO_FIELD,
+                'User)기기관리자',
+            ],
+        }),
+        clearOnComplete: [
+            {
+                field: 'M)알약 현장조치',
+                removeValues: ['미등록현장확인필요'],
+                setValue: '미등록확인완료',
+            },
+        ],
+        buildHistoryLabel: () => '미등록 사용자 Agent 확인 처리',
     },
 ];
 

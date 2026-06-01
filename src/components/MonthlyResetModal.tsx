@@ -45,7 +45,9 @@ type Step = 'select' | 'preview' | 'running' | 'done';
 type CycleId = 'closed-network' | 'quarterly-backup' | 'alyak-status-check';
 
 // 알약 온라인구분의 정상 운영 값 — 이 값이 아니거나 비어있으면 점검 대상
-const ALYAK_STATUS_NORMAL = ['온라인', '폐쇄망', '오프라인', '알약대상아님', '알약대상아님(나보타)'];
+// '미등록'은 별도 흐름(미등록사용자 임포트 → Quick Task 'unregistered-check')이므로
+// 점검 사이클에서는 제외 (정상으로 취급)
+const ALYAK_STATUS_NORMAL = ['온라인', '폐쇄망', '오프라인', '알약대상아님', '알약대상아님(나보타)', '미등록'];
 
 // ---------------------------------------------------------------------------
 // 사이클 정의 — 새 사이클은 여기 한 곳에만 추가하면 됨

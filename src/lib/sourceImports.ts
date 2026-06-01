@@ -245,14 +245,17 @@ export const SOURCES: SourceDef[] = [
     },
 
     // ------------------------------------------------------------------------
-    // 3. 알약 미등록 사용자 (용인 추정 후보)
-    //    부서명=미등록인 기기들. Notion에 없는 행은 후보로 표시.
+    // 3. 알약 미등록 사용자 (용인/마곡 추정 후보)
+    //    부서명=미등록인 기기들. Notion에 매칭된 자산엔 위치/IP 갱신 +
+    //    M)알약 현장조치에 '미등록현장확인필요' 자동 마킹 →
+    //    Quick Task 'unregistered-check' 에서 매칭되어 Agent 확인 과제로 잡힘.
+    //    Notion에 없는 행은 candidate 로 표시.
     // ------------------------------------------------------------------------
     {
         id: 'ahnlab-unregistered',
-        name: '알약 미등록 사용자 (용인 추정)',
-        emoji: '❓',
-        description: '용인 추정 후보 추출 (수동 확인 필요)',
+        name: '알약 미등록 사용자 (용인/마곡 추정)',
+        emoji: '🪪',
+        description: '미등록 → Agent 확인 과제로 자동 등록',
         sampleFilename: '용인알약미등록사용자정보출력.xlsx',
         detect: (headers) => {
             const set = new Set(headers.map(h => String(h).trim()));
@@ -271,10 +274,13 @@ export const SOURCES: SourceDef[] = [
             if (os) updates.push({ field: 'OS type', value: os });
             const ip = String(row['IP'] ?? '').trim();
             if (ip) updates.push({ field: 'QA)네트워크 IP', value: ip });
+            // 자동 마킹: 매칭된 자산을 Quick Task 'unregistered-check' 큐에 진입시킴.
+            // (이미 같은 태그가 있어도 멀티셀렉트라 중복 없이 멱등)
+            updates.push({ field: 'M)알약 현장조치', value: '미등록현장확인필요' });
             return updates;
         },
         unmatchedBehavior: 'candidate',
-        historyLabel: () => '알약 미등록 사용자 임포트',
+        historyLabel: () => '알약 미등록 사용자 임포트 → Agent 확인 과제 등록',
     },
 ];
 
