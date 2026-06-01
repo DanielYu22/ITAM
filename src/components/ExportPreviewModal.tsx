@@ -18,6 +18,8 @@ interface ExportPreviewModalProps {
     assets: Asset[];
     schema: string[];
     schemaProperties?: Record<string, NotionProperty>;
+    /** Phase 2: 이번 세션에서 변경된 자산 id 집합 (변경분만 내보내기용) */
+    dirtyIds?: Set<string>;
 }
 
 export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
@@ -26,9 +28,18 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
     assets,
     schema,
     schemaProperties,
+    dirtyIds,
 }) => {
     const [copied, setCopied] = useState(false);
     const [downloaded, setDownloaded] = useState(false);
+    // Phase 2: 변경분만 토글
+    const [onlyDirty, setOnlyDirty] = useState(false);
+
+    // 변경분만 필터
+    const filteredAssets = useMemo(() => {
+        if (!onlyDirty || !dirtyIds || dirtyIds.size === 0) return assets;
+        return assets.filter(a => dirtyIds.has(a.id));
+    }, [assets, onlyDirty, dirtyIds]);
 
     // 타이틀 컬럼을 맨 앞으로 정렬
     const fullSchema = useMemo(() => {
@@ -51,8 +62,8 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
 
     const titleColumn = fullSchema[0] || 'Name';
     const userFacingAssets = useMemo(
-        () => filterUserFacingAssets(assets, titleColumn),
-        [assets, titleColumn]
+        () => filterUserFacingAssets(filteredAssets, titleColumn),
+        [filteredAssets, titleColumn]
     );
 
     // 미리보기용 데이터 (최대 10행)
@@ -171,6 +182,40 @@ export const ExportPreviewModal: React.FC<ExportPreviewModalProps> = ({
                             <Text style={styles.summaryHighlight}>{userFacingAssets.length}개</Text> 항목 • {fullSchema.length}개 컬럼
                         </Text>
                     </View>
+
+                    {/* Phase 2: 변경분만 토글 */}
+                    {dirtyIds && dirtyIds.size > 0 && (
+                        <TouchableOpacity
+                            style={[
+                                {
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    gap: 8,
+                                    paddingHorizontal: 12,
+                                    paddingVertical: 10,
+                                    backgroundColor: onlyDirty ? '#fef3c7' : '#f8fafc',
+                                    borderRadius: 10,
+                                    marginHorizontal: 16,
+                                    marginBottom: 8,
+                                    borderWidth: 1,
+                                    borderColor: onlyDirty ? '#fde047' : '#e2e8f0',
+                                },
+                            ]}
+                            onPress={() => setOnlyDirty(v => !v)}
+                        >
+                            <View style={{
+                                width: 18, height: 18, borderRadius: 4,
+                                backgroundColor: onlyDirty ? '#a16207' : '#ffffff',
+                                borderWidth: 1.5, borderColor: onlyDirty ? '#a16207' : '#cbd5e1',
+                                alignItems: 'center', justifyContent: 'center',
+                            }}>
+                                {onlyDirty && <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '900' }}>✓</Text>}
+                            </View>
+                            <Text style={{ fontSize: 12, fontWeight: '700', color: onlyDirty ? '#a16207' : '#475569', flex: 1 }}>
+                                이번 세션에서 변경된 자산만 ({dirtyIds.size}건)
+                            </Text>
+                        </TouchableOpacity>
+                    )}
 
                     {/* Preview Table */}
                     <View style={styles.previewContainer}>

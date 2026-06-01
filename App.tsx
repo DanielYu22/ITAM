@@ -59,6 +59,8 @@ import {
 import { InfrastructureDbClient, RoomNode } from './src/lib/infrastructureDb';
 import { CompaniesDbClient, CompanyInfo } from './src/lib/companiesDb';
 import { InfrastructureAssetsDbClient, InfraAsset } from './src/lib/infrastructureAssetsDb';
+import { recordChange, ChangeSource } from './src/lib/changeLog';
+import { getAssetSite } from './src/lib/sites';
 import {
   SiteId,
   SitesOverrides,
@@ -134,6 +136,8 @@ export default function App() {
   const [infraNodesById, setInfraNodesById] = useState<Map<string, RoomNode>>(new Map());
   const [companies, setCompanies] = useState<CompanyInfo[]>([]);
   const [infraAssets, setInfraAssets] = useState<InfraAsset[]>([]);
+  // Phase 2: 이번 세션에서 변경된 자산 id Set — export "변경분만" 필터용
+  const [dirtyIds, setDirtyIds] = useState<Set<string>>(new Set());
   const [infraDbClient] = useState(() => new InfrastructureDbClient());
   const [companiesDbClient] = useState(() => new CompaniesDbClient());
   const [infraAssetsClient] = useState(() => new InfrastructureAssetsDbClient());
@@ -682,6 +686,12 @@ export default function App() {
 
     try {
       const type = schemaProperties[field]?.type || 'rich_text';
+      // Phase 2: ChangeLog 용 old value 캡처
+      const oldAsset = assets.find(a => a.id === id);
+      const oldValue = String((oldAsset?.values as any)?.[field] ?? '');
+      const titleProp = Object.keys(schemaProperties).find(k => schemaProperties[k].type === 'title') || 'Name';
+      const assetName = String((oldAsset?.values as any)?.[titleProp] ?? id.slice(0, 8));
+
       await notionClient.updatePage(id, field, value, type);
 
       setAssets(prev => prev.map(asset => {
@@ -693,11 +703,27 @@ export default function App() {
         }
         return asset;
       }));
+      setDirtyIds(prev => { const n = new Set(prev); n.add(id); return n; });
+
+      // ChangeLog 기록 — 처리이력은 자체적으로 누적되므로 제외 (중복 방지)
+      if (field !== HISTORY_FIELD_NAME && oldValue !== value && oldAsset) {
+        const siteId = getAssetSite(oldAsset, effectiveSites);
+        const siteLabel = siteId === 'yongin' ? '용인' : siteId === 'magok' ? '마곡' : siteId === 'hyangnam' ? '향남' : undefined;
+        recordChange({
+          assetId: id,
+          assetName,
+          field,
+          oldValue,
+          newValue: value,
+          site: siteLabel,
+          source: '수동 편집',
+        });
+      }
     } catch (error) {
       console.error('[App] Update error:', error);
       Alert.alert('Error', 'Failed to update asset');
     }
-  }, [notionClient, schemaProperties]);
+  }, [notionClient, schemaProperties, assets, effectiveSites]);
 
   // 템플릿 저장 (새로 저장 또는 덮어쓰기)
   const saveTemplate = useCallback(async (name: string, overwriteId?: string) => {
@@ -1011,7 +1037,24 @@ export default function App() {
     setLocationSelectedAssets(prev => prev.map(a =>
       a.id === asset.id ? { ...a, values: updatedValues } : a
     ));
-  }, [notionClient, schemaProperties]);
+    setDirtyIds(prev => { const n = new Set(prev); n.add(asset.id); return n; });
+
+    // Phase 2: 변경된 필드를 ChangeLog 에 기록 (fire-and-forget)
+    const titlePropName = Object.keys(schemaProperties).find(k => schemaProperties[k].type === 'title') || 'Name';
+    const assetName = String((asset.values as any)[titlePropName] ?? asset.id.slice(0, 8));
+    const siteId = getAssetSite(asset, effectiveSites);
+    const siteLabel = siteId === 'yongin' ? '용인' : siteId === 'magok' ? '마곡' : siteId === 'hyangnam' ? '향남' : undefined;
+    for (const u of clearUpdates) {
+      if (failed.find(f => f.field === u.field)) continue;
+      const oldVal = String((asset.values as any)[u.field] ?? '');
+      if (oldVal === u.newValue) continue;
+      recordChange({
+        assetId: asset.id, assetName, field: u.field,
+        oldValue: oldVal, newValue: u.newValue,
+        site: siteLabel, source: 'Quick Task 완료',
+      });
+    }
+  }, [notionClient, schemaProperties, effectiveSites]);
 
   // 홈으로 돌아가기
   const handleBackToLocation = () => {
@@ -1375,6 +1418,7 @@ export default function App() {
               assets={fieldWorkConfig ? workFilteredAssets : assets}
               schema={schema}
               schemaProperties={schemaProperties}
+              dirtyIds={dirtyIds}
             />
           </>
         ) : (
