@@ -9,7 +9,39 @@
  *   roomKey 는 'building||floor||room' (case-sensitive, 정확히 L)건물 등의 값)
  */
 
-export type LayoutObjectType = 'wall' | 'table' | 'asset';
+export type LayoutObjectType =
+    | 'wall' | 'table' | 'asset'
+    // Phase 3 P0: 안전·인프라 도면 필수 객체
+    | 'door' | 'window' | 'exit'
+    | 'outlet' | 'gas' | 'water' | 'aisle';
+
+/** 객체 카테고리별 한글 라벨 (UI 표시용) */
+export const OBJECT_TYPE_LABEL: Record<LayoutObjectType, string> = {
+    wall: '벽',
+    table: '테이블',
+    asset: '자산',
+    door: '문',
+    window: '창문',
+    exit: '비상구',
+    outlet: '콘센트',
+    gas: '가스',
+    water: '물',
+    aisle: '통로',
+};
+
+/** 카테고리별 이모지 (캔버스 표시용) */
+export const OBJECT_TYPE_EMOJI: Record<LayoutObjectType, string> = {
+    wall: '',
+    table: '',
+    asset: '',
+    door: '🚪',
+    window: '🪟',
+    exit: '🚨',
+    outlet: '🔌',
+    gas: '🔥',
+    water: '💧',
+    aisle: '➡️',
+};
 
 export interface LayoutObject {
     id: string;
@@ -74,12 +106,27 @@ export const DEFAULT_SIZES: Record<LayoutObjectType, { width: number; height: nu
     wall: { width: 200, height: 14 },
     table: { width: 160, height: 100 },
     asset: { width: 110, height: 70 },
+    // Phase 3 신규
+    door: { width: 70, height: 14 },
+    window: { width: 100, height: 14 },
+    exit: { width: 60, height: 60 },
+    outlet: { width: 36, height: 36 },
+    gas: { width: 40, height: 40 },
+    water: { width: 40, height: 40 },
+    aisle: { width: 160, height: 36 },
 };
 
 export const DEFAULT_COLORS: Record<LayoutObjectType, string> = {
     wall: '#475569',
     table: '#fbbf24',
     asset: '#6366f1',
+    door: '#92400e',
+    window: '#7dd3fc',
+    exit: '#dc2626',
+    outlet: '#1f2937',
+    gas: '#f97316',
+    water: '#0ea5e9',
+    aisle: 'rgba(168, 162, 158, 0.35)',  // 반투명 회색 — 길 표시
 };
 
 export const makeObject = (
@@ -87,11 +134,13 @@ export const makeObject = (
     overrides: Partial<LayoutObject> = {},
 ): LayoutObject => {
     const size = DEFAULT_SIZES[type];
+    // 캔버스 중앙에 작은 무작위 오프셋 — 연속 추가 시 겹침 방지
+    const jitter = () => (Math.random() - 0.5) * 80;
     return {
         id: `obj-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         type,
-        x: CANVAS_WIDTH / 2 - size.width / 2,
-        y: CANVAS_HEIGHT / 2 - size.height / 2,
+        x: CANVAS_WIDTH / 2 - size.width / 2 + jitter(),
+        y: CANVAS_HEIGHT / 2 - size.height / 2 + jitter(),
         width: size.width,
         height: size.height,
         rotation: 0,

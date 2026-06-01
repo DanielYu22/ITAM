@@ -25,7 +25,7 @@ import {
     PanResponder,
     Dimensions,
 } from 'react-native';
-import { X, Save, Plus, Trash2, RotateCw, Square, Box, Cpu, Search } from 'lucide-react-native';
+import { X, Save, Plus, Trash2, RotateCw, Square, Box, Cpu, Search, ZoomIn, ZoomOut, Maximize2, Download } from 'lucide-react-native';
 import { Asset } from '../lib/notion';
 import {
     LayoutObject,
@@ -36,6 +36,8 @@ import {
     emptyLayout,
     makeObject,
     DEFAULT_COLORS,
+    OBJECT_TYPE_LABEL,
+    OBJECT_TYPE_EMOJI,
 } from '../lib/layouts';
 
 interface Props {
@@ -79,9 +81,13 @@ export const LayoutEditorModal: React.FC<Props> = ({
     const [layout, setLayout] = useState<RoomLayout>(() => initialLayout || emptyLayout());
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [showAssetPicker, setShowAssetPicker] = useState(false);
+    const [showMoreTools, setShowMoreTools] = useState(false);
     const [assetSearch, setAssetSearch] = useState('');
     const [labelInput, setLabelInput] = useState('');
     const [saving, setSaving] = useState(false);
+    // Phase 3 P0: 줌 (0.5 ~ 2.5)
+    const [zoom, setZoom] = useState(1);
+    const canvasRef = useRef<View | null>(null);
 
     // 모달 열릴 때마다 초기화
     useEffect(() => {
@@ -93,9 +99,10 @@ export const LayoutEditorModal: React.FC<Props> = ({
         }
     }, [visible, initialLayout]);
 
-    // 캔버스 표시 크기 — 모바일 가로폭에 맞춰 자동 스케일
+    // 캔버스 표시 크기 — 모바일 가로폭에 맞춰 자동 스케일 + 사용자 줌
     const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
-    const canvasDisplayWidth = Math.min(screenWidth - 24, 720);
+    const baseDisplayWidth = Math.min(screenWidth - 24, 720);
+    const canvasDisplayWidth = baseDisplayWidth * zoom;
     const scale = canvasDisplayWidth / CANVAS_WIDTH;
     const canvasDisplayHeight = CANVAS_HEIGHT * scale;
 
@@ -148,9 +155,10 @@ export const LayoutEditorModal: React.FC<Props> = ({
         setSelectedId(null);
     }, [selectedId]);
 
-    const rotateSelected = useCallback(() => {
+    // Phase 3 P0: 클릭은 15도, 길게 누르면 90도 (자유 회전 + 빠른 회전)
+    const rotateSelected = useCallback((step: number = 15) => {
         if (!selected) return;
-        const next = ((selected.rotation || 0) + 90) % 360;
+        const next = (((selected.rotation || 0) + step) % 360 + 360) % 360;
         updateObject(selected.id, { rotation: next });
     }, [selected, updateObject]);
 
@@ -163,6 +171,106 @@ export const LayoutEditorModal: React.FC<Props> = ({
         setShowAssetPicker(false);
         setAssetSearch('');
     };
+
+    // ----- Phase 3 P0: PNG 출력 (웹 환경에서 dom-to-image-like 대신 SVG → 다운로드) -----
+    const exportPNG = useCallback(async () => {
+        if (typeof document === 'undefined') {
+            Alert.alert('지원 안 됨', '웹 브라우저에서만 PNG 출력이 가능해요.');
+            return;
+        }
+        try {
+            // SVG로 캔버스 다시 그리기
+            const svgNS = 'http://www.w3.org/2000/svg';
+            const svg = document.createElementNS(svgNS, 'svg');
+            svg.setAttribute('xmlns', svgNS);
+            svg.setAttribute('width', String(CANVAS_WIDTH));
+            svg.setAttribute('height', String(CANVAS_HEIGHT));
+            svg.setAttribute('viewBox', `0 0 ${CANVAS_WIDTH} ${CANVAS_HEIGHT}`);
+            // 흰 배경
+            const bg = document.createElementNS(svgNS, 'rect');
+            bg.setAttribute('width', String(CANVAS_WIDTH));
+            bg.setAttribute('height', String(CANVAS_HEIGHT));
+            bg.setAttribute('fill', '#ffffff');
+            svg.appendChild(bg);
+            // 그리드
+            for (let i = 0; i <= 10; i++) {
+                const x = (CANVAS_WIDTH / 10) * i;
+                const ln = document.createElementNS(svgNS, 'line');
+                ln.setAttribute('x1', String(x)); ln.setAttribute('y1', '0');
+                ln.setAttribute('x2', String(x)); ln.setAttribute('y2', String(CANVAS_HEIGHT));
+                ln.setAttribute('stroke', '#f1f5f9'); ln.setAttribute('stroke-width', '1');
+                svg.appendChild(ln);
+            }
+            for (let i = 0; i <= 8; i++) {
+                const y = (CANVAS_HEIGHT / 8) * i;
+                const ln = document.createElementNS(svgNS, 'line');
+                ln.setAttribute('x1', '0'); ln.setAttribute('y1', String(y));
+                ln.setAttribute('x2', String(CANVAS_WIDTH)); ln.setAttribute('y2', String(y));
+                ln.setAttribute('stroke', '#f1f5f9'); ln.setAttribute('stroke-width', '1');
+                svg.appendChild(ln);
+            }
+            // 객체
+            layout.objects.forEach(o => {
+                const g = document.createElementNS(svgNS, 'g');
+                const rot = o.rotation || 0;
+                const cx = o.x + o.width / 2;
+                const cy = o.y + o.height / 2;
+                g.setAttribute('transform', `rotate(${rot} ${cx} ${cy})`);
+                const r = document.createElementNS(svgNS, 'rect');
+                r.setAttribute('x', String(o.x)); r.setAttribute('y', String(o.y));
+                r.setAttribute('width', String(o.width)); r.setAttribute('height', String(o.height));
+                r.setAttribute('fill', o.color || DEFAULT_COLORS[o.type]);
+                r.setAttribute('rx', o.type === 'wall' || o.type === 'door' || o.type === 'window' ? '2' : '6');
+                g.appendChild(r);
+                if (o.label || OBJECT_TYPE_EMOJI[o.type]) {
+                    const t = document.createElementNS(svgNS, 'text');
+                    t.setAttribute('x', String(cx)); t.setAttribute('y', String(cy + 5));
+                    t.setAttribute('text-anchor', 'middle');
+                    t.setAttribute('font-size', '14');
+                    t.setAttribute('font-weight', '700');
+                    t.setAttribute('fill', '#ffffff');
+                    t.textContent = `${OBJECT_TYPE_EMOJI[o.type]} ${o.label || ''}`.trim();
+                    g.appendChild(t);
+                }
+                svg.appendChild(g);
+            });
+            // 헤더
+            const head = document.createElementNS(svgNS, 'text');
+            head.setAttribute('x', '12'); head.setAttribute('y', '24');
+            head.setAttribute('font-size', '16');
+            head.setAttribute('font-weight', '800');
+            head.setAttribute('fill', '#0f172a');
+            head.textContent = `${building} · ${floor} · ${room}`;
+            svg.appendChild(head);
+
+            // SVG → Blob → PNG via canvas
+            const xml = new XMLSerializer().serializeToString(svg);
+            const svgBlob = new Blob([xml], { type: 'image/svg+xml;charset=utf-8' });
+            const url = URL.createObjectURL(svgBlob);
+            const img = new Image();
+            img.onload = () => {
+                const cvs = document.createElement('canvas');
+                cvs.width = CANVAS_WIDTH * 2; // 2x 해상도
+                cvs.height = CANVAS_HEIGHT * 2;
+                const ctx = cvs.getContext('2d');
+                if (!ctx) return;
+                ctx.scale(2, 2);
+                ctx.drawImage(img, 0, 0);
+                cvs.toBlob((blob) => {
+                    if (!blob) return;
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(blob);
+                    a.download = `${room}_레이아웃_${new Date().toISOString().slice(0,10)}.png`;
+                    a.click();
+                    URL.revokeObjectURL(a.href);
+                    URL.revokeObjectURL(url);
+                }, 'image/png');
+            };
+            img.src = url;
+        } catch (e) {
+            Alert.alert('출력 실패', '잠시 후 다시 시도해 주세요.');
+        }
+    }, [layout.objects, building, floor, room]);
 
     // ----- 저장 -----
     const handleSave = async () => {
@@ -216,11 +324,76 @@ export const LayoutEditorModal: React.FC<Props> = ({
                         <Cpu size={14} color="#4338ca" />
                         <Text style={[styles.toolBtnText, { color: '#4338ca' }]}>기기</Text>
                     </TouchableOpacity>
+                    {/* Phase 3 P0: 인프라/안전 객체 토글 */}
+                    <TouchableOpacity
+                        style={[styles.toolBtn, showMoreTools && { backgroundColor: '#fee2e2' }]}
+                        onPress={() => setShowMoreTools(v => !v)}
+                    >
+                        <Plus size={14} color={showMoreTools ? '#b91c1c' : '#475569'} />
+                        <Text style={[styles.toolBtnText, showMoreTools && { color: '#b91c1c' }]}>
+                            {showMoreTools ? '닫기' : '더보기'}
+                        </Text>
+                    </TouchableOpacity>
                 </View>
 
-                {/* 캔버스 — TouchableOpacity 가 자식 PanResponder 가로채기 때문에 일반 View 로 */}
-                <View style={styles.canvasWrap}>
+                {/* Phase 3 P0: 확장 객체 툴바 */}
+                {showMoreTools && (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.subToolbar} contentContainerStyle={{ paddingHorizontal: 8, gap: 6 }}>
+                        {(['door', 'window', 'exit', 'outlet', 'gas', 'water', 'aisle'] as LayoutObjectType[]).map(t => (
+                            <TouchableOpacity
+                                key={t}
+                                style={[styles.toolBtn, { backgroundColor: DEFAULT_COLORS[t] === 'rgba(168, 162, 158, 0.35)' ? '#f5f5f4' : DEFAULT_COLORS[t] + '22' }]}
+                                onPress={() => { addObject(t); setShowMoreTools(false); }}
+                            >
+                                <Text style={{ fontSize: 14 }}>{OBJECT_TYPE_EMOJI[t]}</Text>
+                                <Text style={styles.toolBtnText}>{OBJECT_TYPE_LABEL[t]}</Text>
+                            </TouchableOpacity>
+                        ))}
+                    </ScrollView>
+                )}
+
+                {/* Phase 3 P0: 줌·PNG 컨트롤 */}
+                <View style={styles.zoomBar}>
+                    <TouchableOpacity style={styles.zoomBtn} onPress={() => setZoom(z => Math.max(0.5, z - 0.25))}>
+                        <ZoomOut size={13} color="#475569" />
+                    </TouchableOpacity>
+                    <Text style={styles.zoomLabel}>{Math.round(zoom * 100)}%</Text>
+                    <TouchableOpacity style={styles.zoomBtn} onPress={() => setZoom(z => Math.min(2.5, z + 0.25))}>
+                        <ZoomIn size={13} color="#475569" />
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.zoomBtn} onPress={() => setZoom(1)}>
+                        <Maximize2 size={13} color="#475569" />
+                    </TouchableOpacity>
+                    <View style={{ flex: 1 }} />
+                    <TouchableOpacity style={[styles.zoomBtn, { backgroundColor: '#dbeafe' }]} onPress={exportPNG}>
+                        <Download size={13} color="#1d4ed8" />
+                        <Text style={[styles.toolBtnText, { color: '#1d4ed8' }]}>PNG</Text>
+                    </TouchableOpacity>
+                </View>
+
+                {/* 캔버스 — Phase 3 P0: ScrollView 로 감싸 줌 시 팬 가능 */}
+                <ScrollView
+                    style={styles.canvasWrap}
+                    contentContainerStyle={{
+                        minWidth: canvasDisplayWidth + 24,
+                        minHeight: canvasDisplayHeight + 24,
+                        padding: 12,
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                    }}
+                    horizontal={false}
+                    showsVerticalScrollIndicator
+                    showsHorizontalScrollIndicator
+                    bounces={false}
+                >
+                    <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator
+                        bounces={false}
+                        contentContainerStyle={{ minWidth: canvasDisplayWidth }}
+                    >
                     <View
+                        ref={canvasRef as any}
                         style={[
                             styles.canvas,
                             { width: canvasDisplayWidth, height: canvasDisplayHeight },
@@ -272,7 +445,8 @@ export const LayoutEditorModal: React.FC<Props> = ({
                             />
                         ))}
                     </View>
-                </View>
+                    </ScrollView>
+                </ScrollView>
 
                 {/* 선택된 객체 옵션 패널 */}
                 {selected && (
@@ -281,13 +455,19 @@ export const LayoutEditorModal: React.FC<Props> = ({
                             <Text style={styles.selectedLabel}>
                                 {selected.type === 'asset'
                                     ? `🖥️ ${selected.label}`
-                                    : selected.type === 'table'
-                                        ? '🟧 테이블'
-                                        : '⬛ 벽'}
+                                    : `${OBJECT_TYPE_EMOJI[selected.type] || ''} ${OBJECT_TYPE_LABEL[selected.type]}${selected.label ? ' · ' + selected.label : ''}`}
                             </Text>
-                            <TouchableOpacity style={styles.smallBtn} onPress={rotateSelected}>
+                            <TouchableOpacity style={styles.smallBtn} onPress={() => rotateSelected(-15)}>
+                                <RotateCw size={12} color="#475569" style={{ transform: [{ scaleX: -1 }] }} />
+                                <Text style={styles.smallBtnText}>-15°</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.smallBtn} onPress={() => rotateSelected(15)}>
                                 <RotateCw size={12} color="#475569" />
-                                <Text style={styles.smallBtnText}>회전</Text>
+                                <Text style={styles.smallBtnText}>+15°</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity style={styles.smallBtn} onPress={() => rotateSelected(90)}>
+                                <RotateCw size={12} color="#475569" />
+                                <Text style={styles.smallBtnText}>+90°</Text>
                             </TouchableOpacity>
                             <TouchableOpacity style={[styles.smallBtn, { backgroundColor: '#fee2e2' }]} onPress={deleteSelected}>
                                 <Trash2 size={12} color="#b91c1c" />
@@ -606,11 +786,43 @@ const styles = StyleSheet.create({
     },
     toolBtnText: { fontSize: 12, fontWeight: '700', color: '#475569' },
 
+    subToolbar: {
+        backgroundColor: '#ffffff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+        paddingVertical: 6,
+        maxHeight: 44,
+    },
+    zoomBar: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        backgroundColor: '#ffffff',
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
+    },
+    zoomBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 3,
+        backgroundColor: '#f1f5f9',
+        paddingHorizontal: 8,
+        paddingVertical: 5,
+        borderRadius: 6,
+    },
+    zoomLabel: {
+        fontSize: 11,
+        fontWeight: '700',
+        color: '#475569',
+        minWidth: 38,
+        textAlign: 'center',
+    },
+
     canvasWrap: {
         flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-        padding: 12,
+        backgroundColor: '#f1f5f9',
     },
     canvas: {
         backgroundColor: '#ffffff',
