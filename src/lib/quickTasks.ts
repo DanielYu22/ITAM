@@ -39,6 +39,11 @@ export const BACKUP_STATUS_OPTIONS = ['백업필요', '백업완료'];
 // 미등록 기기 처리비고 (rich_text) — 미등록 사용자 임포트 시 작성하는 작업비고
 export const UNREGISTERED_MEMO_FIELD = 'M)미등록 처리비고';
 
+// Synology Client 설치 여부 (select) — 운영 필수
+// 'M)시놀로지 상태'(multi_select)는 백업 작업 상태(대기/접속불가/완료) 추적용으로 의미 다름
+export const SYNOLOGY_CLIENT_FIELD = 'M)Synology Client 설치';
+export const SYNOLOGY_CLIENT_OPTIONS = ['설치됨', '미설치', '설치불가', '미대상'];
+
 // 알약 온라인구분의 정상 운영 값 — 이 값이 아니거나 비어있으면 점검 대상
 // '미등록'은 별도 흐름(임포트 → Quick Task 'unregistered-check')이므로 여기서 제외
 export const ALYAK_STATUS_NORMAL = ['온라인', '폐쇄망', '오프라인', '알약대상아님', '알약대상아님(나보타)'];
@@ -440,6 +445,9 @@ export const QUICK_TASKS: QuickTaskDef[] = [
     //   L)건물 / L)층 / L)연구실 (위치)
     //   PC Hostname / QA)기기 IP (식별)
     //   User)기기관리자 / User)소속팀 (담당)
+    //   M)알약 온라인구분 (백신/알약 분류) ← 백신 관련 필수
+    //   QA)백업 방법 (백업 분류) ← 백업 필수
+    //   M)Synology Client 설치 ← Synology Client 설치 여부 필수
     // ------------------------------------------------------------------------
     {
         id: 'data-completeness',
@@ -449,7 +457,7 @@ export const QUICK_TASKS: QuickTaskDef[] = [
         emoji: '📝',
         color: '#0891b2',
         bgColor: '#cffafe',
-        description: '위치·호스트·IP·담당자·팀 중 비어있는 컬럼이 있는 기기',
+        description: '위치·호스트·IP·담당자·팀·백신·백업·시놀로지 중 비어있는 컬럼이 있는 기기',
         buildConfig: ({ now }) => ({
             locationHierarchy: ['L)건물', 'L)층', 'L)연구실'],
             sortColumn: 'L)연구실',
@@ -460,13 +468,20 @@ export const QUICK_TASKS: QuickTaskDef[] = [
                     id: `qt-complete-${now.getTime()}`,
                     operator: 'or',
                     conditions: [
-                        { id: `qt-complete-b-${now.getTime()}`,   column: 'L)건물',          type: 'is_empty', values: [] },
-                        { id: `qt-complete-f-${now.getTime()}`,   column: 'L)층',            type: 'is_empty', values: [] },
-                        { id: `qt-complete-r-${now.getTime()}`,   column: 'L)연구실',        type: 'is_empty', values: [] },
-                        { id: `qt-complete-h-${now.getTime()}`,   column: 'PC Hostname',     type: 'is_empty', values: [] },
-                        { id: `qt-complete-i-${now.getTime()}`,   column: 'QA)기기 IP',      type: 'is_empty', values: [] },
-                        { id: `qt-complete-m-${now.getTime()}`,   column: 'User)기기관리자', type: 'is_empty', values: [] },
-                        { id: `qt-complete-t-${now.getTime()}`,   column: 'User)소속팀',     type: 'is_empty', values: [] },
+                        // 위치
+                        { id: `qt-complete-b-${now.getTime()}`,   column: 'L)건물',           type: 'is_empty', values: [] },
+                        { id: `qt-complete-f-${now.getTime()}`,   column: 'L)층',             type: 'is_empty', values: [] },
+                        { id: `qt-complete-r-${now.getTime()}`,   column: 'L)연구실',         type: 'is_empty', values: [] },
+                        // 식별
+                        { id: `qt-complete-h-${now.getTime()}`,   column: 'PC Hostname',      type: 'is_empty', values: [] },
+                        { id: `qt-complete-i-${now.getTime()}`,   column: 'QA)기기 IP',       type: 'is_empty', values: [] },
+                        // 담당
+                        { id: `qt-complete-m-${now.getTime()}`,   column: 'User)기기관리자',  type: 'is_empty', values: [] },
+                        { id: `qt-complete-t-${now.getTime()}`,   column: 'User)소속팀',      type: 'is_empty', values: [] },
+                        // 백신/백업/시놀로지
+                        { id: `qt-complete-a-${now.getTime()}`,   column: 'M)알약 온라인구분',type: 'is_empty', values: [] },
+                        { id: `qt-complete-k-${now.getTime()}`,   column: 'QA)백업 방법',     type: 'is_empty', values: [] },
+                        { id: `qt-complete-s-${now.getTime()}`,   column: SYNOLOGY_CLIENT_FIELD, type: 'is_empty', values: [] },
                     ],
                 },
             ],
@@ -474,6 +489,7 @@ export const QUICK_TASKS: QuickTaskDef[] = [
                 'L)건물', 'L)층', 'L)연구실',
                 'PC Hostname', 'QA)기기 IP',
                 'User)기기관리자', 'User)소속팀',
+                'M)알약 온라인구분', 'QA)백업 방법', SYNOLOGY_CLIENT_FIELD,
             ],
         }),
         // 빈 컬럼을 채우면 조건 (is_empty) 이 false 가 되어 자동으로 매칭 해제됨.

@@ -73,6 +73,8 @@ import {
   HISTORY_FIELD_NAME,
   SYNOLOGY_FIELD_NAME,
   UNREGISTERED_MEMO_FIELD,
+  SYNOLOGY_CLIENT_FIELD,
+  SYNOLOGY_CLIENT_OPTIONS,
   SYNOLOGY_OPTIONS,
   FIELD_SUPPORT_STATUS_FIELD,
   FIELD_SUPPORT_STATUS_OPTIONS,
@@ -247,6 +249,19 @@ export default function App() {
           }
         } catch (e) {
           console.warn(`[App] '${FIELD_SUPPORT_MEMO_FIELD}' 필드 자동 생성 실패:`, e);
+        }
+      }
+
+      // Synology Client 설치 필드 (select: 설치됨/미설치/설치불가/미대상)
+      if (!schemaProps[SYNOLOGY_CLIENT_FIELD]) {
+        try {
+          const created = await notionClient.createDatabaseProperty(SYNOLOGY_CLIENT_FIELD, 'select');
+          if (created) {
+            console.log(`[App] '${SYNOLOGY_CLIENT_FIELD}' 필드(select) 자동 생성. 옵션: ${SYNOLOGY_CLIENT_OPTIONS.join(', ')}`);
+            schemaChanged = true;
+          }
+        } catch (e) {
+          console.warn(`[App] '${SYNOLOGY_CLIENT_FIELD}' 필드 자동 생성 실패:`, e);
         }
       }
 
