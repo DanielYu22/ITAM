@@ -31,12 +31,17 @@ import {
     appendHistoryLine,
     getCurrentMonthLabel,
     getCurrentQuarterLabel,
+    ALYAK_STATUS_NORMAL,
 } from '../lib/quickTasks';
+import { SiteDef, SiteId, SITES_DEFAULTS } from '../lib/sites';
 
 interface Props {
     visible: boolean;
     onClose: () => void;
     assets: Asset[];
+    /** Phase 1 픽스: 사이트 컨텍스트 표시 + 라벨 */
+    currentSite?: SiteId;
+    effectiveSites?: SiteDef[];
     schemaProperties: Record<string, NotionProperty>;
     onUpdate: (id: string, field: string, value: string, type: string) => Promise<void>;
 }
@@ -44,10 +49,10 @@ interface Props {
 type Step = 'select' | 'preview' | 'running' | 'done';
 type CycleId = 'closed-network' | 'quarterly-backup' | 'alyak-status-check';
 
-// 알약 온라인구분의 정상 운영 값 — 이 값이 아니거나 비어있으면 점검 대상
-// '미등록'은 별도 흐름(미등록사용자 임포트 → Quick Task 'unregistered-check')이므로
-// 점검 사이클에서는 제외 (정상으로 취급)
-const ALYAK_STATUS_NORMAL = ['온라인', '폐쇄망', '오프라인', '알약대상아님', '알약대상아님(나보타)', '미등록'];
+// Phase 1 픽스: '미등록'은 별도 흐름이지만 사이클 마킹 대상에서 제외하기 위해
+// 정상으로 취급. quickTasks.ts 의 ALYAK_STATUS_NORMAL 에 '미등록' 포함하지 않으므로
+// 여기 한 줄로 보강 (사이클 전용 화이트리스트).
+const ALYAK_STATUS_NORMAL_RESET = [...ALYAK_STATUS_NORMAL, '미등록'];
 
 // ---------------------------------------------------------------------------
 // 사이클 정의 — 새 사이클은 여기 한 곳에만 추가하면 됨
@@ -113,7 +118,7 @@ const CYCLE_DEFS: CycleDef[] = [
         targetFilter: (a) => {
             const v = String((a.values as any)['M)알약 온라인구분'] ?? '').trim();
             // 빈 값이거나 정상값 list 에 없으면 점검 대상
-            return v === '' || !ALYAK_STATUS_NORMAL.includes(v);
+            return v === '' || !ALYAK_STATUS_NORMAL_RESET.includes(v);
         },
         statusField: 'M)알약 현장조치',
         needTag: '온라인구분점검필요',
@@ -123,6 +128,8 @@ const CYCLE_DEFS: CycleDef[] = [
 ];
 
 export const MonthlyResetModal: React.FC<Props> = ({
+    currentSite,
+    effectiveSites,
     visible,
     onClose,
     assets,
@@ -240,11 +247,16 @@ export const MonthlyResetModal: React.FC<Props> = ({
                     <View style={{ flex: 1, alignItems: 'center' }}>
                         <Text style={styles.title}>정기 초기화</Text>
                         <Text style={styles.subtitle}>
-                            {step === 'select'
-                                ? '큐 사이클 시작'
-                                : activeCycle
-                                    ? activeCycle.title
-                                    : ''}
+                            {(() => {
+                                const sd = (effectiveSites || SITES_DEFAULTS).find(s => s.id === currentSite);
+                                const siteLabel = currentSite && currentSite !== 'all'
+                                    ? `${sd?.emoji ? sd.emoji + ' ' : ''}${sd?.name || currentSite} · `
+                                    : '';
+                                const ctx = step === 'select'
+                                    ? '큐 사이클 시작'
+                                    : activeCycle?.title || '';
+                                return `${siteLabel}${ctx}`;
+                            })()}
                         </Text>
                     </View>
                     <TouchableOpacity style={styles.closeBtn} onPress={handleClose}>

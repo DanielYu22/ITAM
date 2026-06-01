@@ -217,7 +217,7 @@ export default function App() {
       // Notion에서 직접 추가하거나, 처음 입력하는 값으로 자동 등록됨.
       if (!schemaProps[SYNOLOGY_FIELD_NAME]) {
         try {
-          const created = await notionClient.createDatabaseProperty(SYNOLOGY_FIELD_NAME, 'multi_select');
+          const created = await notionClient.createDatabaseProperty(SYNOLOGY_FIELD_NAME, 'multi_select', SYNOLOGY_OPTIONS);
           if (created) {
             console.log(`[App] '${SYNOLOGY_FIELD_NAME}' 필드(multi_select)를 Notion DB에 자동 생성했습니다. 옵션: ${SYNOLOGY_OPTIONS.join(', ')}`);
             schemaChanged = true;
@@ -230,7 +230,7 @@ export default function App() {
       // 현장지원 상태 필드 (select: 요청/완료)
       if (!schemaProps[FIELD_SUPPORT_STATUS_FIELD]) {
         try {
-          const created = await notionClient.createDatabaseProperty(FIELD_SUPPORT_STATUS_FIELD, 'select');
+          const created = await notionClient.createDatabaseProperty(FIELD_SUPPORT_STATUS_FIELD, 'select', FIELD_SUPPORT_STATUS_OPTIONS);
           if (created) {
             console.log(`[App] '${FIELD_SUPPORT_STATUS_FIELD}' 필드(select) 자동 생성. 옵션: ${FIELD_SUPPORT_STATUS_OPTIONS.join(', ')}`);
             schemaChanged = true;
@@ -255,7 +255,7 @@ export default function App() {
       // Synology Client 설치 필드 (select: 설치됨/미설치/설치불가/미대상)
       if (!schemaProps[SYNOLOGY_CLIENT_FIELD]) {
         try {
-          const created = await notionClient.createDatabaseProperty(SYNOLOGY_CLIENT_FIELD, 'select');
+          const created = await notionClient.createDatabaseProperty(SYNOLOGY_CLIENT_FIELD, 'select', SYNOLOGY_CLIENT_OPTIONS);
           if (created) {
             console.log(`[App] '${SYNOLOGY_CLIENT_FIELD}' 필드(select) 자동 생성. 옵션: ${SYNOLOGY_CLIENT_OPTIONS.join(', ')}`);
             schemaChanged = true;
@@ -281,7 +281,7 @@ export default function App() {
       // 분기 백업 상태 필드 (multi_select: 백업필요/백업완료)
       if (!schemaProps[BACKUP_STATUS_FIELD]) {
         try {
-          const created = await notionClient.createDatabaseProperty(BACKUP_STATUS_FIELD, 'multi_select');
+          const created = await notionClient.createDatabaseProperty(BACKUP_STATUS_FIELD, 'multi_select', BACKUP_STATUS_OPTIONS);
           if (created) {
             console.log(`[App] '${BACKUP_STATUS_FIELD}' 필드(multi_select) 자동 생성. 옵션: ${BACKUP_STATUS_OPTIONS.join(', ')}`);
             schemaChanged = true;
@@ -1604,7 +1604,11 @@ export default function App() {
             setShowMonthlyResetModal(false);
             loadData();
           }}
-          assets={assets}
+          // Phase 1 픽스: 사이트 컨텍스트가 적용된 자산만 사이클 대상
+          // (용인에서 누르면 마곡/향남 마킹 안 됨)
+          assets={siteFilteredAssets}
+          currentSite={currentSite}
+          effectiveSites={effectiveSites}
           schemaProperties={schemaProperties}
           onUpdate={handleUpdateAsset}
         />

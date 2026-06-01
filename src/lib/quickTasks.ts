@@ -621,12 +621,41 @@ export const computeClearUpdates = (
 
 /**
  * 처리이력 필드에 새 한 줄을 prepend (최신이 위로).
+ *
+ * Phase 1 픽스: Notion rich_text 는 한 block 당 2000자 제한이라
+ * 오랫동안 누적되면 임포트/완료 API 가 통째로 실패. 1800자 도달 시
+ * 가장 오래된 줄부터 잘라내고 `[...이전 N줄 생략]` 마커 prepend.
  */
+const HISTORY_MAX_CHARS = 1800;
+
 export const appendHistoryLine = (existing: string, label: string, now: Date = new Date()): string => {
     const date = now.toISOString().slice(0, 10);
     const newLine = `[${date}] ${label}`;
     if (!existing || existing.trim() === '') return newLine;
-    return `${newLine}\n${existing}`;
+    let combined = `${newLine}\n${existing}`;
+    if (combined.length <= HISTORY_MAX_CHARS) return combined;
+
+    // 가장 오래된 줄부터 자르기
+    const lines = combined.split('\n');
+    let truncated = 0;
+    while (combined.length > HISTORY_MAX_CHARS && lines.length > 2) {
+        lines.pop();
+        truncated++;
+        combined = lines.join('\n');
+    }
+    if (truncated > 0) {
+        // 잘렸음을 표시 — 다음 호출에서 또 잘리지 않게 마커 한 줄
+        const marker = `[...이전 ${truncated}줄 생략]`;
+        const finalLines = [...lines, marker];
+        let final = finalLines.join('\n');
+        // 마커 추가 후에도 초과하면 더 자르기
+        while (final.length > HISTORY_MAX_CHARS && finalLines.length > 2) {
+            finalLines.splice(-2, 1); // 마커 위쪽 줄 제거
+            final = finalLines.join('\n');
+        }
+        return final;
+    }
+    return combined;
 };
 
 // ============================================================================

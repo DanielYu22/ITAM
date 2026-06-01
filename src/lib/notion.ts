@@ -355,18 +355,24 @@ export class NotionClient {
     }
 
     // 데이터베이스에 새 속성(컬럼) 생성
-    async createDatabaseProperty(propertyName: string, type: string = 'rich_text'): Promise<boolean> {
+    async createDatabaseProperty(
+        propertyName: string,
+        type: string = 'rich_text',
+        // Phase 1 픽스: select/multi_select 생성 시 옵션도 같이 주입
+        options?: string[],
+    ): Promise<boolean> {
         try {
             const targetUrl = `${API_BASE_URL}/api/notion/v1/databases/${this.databaseId}`;
 
             // 속성 타입에 따른 기본 구조
             let propertyConfig: any = {};
+            const optList = (options || []).map(name => ({ name }));
             switch (type) {
                 case 'select':
-                    propertyConfig = { select: { options: [] } };
+                    propertyConfig = { select: { options: optList } };
                     break;
                 case 'multi_select':
-                    propertyConfig = { multi_select: { options: [] } };
+                    propertyConfig = { multi_select: { options: optList } };
                     break;
                 case 'number':
                     propertyConfig = { number: { format: 'number' } };
