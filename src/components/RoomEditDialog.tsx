@@ -16,7 +16,7 @@ import {
     TextInput,
     Alert,
 } from 'react-native';
-import { X, Save, Trash2, Plus, Map as MapIcon } from 'lucide-react-native';
+import { X, Save, Trash2, Plus, Map as MapIcon, Pencil } from 'lucide-react-native';
 import {
     RoomInfo,
     RoomType,
@@ -26,19 +26,35 @@ import {
     MeetingRoomInfo,
 } from '../lib/infrastructure';
 import { CompanyInfo } from '../lib/companiesDb';
+import {
+    InfraAsset,
+    INFRA_ASSET_CATEGORIES,
+    InfraAssetCategory,
+    INFRA_ASSET_STATUSES,
+    InfraAssetStatus,
+    CATEGORY_EMOJI,
+} from '../lib/infrastructureAssetsDb';
 
 interface Props {
     visible: boolean;
     onClose: () => void;
     room: RoomInfo & { occupantIds?: string[] };
+    /** Notion 룸 row ID — 인프라 자산 relation 매칭용 */
+    roomId?: string;
     /** UI 표시용 경로 */
     building: string;
     floor: string;
     /** 입주사 마스터 (relation 선택용) */
     companies?: CompanyInfo[];
+    /** 이 룸에 연결된 인프라 자산 목록 (이미 필터된 상태) */
+    infraAssets?: InfraAsset[];
     onSave: (next: RoomInfo & { occupantIds?: string[] }) => Promise<void>;
     onDelete?: () => Promise<void>;
     onOpenLayout?: () => void;
+    /** 인프라 자산 CRUD — App.tsx 에서 주입 */
+    onCreateInfraAsset?: (input: Partial<InfraAsset> & { name: string }) => Promise<void>;
+    onUpdateInfraAsset?: (id: string, patch: Partial<InfraAsset>) => Promise<void>;
+    onArchiveInfraAsset?: (id: string) => Promise<void>;
 }
 
 const ROOM_TYPES: RoomType[] = ['lab', 'server-room', 'office', 'meeting-room', 'other'];
@@ -49,13 +65,21 @@ export const RoomEditDialog: React.FC<Props> = ({
     visible,
     onClose,
     room,
+    roomId,
     building,
     floor,
     companies,
+    infraAssets,
     onSave,
     onDelete,
     onOpenLayout,
+    onCreateInfraAsset,
+    onUpdateInfraAsset,
+    onArchiveInfraAsset,
 }) => {
+    // 인프라 자산 인라인 편집 상태
+    const [editingAsset, setEditingAsset] = useState<InfraAsset | 'new' | null>(null);
+    const [assetForm, setAssetForm] = useState<Partial<InfraAsset>>({});
     const [name, setName] = useState(room.name);
     const [type, setType] = useState<RoomType>(room.type || 'lab');
     const [notes, setNotes] = useState(room.notes || '');
@@ -155,6 +179,7 @@ export const RoomEditDialog: React.FC<Props> = ({
     };
 
     return (
+        <>
         <Modal visible={visible} animationType="slide" presentationStyle="pageSheet">
             <View style={styles.container}>
                 <View style={styles.header}>
@@ -493,6 +518,61 @@ export const RoomEditDialog: React.FC<Props> = ({
                         </>
                     )}
 
+                    {/* 인프라 자산 (서버/스위치/방화벽 등) — 서버실/기타에 주로 노출 */}
+                    {(type === 'server-room' || type === 'other' || (infraAssets && infraAssets.length > 0)) && (
+                        <>
+                            <Text style={styles.sectionDivider}>🔧 이 룸의 장비 {infraAssets && infraAssets.length > 0 && `(${infraAssets.length})`}</Text>
+                            {(!infraAssets || infraAssets.length === 0) ? (
+                                <Text style={styles.helperText}>아직 등록된 장비가 없어요</Text>
+                            ) : (
+                                <View style={{ gap: 4 }}>
+                                    {infraAssets.map(a => (
+                                        <TouchableOpacity
+                                            key={a.id}
+                                            style={styles.assetRow}
+                                            onPress={() => {
+                                                setEditingAsset(a);
+                                                setAssetForm({ ...a });
+                                            }}
+                                        >
+                                            <Text style={styles.assetEmoji}>{a.category ? CATEGORY_EMOJI[a.category] : '🔌'}</Text>
+                                            <View style={{ flex: 1, minWidth: 0 }}>
+                                                <Text style={styles.assetName} numberOfLines={1}>{a.name}</Text>
+                                                {(a.model || a.ip) && (
+                                                    <Text style={styles.assetMeta} numberOfLines={1}>
+                                                        {a.model}{a.model && a.ip ? ' · ' : ''}{a.ip}
+                                                    </Text>
+                                                )}
+                                            </View>
+                                            {a.status && a.status !== '운영중' && (
+                                                <Text style={[
+                                                    styles.assetStatus,
+                                                    a.status === '이전됨' && { backgroundColor: '#fce7f3', color: '#9d174d' },
+                                                    a.status === 'EOL' && { backgroundColor: '#fee2e2', color: '#991b1b' },
+                                                ]}>
+                                                    {a.status}
+                                                </Text>
+                                            )}
+                                            <Pencil size={10} color="#cbd5e1" />
+                                        </TouchableOpacity>
+                                    ))}
+                                </View>
+                            )}
+                            {onCreateInfraAsset && roomId && (
+                                <TouchableOpacity
+                                    style={styles.assetAddBtn}
+                                    onPress={() => {
+                                        setEditingAsset('new');
+                                        setAssetForm({ status: '운영중' });
+                                    }}
+                                >
+                                    <Plus size={12} color="#475569" />
+                                    <Text style={styles.assetAddText}>장비 추가</Text>
+                                </TouchableOpacity>
+                            )}
+                        </>
+                    )}
+
                     {/* 레이아웃 진입 */}
                     {onOpenLayout && type === 'lab' && (
                         <>
@@ -525,6 +605,191 @@ export const RoomEditDialog: React.FC<Props> = ({
                 </View>
             </View>
         </Modal>
+
+        {/* 인프라 자산 편집/추가 sub-modal */}
+        <Modal
+            visible={editingAsset !== null}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setEditingAsset(null)}
+        >
+            <View style={styles.assetOverlay}>
+                <View style={styles.assetCard}>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 10 }}>
+                        <Text style={styles.assetCardTitle}>
+                            {editingAsset === 'new' ? '🔧 장비 추가' : '🔧 장비 편집'}
+                        </Text>
+                        <View style={{ flex: 1 }} />
+                        <TouchableOpacity onPress={() => setEditingAsset(null)}>
+                            <X size={18} color="#475569" />
+                        </TouchableOpacity>
+                    </View>
+                    <ScrollView style={{ maxHeight: 480 }}>
+                        <Text style={styles.label}>장비명 *</Text>
+                        <TextInput
+                            style={styles.input}
+                            value={assetForm.name || ''}
+                            onChangeText={(v) => setAssetForm(prev => ({ ...prev, name: v }))}
+                            placeholder="예: DW_BIO_BB_1"
+                            placeholderTextColor="#94a3b8"
+                            autoFocus={editingAsset === 'new'}
+                        />
+
+                        <Text style={styles.label}>카테고리</Text>
+                        <View style={[styles.chipsRow, { marginBottom: 0 }]}>
+                            {INFRA_ASSET_CATEGORIES.map(c => {
+                                const on = assetForm.category === c;
+                                return (
+                                    <TouchableOpacity
+                                        key={c}
+                                        style={[styles.companyChip, on && styles.companyChipOn]}
+                                        onPress={() => setAssetForm(prev => ({ ...prev, category: on ? undefined : c }))}
+                                    >
+                                        <Text style={[styles.companyChipText, on && styles.companyChipTextOn]}>
+                                            {CATEGORY_EMOJI[c]} {c}
+                                        </Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+
+                        <Text style={styles.label}>모델</Text>
+                        <TextInput
+                            style={styles.input}
+                            value={assetForm.model || ''}
+                            onChangeText={(v) => setAssetForm(prev => ({ ...prev, model: v }))}
+                            placeholder="예: Cisco C9500-16X-E"
+                            placeholderTextColor="#94a3b8"
+                        />
+
+                        <View style={styles.row2}>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.label}>IP</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    value={assetForm.ip || ''}
+                                    onChangeText={(v) => setAssetForm(prev => ({ ...prev, ip: v }))}
+                                    placeholder="192.168.244.1"
+                                    placeholderTextColor="#94a3b8"
+                                    autoCapitalize="none"
+                                />
+                            </View>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.label}>MAC</Text>
+                                <TextInput
+                                    style={styles.input}
+                                    value={assetForm.mac || ''}
+                                    onChangeText={(v) => setAssetForm(prev => ({ ...prev, mac: v }))}
+                                    placeholder="aa:bb:cc:..."
+                                    placeholderTextColor="#94a3b8"
+                                    autoCapitalize="none"
+                                />
+                            </View>
+                        </View>
+
+                        <Text style={styles.label}>시리얼</Text>
+                        <TextInput
+                            style={styles.input}
+                            value={assetForm.serial || ''}
+                            onChangeText={(v) => setAssetForm(prev => ({ ...prev, serial: v }))}
+                            placeholder="S/N"
+                            placeholderTextColor="#94a3b8"
+                        />
+
+                        <Text style={styles.label}>상태</Text>
+                        <View style={[styles.chipsRow, { marginBottom: 0 }]}>
+                            {INFRA_ASSET_STATUSES.map(s => {
+                                const on = assetForm.status === s;
+                                return (
+                                    <TouchableOpacity
+                                        key={s}
+                                        style={[styles.companyChip, on && styles.companyChipOn]}
+                                        onPress={() => setAssetForm(prev => ({ ...prev, status: on ? undefined : s }))}
+                                    >
+                                        <Text style={[styles.companyChipText, on && styles.companyChipTextOn]}>{s}</Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </View>
+
+                        <Text style={styles.label}>메모</Text>
+                        <TextInput
+                            style={[styles.input, styles.inputMultiline]}
+                            value={assetForm.note || ''}
+                            onChangeText={(v) => setAssetForm(prev => ({ ...prev, note: v }))}
+                            placeholder="역할, 특이사항, 이전 이력 등"
+                            placeholderTextColor="#94a3b8"
+                            multiline
+                        />
+                    </ScrollView>
+                    <View style={[styles.footer, { padding: 0, marginTop: 10, borderTopWidth: 0 }]}>
+                        {editingAsset !== 'new' && onArchiveInfraAsset && (
+                            <TouchableOpacity
+                                style={styles.deleteBtn}
+                                onPress={() => {
+                                    if (typeof editingAsset === 'object' && editingAsset) {
+                                        const a = editingAsset;
+                                        Alert.alert('삭제 확인', `${a.name} 을(를) 삭제할까요?`, [
+                                            { text: '취소', style: 'cancel' },
+                                            { text: '삭제', style: 'destructive', onPress: async () => {
+                                                await onArchiveInfraAsset(a.id);
+                                                setEditingAsset(null);
+                                            }},
+                                        ]);
+                                    }
+                                }}
+                            >
+                                <Trash2 size={14} color="#dc2626" />
+                            </TouchableOpacity>
+                        )}
+                        <TouchableOpacity style={styles.cancelBtn} onPress={() => setEditingAsset(null)}>
+                            <Text style={styles.cancelBtnText}>취소</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity
+                            style={styles.saveBtn}
+                            onPress={async () => {
+                                if (!assetForm.name?.trim()) {
+                                    Alert.alert('이름 필수', '장비명을 입력해 주세요.'); return;
+                                }
+                                try {
+                                    if (editingAsset === 'new' && onCreateInfraAsset && roomId) {
+                                        await onCreateInfraAsset({
+                                            name: assetForm.name.trim(),
+                                            category: assetForm.category,
+                                            model: assetForm.model,
+                                            ip: assetForm.ip,
+                                            mac: assetForm.mac,
+                                            serial: assetForm.serial,
+                                            status: assetForm.status,
+                                            note: assetForm.note,
+                                            roomIds: [roomId],
+                                        });
+                                    } else if (typeof editingAsset === 'object' && editingAsset && onUpdateInfraAsset) {
+                                        await onUpdateInfraAsset(editingAsset.id, {
+                                            name: assetForm.name.trim(),
+                                            category: assetForm.category,
+                                            model: assetForm.model,
+                                            ip: assetForm.ip,
+                                            mac: assetForm.mac,
+                                            serial: assetForm.serial,
+                                            status: assetForm.status,
+                                            note: assetForm.note,
+                                        });
+                                    }
+                                    setEditingAsset(null);
+                                } catch (e) {
+                                    Alert.alert('저장 실패', '잠시 후 다시 시도하세요.');
+                                }
+                            }}
+                        >
+                            <Save size={14} color="#ffffff" />
+                            <Text style={styles.saveBtnText}>저장</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </View>
+        </Modal>
+        </>
     );
 };
 
@@ -624,6 +889,60 @@ const styles = StyleSheet.create({
         borderRadius: 8,
     },
     addBtnText: { fontSize: 11, color: '#ffffff', fontWeight: '700' },
+
+    assetRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        backgroundColor: '#ffffff',
+        borderRadius: 8,
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        borderWidth: 1,
+        borderColor: '#e5e7eb',
+    },
+    assetEmoji: { fontSize: 14 },
+    assetName: { fontSize: 12, fontWeight: '700', color: '#1f2937' },
+    assetMeta: { fontSize: 10, color: '#64748b', marginTop: 1 },
+    assetStatus: {
+        fontSize: 9,
+        fontWeight: '700',
+        paddingHorizontal: 5,
+        paddingVertical: 2,
+        borderRadius: 6,
+        backgroundColor: '#e0f2fe',
+        color: '#0369a1',
+        overflow: 'hidden',
+    },
+    assetAddBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 4,
+        padding: 8,
+        marginTop: 6,
+        borderRadius: 8,
+        backgroundColor: '#f1f5f9',
+        borderWidth: 1,
+        borderColor: '#e2e8f0',
+        borderStyle: 'dashed',
+    },
+    assetAddText: { fontSize: 11, fontWeight: '700', color: '#475569' },
+    assetOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.45)',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: 24,
+    },
+    assetCard: {
+        width: '100%',
+        maxWidth: 420,
+        backgroundColor: '#ffffff',
+        borderRadius: 16,
+        padding: 16,
+    },
+    assetCardTitle: { fontSize: 14, fontWeight: '800', color: '#1f2937' },
 
     companyChip: {
         paddingHorizontal: 10,

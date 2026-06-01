@@ -58,6 +58,7 @@ import {
 } from './src/lib/infrastructure';
 import { InfrastructureDbClient, RoomNode } from './src/lib/infrastructureDb';
 import { CompaniesDbClient, CompanyInfo } from './src/lib/companiesDb';
+import { InfrastructureAssetsDbClient, InfraAsset } from './src/lib/infrastructureAssetsDb';
 import {
   SiteId,
   SitesOverrides,
@@ -129,8 +130,10 @@ export default function App() {
   // Phase B: 노션 DB 기반 — Map<roomId, RoomNode> 로 빠른 lookup + 입주사 마스터 캐시
   const [infraNodesById, setInfraNodesById] = useState<Map<string, RoomNode>>(new Map());
   const [companies, setCompanies] = useState<CompanyInfo[]>([]);
+  const [infraAssets, setInfraAssets] = useState<InfraAsset[]>([]);
   const [infraDbClient] = useState(() => new InfrastructureDbClient());
   const [companiesDbClient] = useState(() => new CompaniesDbClient());
+  const [infraAssetsClient] = useState(() => new InfrastructureAssetsDbClient());
   // 테스트 이력 정리 진행 상태 (UI 인디케이터용)
   const [cleanupProgress, setCleanupProgress] = useState<{ current: number; total: number } | null>(null);
   // 레이아웃 편집
@@ -374,6 +377,10 @@ export default function App() {
         // Companies 마스터 로드
         companiesDbClient.listAll().then(setCompanies).catch(err => {
           console.warn('[CompaniesDB] load failed', err);
+        });
+        // 인프라 자산 로드 (별도 DB — 일상 자산과 분리)
+        infraAssetsClient.listAll().then(setInfraAssets).catch(err => {
+          console.warn('[InfraAssetsDB] load failed', err);
         });
         const lastLookup = ensuredSettings?.bulkUpdate?.lastLookupColumn;
         const schemaCols = result.schema;
@@ -774,6 +781,27 @@ export default function App() {
   const handleSaveInfrastructure = useCallback(async (_next: InfrastructureData) => {
     console.warn('[App] handleSaveInfrastructure (legacy) called — ignored');
   }, []);
+
+  // 인프라 자산 (서버/스위치 등) CRUD
+  const reloadInfraAssets = useCallback(async () => {
+    const list = await infraAssetsClient.listAll();
+    setInfraAssets(list);
+  }, [infraAssetsClient]);
+
+  const handleCreateInfraAsset = useCallback(async (input: Partial<InfraAsset> & { name: string }) => {
+    await infraAssetsClient.create(input);
+    await reloadInfraAssets();
+  }, [infraAssetsClient, reloadInfraAssets]);
+
+  const handleUpdateInfraAsset = useCallback(async (id: string, patch: Partial<InfraAsset>) => {
+    await infraAssetsClient.update(id, patch);
+    await reloadInfraAssets();
+  }, [infraAssetsClient, reloadInfraAssets]);
+
+  const handleArchiveInfraAsset = useCallback(async (id: string) => {
+    await infraAssetsClient.archive(id);
+    await reloadInfraAssets();
+  }, [infraAssetsClient, reloadInfraAssets]);
 
   // 레이아웃 저장 — Notion 설정 페이지에 layouts.rooms[key] 로 저장
   const handleSaveRoomLayout = useCallback(async (key: string, layout: RoomLayout) => {
@@ -1558,6 +1586,10 @@ export default function App() {
           data={infrastructure}
           nodesById={infraNodesById}
           companies={companies}
+          infraAssets={infraAssets}
+          onCreateInfraAsset={handleCreateInfraAsset}
+          onUpdateInfraAsset={handleUpdateInfraAsset}
+          onArchiveInfraAsset={handleArchiveInfraAsset}
           assets={assets}
           effectiveSites={effectiveSites}
           onSave={handleSaveInfrastructure}

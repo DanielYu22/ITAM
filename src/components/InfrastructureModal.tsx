@@ -47,6 +47,7 @@ import {
 } from '../lib/infrastructure';
 import { RoomNode } from '../lib/infrastructureDb';
 import { CompanyInfo } from '../lib/companiesDb';
+import { InfraAsset } from '../lib/infrastructureAssetsDb';
 import { RoomEditDialog } from './RoomEditDialog';
 
 interface Props {
@@ -57,6 +58,11 @@ interface Props {
     nodesById?: Map<string, RoomNode>;
     /** 입주사 마스터 목록 (relation 선택용) */
     companies?: CompanyInfo[];
+    /** 인프라 자산 (서버/스위치 등) — 룸별로 필터해서 RoomEditDialog 로 전달 */
+    infraAssets?: InfraAsset[];
+    onCreateInfraAsset?: (input: Partial<InfraAsset> & { name: string }) => Promise<void>;
+    onUpdateInfraAsset?: (id: string, patch: Partial<InfraAsset>) => Promise<void>;
+    onArchiveInfraAsset?: (id: string) => Promise<void>;
     assets: Asset[];
     effectiveSites?: SiteDef[];
     /** @deprecated Phase A 호환용. 사용되지 않음. */
@@ -83,6 +89,10 @@ export const InfrastructureModal: React.FC<Props> = ({
     data,
     nodesById,
     companies,
+    infraAssets,
+    onCreateInfraAsset,
+    onUpdateInfraAsset,
+    onArchiveInfraAsset,
     assets,
     effectiveSites,
     onSave,
@@ -424,14 +434,19 @@ export const InfrastructureModal: React.FC<Props> = ({
             // Phase B: room 객체에 occupantIds 합쳐서 전달
             const node = findNode(editingRoom.building, editingRoom.floor, editingRoom.room.name);
             const roomWithRel = { ...editingRoom.room, occupantIds: node?.occupantIds };
+            const roomAssets = (infraAssets || []).filter(a =>
+                node?.id && (a.roomIds || []).includes(node.id)
+            );
             return (
                 <RoomEditDialog
                     visible
                     onClose={() => setEditingRoom(null)}
                     room={roomWithRel}
+                    roomId={node?.id}
                     building={editingRoom.building}
                     floor={editingRoom.floor}
                     companies={companies}
+                    infraAssets={roomAssets}
                     onSave={async (next) => {
                         await updateRoom(editingRoom.building, editingRoom.floor, editingRoom.room.name, next as any);
                     }}
@@ -443,6 +458,9 @@ export const InfrastructureModal: React.FC<Props> = ({
                         setEditingRoom(null);
                         onOpenLayout(er.building, er.floor, er.room.name);
                     } : undefined}
+                    onCreateInfraAsset={onCreateInfraAsset}
+                    onUpdateInfraAsset={onUpdateInfraAsset}
+                    onArchiveInfraAsset={onArchiveInfraAsset}
                 />
             );
         })()}
