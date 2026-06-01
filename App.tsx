@@ -398,14 +398,16 @@ export default function App() {
         // 레이아웃 스토어 복원
         const savedLayouts = (ensuredSettings as any)?.layouts;
         setLayoutsStore(ensureStore(savedLayouts));
-        // Phase B: 인프라 데이터를 별도 노션 DB 에서 로드 (settings.infrastructure 는 백업)
+        // Phase B: 인프라 데이터를 별도 노션 DB 에서 로드.
+        // Phase 4 검토 반영: settings.infrastructure 는 동기화 안 되는 옛 스냅샷이라
+        // fallback 하지 않고 에러만 표시 (deprecated). 사용자가 새로고침/재시도 가능.
         infraDbClient.loadAsTree().then(({ data, nodesById }) => {
           setInfrastructure(data);
           setInfraNodesById(nodesById);
         }).catch(err => {
-          console.warn('[InfraDB] load failed, fallback to settings.infrastructure', err);
-          const savedInfra = (ensuredSettings as any)?.infrastructure;
-          setInfrastructure(ensureInfrastructure(savedInfra));
+          console.error('[InfraDB] load failed — 인프라 트리를 불러올 수 없습니다.', err);
+          // 빈 트리로 두기 (deprecated fallback 제거)
+          setInfrastructure(emptyInfrastructure());
         });
         // Companies 마스터 로드
         companiesDbClient.listAll().then(setCompanies).catch(err => {
@@ -828,9 +830,22 @@ export default function App() {
   }, [infraDbClient, reloadInfraTree]);
 
   const handleArchiveRoom = useCallback(async (roomId: string) => {
+    // Phase 4 cascade: 룸 archive 전에 그 룸을 가리키는 인프라 자산을 같이 archive
+    try {
+      const linked = infraAssets.filter(a => (a.roomIds || []).includes(roomId));
+      for (const a of linked) {
+        await infraAssetsClient.archive(a.id);
+      }
+      if (linked.length > 0) {
+        const list = await infraAssetsClient.listAll();
+        setInfraAssets(list);
+      }
+    } catch (e) {
+      console.warn('[Cascade] InfraAssets archive partial fail', e);
+    }
     await infraDbClient.archiveRoom(roomId);
     await reloadInfraTree();
-  }, [infraDbClient, reloadInfraTree]);
+  }, [infraDbClient, reloadInfraTree, infraAssets, infraAssetsClient]);
 
   // legacy — InfrastructureModal 의 기존 onSave 시그니처 호환용 (호출되지 않음)
   const handleSaveInfrastructure = useCallback(async (_next: InfrastructureData) => {
@@ -955,8 +970,11 @@ export default function App() {
 
   // Quick Task 완료 처리: 사전값 클리어 + 처리이력 append
   // 자산 카드의 "완료" 체크박스에서 호출됨
-  const handleCompleteQuickTask = useCallback(async (asset: Asset, task: QuickTaskDef) => {
+  const handleCompleteQuickTask = useCallback(async (assetIn: Asset, task: QuickTaskDef) => {
     if (!notionClient) return;
+    // Phase 4 race fix: 직렬 여러 Task 완료 시 prop stale asset 객체로 두 번째 호출이
+    // 첫 번째 결과를 덮어쓰지 않도록, 항상 최신 assets[] 에서 다시 찾음.
+    const asset = assets.find(a => a.id === assetIn.id) || assetIn;
 
     // 0) 매번 fresh schema 를 가져옴. 사용자가 다른 세션에서 컬럼을 만들었거나
     //    앱이 자동 생성한 컬럼의 type 정보가 캐시되지 않은 경우를 방어.
@@ -1054,7 +1072,7 @@ export default function App() {
         site: siteLabel, source: 'Quick Task 완료',
       });
     }
-  }, [notionClient, schemaProperties, effectiveSites]);
+  }, [notionClient, schemaProperties, effectiveSites, assets]);
 
   // 홈으로 돌아가기
   const handleBackToLocation = () => {

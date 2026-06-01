@@ -662,15 +662,22 @@ export const appendHistoryLine = (existing: string, label: string, now: Date = n
 // 통합(combined) 모드 헬퍼
 // ============================================================================
 
+// Phase 4: 운영 필수 컬럼에서 '비어있음'으로 간주할 더미값 화이트리스트.
+// '미정', '-', 'X', 'NA', '#N/A' 등 무의미한 값으로 채워서 회피 못 하게.
+const DUMMY_VALUES = new Set([
+    '', '-', '--', '?', 'na', 'n/a', '#n/a', '미정', '없음', '불명', 'x', 'tbd', 'todo',
+]);
+
 /** 한 조건이 자산에 매칭되는지 평가 (FilterConfig 평가용) */
 const evaluateCondition = (asset: Asset, cond: TargetCondition): boolean => {
     const columnKey = String(cond.column ?? '');
-    const val = String((asset.values as any)[columnKey] ?? '').toLowerCase();
+    const val = String((asset.values as any)[columnKey] ?? '').toLowerCase().trim();
     switch (cond.type) {
         case 'is_empty':
-            return !val || val === '';
+            // Phase 4: 더미값도 '비어있음'으로 취급
+            return !val || DUMMY_VALUES.has(val);
         case 'is_not_empty':
-            return val !== '';
+            return val !== '' && !DUMMY_VALUES.has(val);
         case 'contains':
         case 'text_contains':
             if (cond.values && cond.values.length > 0) {

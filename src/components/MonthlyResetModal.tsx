@@ -206,28 +206,51 @@ export const MonthlyResetModal: React.FC<Props> = ({
         setProgress({ current: 0, total: willBeMarked.length });
         const now = new Date();
         let marked = 0;
-        for (let i = 0; i < willBeMarked.length; i++) {
-            const a = willBeMarked[i];
+        let done = 0;
+
+        // Phase 4: p-limit(3) 동시 + 429 backoff 재시도 (총 3회)
+        const CONCURRENCY = 3;
+        const RETRY_MAX = 3;
+        const processOne = async (a: any) => {
             const cur = String((a.values as any)[activeCycle.statusField] ?? '');
-            const opts = cur.split(',').map(s => s.trim()).filter(Boolean);
-            // 이전 사이클의 'XX완료'가 남아 있으면 깔끔하게 제거 (이력은 처리이력에 남음)
-            const cleaned = opts.filter(o => o !== activeCycle.completedTag);
+            const opts = cur.split(',').map((s: string) => s.trim()).filter(Boolean);
+            const cleaned = opts.filter((o: string) => o !== activeCycle.completedTag);
             if (!cleaned.includes(activeCycle.needTag)) cleaned.push(activeCycle.needTag);
             const next = cleaned.join(', ');
-            try {
-                await onUpdate(a.id, activeCycle.statusField, next, statusType);
-                const histExisting = String((a.values as any)[HISTORY_FIELD_NAME] ?? '');
-                await onUpdate(
-                    a.id,
-                    HISTORY_FIELD_NAME,
-                    appendHistoryLine(histExisting, activeCycle.historyLabel(now)),
-                    'rich_text',
-                );
-                marked++;
-            } catch (e) {
-                console.error('[ResetCycle] 실패:', a.id, e);
-            }
-            setProgress({ current: i + 1, total: willBeMarked.length });
+            const updateWithRetry = async (field: string, value: string, type: string) => {
+                for (let attempt = 0; attempt < RETRY_MAX; attempt++) {
+                    try {
+                        await onUpdate(a.id, field, value, type);
+                        return true;
+                    } catch (e: any) {
+                        const msg = String(e?.message || e);
+                        const is429 = msg.includes('429') || msg.includes('rate');
+                        if (!is429 || attempt === RETRY_MAX - 1) {
+                            console.error('[ResetCycle] 실패:', a.id, field, e);
+                            return false;
+                        }
+                        // exponential backoff
+                        await new Promise(r => setTimeout(r, 400 * Math.pow(2, attempt)));
+                    }
+                }
+                return false;
+            };
+            const okStatus = await updateWithRetry(activeCycle.statusField, next, statusType);
+            const histExisting = String((a.values as any)[HISTORY_FIELD_NAME] ?? '');
+            const okHist = await updateWithRetry(
+                HISTORY_FIELD_NAME,
+                appendHistoryLine(histExisting, activeCycle.historyLabel(now)),
+                'rich_text',
+            );
+            if (okStatus) marked++;
+            done++;
+            setProgress({ current: done, total: willBeMarked.length });
+        };
+
+        // 청크 단위 병렬 처리
+        for (let i = 0; i < willBeMarked.length; i += CONCURRENCY) {
+            const chunk = willBeMarked.slice(i, i + CONCURRENCY);
+            await Promise.all(chunk.map(processOne));
         }
         setDoneSummary({ marked, skipped: alreadyMarked.length, cycle: activeCycle });
         setStep('done');
