@@ -149,6 +149,8 @@ export default function App() {
   const [editingRoom, setEditingRoom] = useState<{ building: string; floor: string; room: string } | null>(null);
   // 인프라 → 레이아웃 진입 시 복귀 플래그 — 레이아웃 닫히면 인프라 다시 열기
   const [returnToInfrastructure, setReturnToInfrastructure] = useState(false);
+  // Phase 9: 검색에서 인프라 모달로 점프할 때 자동 편집할 룸
+  const [pendingRoomToEdit, setPendingRoomToEdit] = useState<{ building: string; floor: string; room: string } | null>(null);
   const [showSiteRulesModal, setShowSiteRulesModal] = useState(false);
   // 사이트(장소) 컨텍스트
   const [currentSite, setCurrentSite] = useState<SiteId>('all');
@@ -1387,6 +1389,24 @@ export default function App() {
               onEditSiteRules={() => setShowSiteRulesModal(true)}
               onRefresh={onRefresh}
               effectiveSites={effectiveSites}
+              // Phase 9 통합 검색
+              infraAssets={infraAssets.map(a => ({
+                id: a.id, name: a.name,
+                category: a.category, model: a.model, ip: a.ip,
+                roomIds: a.roomIds,
+              }))}
+              infraRooms={Array.from(infraNodesById.values()).map(r => {
+                const siteLabel = r.site === 'yongin' ? '용인' : r.site === 'magok' ? '마곡' : r.site === 'hyangnam' ? '향남' : undefined;
+                return {
+                  id: r.id, name: r.name, building: r.building, floor: r.floor,
+                  type: r.type, site: siteLabel,
+                };
+              })}
+              companies={companies.map(c => ({ id: c.id, name: c.name, site: c.site }))}
+              onOpenRoomFromSearch={(b, f, r) => {
+                setPendingRoomToEdit({ building: b, floor: f, room: r });
+                setShowInfrastructureModal(true);
+              }}
             />
 
             {/* 버전 표시 (배포 확인용) */}
@@ -1695,7 +1715,11 @@ export default function App() {
 
         <InfrastructureModal
           visible={showInfrastructureModal}
-          onClose={() => setShowInfrastructureModal(false)}
+          initialRoomToEdit={pendingRoomToEdit}
+          onClose={() => {
+            setShowInfrastructureModal(false);
+            setPendingRoomToEdit(null);
+          }}
           data={infrastructure}
           nodesById={infraNodesById}
           companies={companies}

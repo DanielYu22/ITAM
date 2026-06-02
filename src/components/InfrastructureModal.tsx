@@ -5,7 +5,7 @@
  * 레이아웃 편집까지 진입. (이제 별도의 '레이아웃' 메뉴는 제거됨)
  */
 
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import {
     View,
     Text,
@@ -76,6 +76,8 @@ interface Props {
     onReload?: () => Promise<void>;
     /** 실험실에서 레이아웃 편집 진입 — App.tsx가 모달 전환 처리 */
     onOpenLayout?: (building: string, floor: string, room: string) => void;
+    /** Phase 9: 통합 검색에서 들어올 때 즉시 룸 편집 다이얼로그 자동 진입 */
+    initialRoomToEdit?: { building: string; floor: string; room: string } | null;
 }
 
 type AddTarget =
@@ -101,6 +103,7 @@ export const InfrastructureModal: React.FC<Props> = ({
     onArchiveRoom,
     onReload,
     onOpenLayout,
+    initialRoomToEdit,
 }) => {
     const [expanded, setExpanded] = useState<Set<string>>(new Set());
     const [saving, setSaving] = useState(false);
@@ -114,6 +117,23 @@ export const InfrastructureModal: React.FC<Props> = ({
     const [addType, setAddType] = useState<RoomType>('lab');
     // 타입 필터 — 빈 Set = 전체 보기
     const [typeFilter, setTypeFilter] = useState<Set<RoomType>>(new Set());
+
+    // Phase 9: 검색에서 들어오면 자동으로 룸 편집 다이얼로그 진입
+    useEffect(() => {
+        if (!visible || !initialRoomToEdit) return;
+        for (const b of data.buildings) {
+            if (b.name !== initialRoomToEdit.building) continue;
+            for (const f of b.floors) {
+                if (f.name !== initialRoomToEdit.floor) continue;
+                const r = f.rooms.find(r => r.name === initialRoomToEdit.room);
+                if (r) {
+                    setExpanded(prev => new Set([...prev, `b:${b.name}`, `f:${b.name}/${f.name}`]));
+                    setEditingRoom({ building: b.name, floor: f.name, room: r });
+                    return;
+                }
+            }
+        }
+    }, [visible, initialRoomToEdit, data]);
 
     // 타입 필터가 적용된 트리 데이터
     const filteredData = useMemo(() => {

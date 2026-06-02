@@ -87,6 +87,12 @@ interface HomeScreenProps {
     onOpenDashboard?: (mode: 'all' | 'filtered') => void;
     /** 작업 대상 자산 개수 (필터 적용된 결과). filteredCount 와 다를 수 있음 */
     workTargetCount?: number;
+    /** Phase 9: 통합 검색용 추가 데이터 */
+    infraAssets?: Array<{ id: string; name: string; category?: string; model?: string; ip?: string; roomIds?: string[] }>;
+    infraRooms?: Array<{ id: string; name: string; building: string; floor: string; type?: string; site?: string }>;
+    companies?: Array<{ id: string; name: string; site?: string }>;
+    /** 검색 결과에서 룸/자산 클릭 시 인프라 모달 + 룸 편집 진입 */
+    onOpenRoomFromSearch?: (building: string, floor: string, roomName: string) => void;
 }
 
 export interface FilterTemplate {
@@ -127,6 +133,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     effectiveSites,
     onOpenDashboard,
     workTargetCount,
+    infraAssets,
+    infraRooms,
+    companies,
+    onOpenRoomFromSearch,
 }) => {
     const sites = effectiveSites || SITES_DEFAULTS;
     const siteCounts = useMemo(
@@ -164,7 +174,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         return Object.keys(schemaProperties).find(k => schemaProperties[k].type === 'title') || 'Name';
     }, [schemaProperties]);
 
-    // 글로벌 검색 결과
+    // 글로벌 검색 결과 — 자산만 (기존)
     const searchResults = useMemo(() => {
         if (!searchQuery.trim()) return [];
 
@@ -179,6 +189,36 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
             return String(nameA).localeCompare(String(nameB), 'ko');
         });
     }, [assets, searchQuery, titleField]);
+
+    // Phase 9: 통합 검색 — 네트워크 장비 / 공간 / 입주사
+    const infraAssetResults = useMemo(() => {
+        if (!searchQuery.trim() || !infraAssets) return [];
+        const q = searchQuery.toLowerCase();
+        return infraAssets.filter(a =>
+            a.name.toLowerCase().includes(q) ||
+            (a.model || '').toLowerCase().includes(q) ||
+            (a.ip || '').toLowerCase().includes(q) ||
+            (a.category || '').toLowerCase().includes(q)
+        ).slice(0, 30);
+    }, [infraAssets, searchQuery]);
+
+    const roomResults = useMemo(() => {
+        if (!searchQuery.trim() || !infraRooms) return [];
+        const q = searchQuery.toLowerCase();
+        return infraRooms.filter(r =>
+            r.name.toLowerCase().includes(q) ||
+            r.building.toLowerCase().includes(q) ||
+            r.floor.toLowerCase().includes(q)
+        ).slice(0, 30);
+    }, [infraRooms, searchQuery]);
+
+    const companyResults = useMemo(() => {
+        if (!searchQuery.trim() || !companies) return [];
+        const q = searchQuery.toLowerCase();
+        return companies.filter(c => c.name.toLowerCase().includes(q)).slice(0, 15);
+    }, [companies, searchQuery]);
+
+    const totalResultCount = searchResults.length + infraAssetResults.length + roomResults.length + companyResults.length;
 
     // 필터 적용된 자산 수 계산
     const getFilteredCount = () => {
@@ -409,7 +449,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             style={styles.searchInput}
                             value={searchQuery}
                             onChangeText={setSearchQuery}
-                            placeholder="장비 검색 (전체 필드)"
+                            placeholder="통합 검색 (자산 · 네트워크 장비 · 공간 · 입주사)"
                             placeholderTextColor="#9ca3af"
                             onSubmitEditing={handleSearch}
                             returnKeyType="search"
@@ -426,7 +466,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             onPress={handleSearch}
                         >
                             <Text style={styles.searchButtonText}>
-                                검색 ({searchResults.length}건)
+                                검색 ({totalResultCount}건)
                             </Text>
                         </TouchableOpacity>
                     )}
@@ -827,7 +867,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                 <View style={styles.modalContainer}>
                     <View style={styles.modalHeader}>
                         <Text style={styles.modalTitle}>
-                            검색 결과 ({searchResults.length}건)
+                            검색 결과 ({totalResultCount}건)
                         </Text>
                         <TouchableOpacity onPress={() => setShowSearchResults(false)}>
                             <X size={24} color="#6b7280" />
@@ -840,6 +880,16 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     </View>
 
                     <ScrollView style={styles.resultsList}>
+                        {/* 📦 자산 (실험기기) */}
+                        {searchResults.length > 0 && (
+                            <Text style={{
+                                fontSize: 12, fontWeight: '800', color: '#475569',
+                                paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6,
+                                backgroundColor: '#f8fafc',
+                            }}>
+                                📦 자산 · 실험기기 ({searchResults.length})
+                            </Text>
+                        )}
                         {searchResults.map(asset => (
                             <TouchableOpacity
                                 key={asset.id}
@@ -865,7 +915,107 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             </TouchableOpacity>
                         ))}
 
-                        {searchResults.length === 0 && (
+                        {/* 🔧 네트워크 장비 (InfraAssets) */}
+                        {infraAssetResults.length > 0 && (
+                            <Text style={{
+                                fontSize: 12, fontWeight: '800', color: '#475569',
+                                paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6,
+                                backgroundColor: '#f8fafc',
+                            }}>
+                                🔧 네트워크 장비 ({infraAssetResults.length})
+                            </Text>
+                        )}
+                        {infraAssetResults.map(a => {
+                            // 첫 번째 룸을 찾아 위치 표시
+                            const linkedRoom = (a.roomIds || []).map(rid => (infraRooms || []).find(r => r.id === rid)).find(Boolean);
+                            return (
+                                <TouchableOpacity
+                                    key={a.id}
+                                    style={styles.resultItem}
+                                    onPress={() => {
+                                        setShowSearchResults(false);
+                                        if (linkedRoom && onOpenRoomFromSearch) {
+                                            onOpenRoomFromSearch(linkedRoom.building, linkedRoom.floor, linkedRoom.name);
+                                        }
+                                    }}
+                                >
+                                    <View style={styles.resultInfo}>
+                                        <Text style={styles.resultName}>
+                                            {a.name}
+                                            {a.category && (
+                                                <Text style={{ fontSize: 10, color: '#0369a1', fontWeight: '700' }}>  · {a.category}</Text>
+                                            )}
+                                        </Text>
+                                        <Text style={styles.resultPreview} numberOfLines={1}>
+                                            {[a.model, a.ip, linkedRoom ? `📍 ${linkedRoom.building} · ${linkedRoom.floor} · ${linkedRoom.name}` : ''].filter(Boolean).join(' · ')}
+                                        </Text>
+                                    </View>
+                                    <ChevronRight size={18} color="#9ca3af" />
+                                </TouchableOpacity>
+                            );
+                        })}
+
+                        {/* 🏢 공간 (미팅룸/실험실/서버실 등) */}
+                        {roomResults.length > 0 && (
+                            <Text style={{
+                                fontSize: 12, fontWeight: '800', color: '#475569',
+                                paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6,
+                                backgroundColor: '#f8fafc',
+                            }}>
+                                🏢 공간 ({roomResults.length})
+                            </Text>
+                        )}
+                        {roomResults.map(r => {
+                            const typeEmoji = r.type === 'meeting-room' ? '🤝'
+                                : r.type === 'server-room' ? '🖥️'
+                                : r.type === 'office' ? '💼'
+                                : r.type === 'other' ? '📦' : '🧪';
+                            return (
+                                <TouchableOpacity
+                                    key={r.id}
+                                    style={styles.resultItem}
+                                    onPress={() => {
+                                        setShowSearchResults(false);
+                                        if (onOpenRoomFromSearch) {
+                                            onOpenRoomFromSearch(r.building, r.floor, r.name);
+                                        }
+                                    }}
+                                >
+                                    <View style={styles.resultInfo}>
+                                        <Text style={styles.resultName}>
+                                            {typeEmoji} {r.name}
+                                        </Text>
+                                        <Text style={styles.resultPreview} numberOfLines={1}>
+                                            {r.site ? `${r.site} · ` : ''}{r.building} · {r.floor}
+                                        </Text>
+                                    </View>
+                                    <ChevronRight size={18} color="#9ca3af" />
+                                </TouchableOpacity>
+                            );
+                        })}
+
+                        {/* 🏭 입주사 */}
+                        {companyResults.length > 0 && (
+                            <Text style={{
+                                fontSize: 12, fontWeight: '800', color: '#475569',
+                                paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6,
+                                backgroundColor: '#f8fafc',
+                            }}>
+                                🏭 입주사 ({companyResults.length})
+                            </Text>
+                        )}
+                        {companyResults.map(c => (
+                            <View key={c.id} style={styles.resultItem}>
+                                <View style={styles.resultInfo}>
+                                    <Text style={styles.resultName}>🏭 {c.name}</Text>
+                                    {c.site && (
+                                        <Text style={styles.resultPreview}>{c.site}</Text>
+                                    )}
+                                </View>
+                            </View>
+                        ))}
+
+                        {totalResultCount === 0 && (
                             <View style={styles.noResults}>
                                 <Text style={styles.noResultsText}>검색 결과가 없습니다</Text>
                             </View>
