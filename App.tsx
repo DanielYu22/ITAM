@@ -943,9 +943,13 @@ export default function App() {
   // 실제 자산 필터링은 workFilteredAssets 안에서 getMatchingQuickTasks
   // 기반으로 정확히 평가합니다. fieldWorkConfig 는 '필터 설정' 모달에서
   // 어떤 조건들이 합쳐졌는지 시각적으로 보여주는 디스플레이 용도입니다.
-  const handleCombinedQuickTask = useCallback(() => {
+  const handleCombinedQuickTask = useCallback((enabledTaskIds?: string[]) => {
     const now = new Date();
-    const config = buildCombinedQuickTaskConfig(QUICK_TASKS, now);
+    // disabledTaskIds 가 있으면 해당 task 제외
+    const tasks = enabledTaskIds && enabledTaskIds.length > 0
+      ? QUICK_TASKS.filter(t => enabledTaskIds.includes(t.id))
+      : QUICK_TASKS;
+    const config = buildCombinedQuickTaskConfig(tasks, now);
     setActiveQuickTask(null);
     setCombinedQuickTask(true);
     setFieldWorkConfig(config);

@@ -61,7 +61,7 @@ interface HomeScreenProps {
     // Quick Task: 정기/현장 업무를 한 번에 시작
     onQuickTask?: (task: QuickTaskDef) => void;
     // 모든 Quick Task 통합 큐 시작 (메인 진입)
-    onCombinedQuickTask?: () => void;
+    onCombinedQuickTask?: (enabledTaskIds?: string[]) => void;
     // 과제 대시보드 (테이블 뷰) 진입
     onTaskDashboard?: () => void;
     // Tool section callbacks (개별 액션 — DBManagementModal 안에서 호출)
@@ -145,20 +145,56 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     );
     // 개별 큐 펼침 토글 — 기본 접힘 (통합이 기본 워크플로우)
     const [showIndividualTasks, setShowIndividualTasks] = useState(false);
-    // 통합 큐 대상 자산 수 + Quick Task 별 매칭 수
+    // Quick Task 칩 토글 — localStorage 에 저장된 disabled task id 집합
+    const DISABLED_KEY = 'nexus-disabled-quick-tasks-v1';
+    const [disabledTaskIds, setDisabledTaskIds] = useState<Set<string>>(() => {
+        try {
+            if (typeof localStorage === 'undefined') return new Set();
+            const raw = localStorage.getItem(DISABLED_KEY);
+            if (!raw) return new Set();
+            const arr = JSON.parse(raw) as string[];
+            return new Set(Array.isArray(arr) ? arr : []);
+        } catch { return new Set(); }
+    });
+    const toggleTaskDisabled = (id: string) => {
+        setDisabledTaskIds(prev => {
+            const next = new Set(prev);
+            if (next.has(id)) next.delete(id); else next.add(id);
+            try {
+                if (typeof localStorage !== 'undefined') {
+                    localStorage.setItem(DISABLED_KEY, JSON.stringify(Array.from(next)));
+                }
+            } catch { /* noop */ }
+            return next;
+        });
+    };
+    // 활성화된 Quick Task list (꺼진 것 제외)
+    const enabledQuickTasks = useMemo(
+        () => QUICK_TASKS.filter(t => !disabledTaskIds.has(t.id)),
+        [disabledTaskIds]
+    );
+    // 통합 큐 대상 자산 수 + Quick Task 별 매칭 수 (활성화된 task 만 기준)
     const combinedStats = useMemo(() => {
         const matchedTaskCounts: Record<string, number> = {};
         let uniqueMatched = 0;
         for (const asset of assets) {
-            const matched = getMatchingQuickTasks(asset);
+            const matched = getMatchingQuickTasks(asset, enabledQuickTasks);
             if (matched.length === 0) continue;
             uniqueMatched++;
             for (const t of matched) {
                 matchedTaskCounts[t.id] = (matchedTaskCounts[t.id] || 0) + 1;
             }
         }
-        return { uniqueMatched, matchedTaskCounts };
-    }, [assets]);
+        // disabled 도 카운트는 보여주기 (전체 매칭 수)
+        const fullCounts: Record<string, number> = {};
+        for (const asset of assets) {
+            const matched = getMatchingQuickTasks(asset);
+            for (const t of matched) {
+                fullCounts[t.id] = (fullCounts[t.id] || 0) + 1;
+            }
+        }
+        return { uniqueMatched, matchedTaskCounts, fullCounts };
+    }, [assets, enabledQuickTasks]);
     const [searchQuery, setSearchQuery] = useState('');
     const [showSearchResults, setShowSearchResults] = useState(false);
 
@@ -610,7 +646,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         {onCombinedQuickTask && (
                             <TouchableOpacity
                                 style={styles.combinedCard}
-                                onPress={onCombinedQuickTask}
+                                onPress={() => onCombinedQuickTask(enabledQuickTasks.map(t => t.id))}
                                 activeOpacity={0.85}
                             >
                                 <View style={styles.combinedHeader}>
@@ -643,8 +679,12 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                 )}
                                 <View style={styles.combinedBreakdown}>
                                     {QUICK_TASKS.map(t => {
+                                        // 활성화된 task 의 매칭 수 / 전체 매칭 수 둘 다 표시 가능
                                         const cnt = combinedStats.matchedTaskCounts[t.id] || 0;
-                                        const dim = cnt === 0;
+                                        const fullCnt = combinedStats.fullCounts[t.id] || 0;
+                                        const off = disabledTaskIds.has(t.id);
+                                        const dim = !off && cnt === 0;
+                                        const displayCnt = off ? fullCnt : cnt;
                                         return (
                                             <TouchableOpacity
                                                 key={t.id}
@@ -652,29 +692,49 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                                     styles.combinedChip,
                                                     { backgroundColor: t.bgColor },
                                                     dim && styles.combinedChipDim,
+                                                    off && {
+                                                        opacity: 0.35,
+                                                        backgroundColor: '#e5e7eb',
+                                                    },
                                                 ]}
                                                 onPress={(e) => {
                                                     (e as any).stopPropagation?.();
+                                                    // 일반 탭 = task 끄기/켜기 토글 (모든 task 적용)
+                                                    toggleTaskDisabled(t.id);
+                                                }}
+                                                onLongPress={(e) => {
+                                                    // 길게 누름 + 0대인 경우 = 정기 초기화 진입
+                                                    (e as any).stopPropagation?.();
                                                     if (dim && onMonthlyReset) onMonthlyReset();
                                                 }}
-                                                activeOpacity={dim && onMonthlyReset ? 0.5 : 1}
-                                                disabled={!dim || !onMonthlyReset}
+                                                activeOpacity={0.6}
                                             >
-                                                <Text style={styles.combinedChipEmoji}>{t.emoji}</Text>
-                                                <Text style={[styles.combinedChipName, { color: t.color }]} numberOfLines={1}>
+                                                <Text style={[styles.combinedChipEmoji, off && { textDecorationLine: 'line-through' as any }]}>{t.emoji}</Text>
+                                                <Text style={[
+                                                    styles.combinedChipName,
+                                                    { color: off ? '#6b7280' : t.color },
+                                                    off && { textDecorationLine: 'line-through' as any },
+                                                ]} numberOfLines={1}>
                                                     {t.name}
                                                 </Text>
-                                                <Text style={[styles.combinedChipCount, { color: t.color }]}>
-                                                    {cnt}
+                                                <Text style={[styles.combinedChipCount, { color: off ? '#6b7280' : t.color }]}>
+                                                    {displayCnt}
                                                 </Text>
                                             </TouchableOpacity>
                                         );
                                     })}
                                 </View>
+                                {disabledTaskIds.size > 0 && (
+                                    <View style={[styles.combinedHint, { backgroundColor: '#f3f4f6', borderColor: '#d1d5db' }]}>
+                                        <Text style={[styles.combinedHintText, { color: '#374151' }]}>
+                                            🚫 꺼진 과제 {disabledTaskIds.size}개 — 칩을 다시 탭하면 켜짐
+                                        </Text>
+                                    </View>
+                                )}
                                 {Object.values(combinedStats.matchedTaskCounts).filter(n => n > 0).length < QUICK_TASKS.length && onMonthlyReset && (
                                     <View style={styles.combinedHint}>
                                         <Text style={styles.combinedHintText}>
-                                            💡 0대인 사이클은 '정기 초기화'에서 마킹하면 큐에 올라옵니다 (탭하면 바로 이동)
+                                            💡 0대인 사이클은 칩 길게 누르면 '정기 초기화'로 이동
                                         </Text>
                                     </View>
                                 )}
