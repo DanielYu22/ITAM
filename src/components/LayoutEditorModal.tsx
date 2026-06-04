@@ -97,6 +97,8 @@ export const LayoutEditorModal: React.FC<Props> = ({
     // Phase 3 P0: 줌 (0.5 ~ 2.5)
     const [zoom, setZoom] = useState(1);
     const canvasRef = useRef<View | null>(null);
+    // iPad/터치 픽스: 객체 드래그 중 ScrollView 가 가로채지 않게 차단
+    const [objectDragging, setObjectDragging] = useState(false);
     // Phase 5: Undo/Redo 히스토리 (이전 N개 layout snapshot)
     const [history, setHistory] = useState<RoomLayout[]>([]);
     const [historyIdx, setHistoryIdx] = useState(-1);
@@ -487,12 +489,15 @@ export const LayoutEditorModal: React.FC<Props> = ({
                     showsVerticalScrollIndicator
                     showsHorizontalScrollIndicator
                     bounces={false}
+                    // iPad 터치: 객체 드래그 중 스크롤 차단
+                    scrollEnabled={!objectDragging}
                 >
                     <ScrollView
                         horizontal
                         showsHorizontalScrollIndicator
                         bounces={false}
                         contentContainerStyle={{ minWidth: canvasDisplayWidth }}
+                        scrollEnabled={!objectDragging}
                     >
                     <View
                         ref={canvasRef as any}
@@ -564,6 +569,8 @@ export const LayoutEditorModal: React.FC<Props> = ({
                                     width: Math.max(20, Math.min(CANVAS_WIDTH - obj.x, obj.width + dw)),
                                     height: Math.max(20, Math.min(CANVAS_HEIGHT - obj.y, obj.height + dh)),
                                 })}
+                                onDragStart={() => setObjectDragging(true)}
+                                onDragEnd={() => setObjectDragging(false)}
                             />
                         ))}
 
@@ -663,16 +670,36 @@ export const LayoutEditorModal: React.FC<Props> = ({
                             </View>
                         )}
 
-                        {/* 크기 조정 — 가로/세로 */}
+                        {/* 크기 조정 — 가로/세로 (숫자 직접 입력 + ± 버튼) */}
                         <View style={styles.selectedPanelRow}>
                             <Text style={styles.sizeLbl}>W</Text>
                             <TouchableOpacity
                                 style={styles.sizeBtn}
-                                onPress={() => updateObject(selected.id, { width: Math.max(30, selected.width - 20) })}
+                                onPress={() => updateObject(selected.id, { width: Math.max(20, selected.width - 20) })}
                             >
                                 <Text>－</Text>
                             </TouchableOpacity>
-                            <Text style={styles.sizeVal}>{Math.round(selected.width)}</Text>
+                            <TextInput
+                                style={[styles.sizeVal, {
+                                    backgroundColor: '#f8fafc',
+                                    borderWidth: 1,
+                                    borderColor: '#e2e8f0',
+                                    borderRadius: 6,
+                                    paddingHorizontal: 6,
+                                    paddingVertical: 4,
+                                    minWidth: 50,
+                                    textAlign: 'center',
+                                }]}
+                                value={String(Math.round(selected.width))}
+                                onChangeText={(t) => {
+                                    const n = parseInt(t.replace(/[^\d]/g, ''), 10);
+                                    if (!Number.isNaN(n) && n >= 20 && n <= CANVAS_WIDTH) {
+                                        updateObject(selected.id, { width: n });
+                                    }
+                                }}
+                                keyboardType="numeric"
+                                selectTextOnFocus
+                            />
                             <TouchableOpacity
                                 style={styles.sizeBtn}
                                 onPress={() => updateObject(selected.id, { width: Math.min(CANVAS_WIDTH, selected.width + 20) })}
@@ -687,7 +714,27 @@ export const LayoutEditorModal: React.FC<Props> = ({
                             >
                                 <Text>－</Text>
                             </TouchableOpacity>
-                            <Text style={styles.sizeVal}>{Math.round(selected.height)}</Text>
+                            <TextInput
+                                style={[styles.sizeVal, {
+                                    backgroundColor: '#f8fafc',
+                                    borderWidth: 1,
+                                    borderColor: '#e2e8f0',
+                                    borderRadius: 6,
+                                    paddingHorizontal: 6,
+                                    paddingVertical: 4,
+                                    minWidth: 50,
+                                    textAlign: 'center',
+                                }]}
+                                value={String(Math.round(selected.height))}
+                                onChangeText={(t) => {
+                                    const n = parseInt(t.replace(/[^\d]/g, ''), 10);
+                                    if (!Number.isNaN(n) && n >= 20 && n <= CANVAS_HEIGHT) {
+                                        updateObject(selected.id, { height: n });
+                                    }
+                                }}
+                                keyboardType="numeric"
+                                selectTextOnFocus
+                            />
                             <TouchableOpacity
                                 style={styles.sizeBtn}
                                 onPress={() => updateObject(selected.id, { height: Math.min(CANVAS_HEIGHT, selected.height + 20) })}
@@ -820,16 +867,19 @@ const DraggableObject: React.FC<{
     onMove: (dx: number, dy: number) => void;
     // Phase 8: 모서리 리사이즈
     onResize?: (dw: number, dh: number) => void;
-}> = ({ obj, scale, selected, onSelect, onMove, onResize }) => {
+    // iPad 픽스: 드래그 시작/끝 알림 — 부모에서 ScrollView scroll 차단
+    onDragStart?: () => void;
+    onDragEnd?: () => void;
+}> = ({ obj, scale, selected, onSelect, onMove, onResize, onDragStart, onDragEnd }) => {
     const ref = useRef<any>(null);
     const handleRef = useRef<any>(null);
     // 콜백을 ref 로 보관해서 listener 재등록 최소화
-    const cbRef = useRef({ onMove, onSelect, scale, onResize });
+    const cbRef = useRef({ onMove, onSelect, scale, onResize, onDragStart, onDragEnd });
     useEffect(() => {
-        cbRef.current = { onMove, onSelect, scale, onResize };
-    }, [onMove, onSelect, scale, onResize]);
+        cbRef.current = { onMove, onSelect, scale, onResize, onDragStart, onDragEnd };
+    }, [onMove, onSelect, scale, onResize, onDragStart, onDragEnd]);
 
-    // Phase 8: SE 핸들 드래그 — 리사이즈 전용
+    // Phase 8 + iPad fix: SE 핸들 드래그 — 리사이즈 전용 (pointer + touch + mouse)
     useEffect(() => {
         if (!selected || !onResize) return;
         const node = handleRef.current as any;
@@ -841,6 +891,7 @@ const DraggableObject: React.FC<{
             if (e.pointerId !== undefined && typeof node.setPointerCapture === 'function') {
                 try { node.setPointerCapture(e.pointerId); } catch {}
             }
+            cbRef.current.onDragStart?.();
         };
         const move = (e: any) => {
             if (!dragging) return;
@@ -851,17 +902,44 @@ const DraggableObject: React.FC<{
             lx = e.clientX; ly = e.clientY;
             cbRef.current.onResize?.(dx, dy);
         };
-        const up = () => { dragging = false; };
+        const up = () => {
+            if (dragging) cbRef.current.onDragEnd?.();
+            dragging = false;
+        };
         const opts: any = { passive: false };
         node.addEventListener('pointerdown', down, opts);
         node.addEventListener('pointermove', move, opts);
         node.addEventListener('pointerup', up, opts);
         node.addEventListener('pointercancel', up, opts);
+        // iPad 폴백 — touch events
+        const tDown = (e: any) => {
+            const t = e.touches?.[0]; if (!t) return;
+            down({ clientX: t.clientX, clientY: t.clientY, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() });
+        };
+        const tMove = (e: any) => {
+            const t = e.touches?.[0]; if (!t) return;
+            move({ clientX: t.clientX, clientY: t.clientY, preventDefault: () => e.preventDefault() });
+        };
+        node.addEventListener('touchstart', tDown, opts);
+        node.addEventListener('touchmove', tMove, opts);
+        node.addEventListener('touchend', up, opts);
+        node.addEventListener('touchcancel', up, opts);
+        // mouse 폴백
+        node.addEventListener('mousedown', down, opts);
+        node.addEventListener('mousemove', move, opts);
+        node.addEventListener('mouseup', up, opts);
         return () => {
             node.removeEventListener('pointerdown', down);
             node.removeEventListener('pointermove', move);
             node.removeEventListener('pointerup', up);
             node.removeEventListener('pointercancel', up);
+            node.removeEventListener('touchstart', tDown);
+            node.removeEventListener('touchmove', tMove);
+            node.removeEventListener('touchend', up);
+            node.removeEventListener('touchcancel', up);
+            node.removeEventListener('mousedown', down);
+            node.removeEventListener('mousemove', move);
+            node.removeEventListener('mouseup', up);
         };
     }, [selected, onResize]);
 
@@ -884,6 +962,7 @@ const DraggableObject: React.FC<{
                 try { node.setPointerCapture(e.pointerId); } catch { /* noop */ }
             }
             cbRef.current.onSelect();
+            cbRef.current.onDragStart?.();
         };
         const onMoveEvt = (e: any) => {
             if (!dragging) return;
@@ -896,6 +975,7 @@ const DraggableObject: React.FC<{
             cbRef.current.onMove(dx, dy);
         };
         const onUp = (e: any) => {
+            if (dragging) cbRef.current.onDragEnd?.();
             dragging = false;
             if (e.pointerId !== undefined && typeof node.releasePointerCapture === 'function') {
                 try { node.releasePointerCapture(e.pointerId); } catch { /* noop */ }
@@ -977,25 +1057,29 @@ const DraggableObject: React.FC<{
                     {obj.label}
                 </Text>
             )}
-            {/* Phase 8: 우하단 리사이즈 핸들 (선택된 경우만) */}
-            {selected && (
+            {/* Phase 8 + iPad fix: 우하단 리사이즈 핸들 — 24x24 키워서 손가락 닿기 쉽게 */}
+            {selected && onResize && (
                 <View
                     ref={handleRef as any}
                     style={({
                         position: 'absolute',
-                        right: -8,
-                        bottom: -8,
-                        width: 16,
-                        height: 16,
+                        right: -12,
+                        bottom: -12,
+                        width: 24,
+                        height: 24,
                         backgroundColor: '#6366f1',
-                        borderRadius: 4,
-                        borderWidth: 2,
+                        borderRadius: 6,
+                        borderWidth: 3,
                         borderColor: '#ffffff',
                         cursor: 'nwse-resize',
                         touchAction: 'none',
                         userSelect: 'none',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                     } as any)}
-                />
+                >
+                    <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '900', lineHeight: 12 }}>⤡</Text>
+                </View>
             )}
         </View>
     );
