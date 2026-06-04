@@ -877,76 +877,111 @@ const DraggableObject: React.FC<{
 
     // 리사이즈 핸들은 부모에서 별도로 처리 (객체 이벤트와 충돌 방지)
 
-    // DOM Pointer Events 직접 — PanResponder 가 모바일 웹에서 잘 안 먹어서
+    // iPad fix v3: 객체에는 down 만 등록, move/up 은 document 레벨에 등록.
+    // iPad Safari 의 pointer capture 가 불안정해서 객체 밖으로 손가락이 나가면
+    // 이벤트 추적이 끊김. document 에 listener 등록하면 캡처 무관하게 추적 가능.
     useEffect(() => {
         const node = ref.current as any;
         if (!node || typeof node.addEventListener !== 'function') return;
+        if (typeof document === 'undefined') return;
 
         let dragging = false;
         let lastX = 0;
         let lastY = 0;
+        let activePointerId: number | null = null;
 
-        const onDown = (e: any) => {
-            e.preventDefault?.();
-            e.stopPropagation?.();
+        const beginDrag = (clientX: number, clientY: number) => {
             dragging = true;
-            lastX = e.clientX;
-            lastY = e.clientY;
-            if (e.pointerId !== undefined && typeof node.setPointerCapture === 'function') {
-                try { node.setPointerCapture(e.pointerId); } catch { /* noop */ }
-            }
+            lastX = clientX;
+            lastY = clientY;
             cbRef.current.onSelect();
             cbRef.current.onDragStart?.();
         };
-        const onMoveEvt = (e: any) => {
+        const doMove = (clientX: number, clientY: number) => {
             if (!dragging) return;
-            e.preventDefault?.();
             const s = cbRef.current.scale || 1;
-            const dx = (e.clientX - lastX) / s;
-            const dy = (e.clientY - lastY) / s;
-            lastX = e.clientX;
-            lastY = e.clientY;
+            const dx = (clientX - lastX) / s;
+            const dy = (clientY - lastY) / s;
+            lastX = clientX;
+            lastY = clientY;
             cbRef.current.onMove(dx, dy);
         };
-        const onUp = (e: any) => {
+        const endDrag = () => {
             if (dragging) cbRef.current.onDragEnd?.();
             dragging = false;
-            if (e.pointerId !== undefined && typeof node.releasePointerCapture === 'function') {
-                try { node.releasePointerCapture(e.pointerId); } catch { /* noop */ }
-            }
+            activePointerId = null;
         };
 
-        // passive:false 로 등록해야 preventDefault 가 모바일 사파리에서 동작
-        const optsNonPassive: any = { passive: false };
-        node.addEventListener('pointerdown', onDown, optsNonPassive);
-        node.addEventListener('pointermove', onMoveEvt, optsNonPassive);
-        node.addEventListener('pointerup', onUp, optsNonPassive);
-        node.addEventListener('pointercancel', onUp, optsNonPassive);
-        // Pointer Events 미지원 환경 폴백 (오래된 안드로이드)
-        node.addEventListener('mousedown', onDown, optsNonPassive);
-        node.addEventListener('mousemove', onMoveEvt, optsNonPassive);
-        node.addEventListener('mouseup', onUp, optsNonPassive);
-        node.addEventListener('touchstart', (e: any) => {
-            const t = e.touches?.[0];
-            if (!t) return;
-            onDown({ clientX: t.clientX, clientY: t.clientY, pointerId: undefined, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() });
-        }, optsNonPassive);
-        node.addEventListener('touchmove', (e: any) => {
-            const t = e.touches?.[0];
-            if (!t) return;
-            onMoveEvt({ clientX: t.clientX, clientY: t.clientY, preventDefault: () => e.preventDefault() });
-        }, optsNonPassive);
-        node.addEventListener('touchend', onUp, optsNonPassive);
-        node.addEventListener('touchcancel', onUp, optsNonPassive);
+        // ── 객체에는 down 만 ──
+        const onPointerDown = (e: any) => {
+            e.preventDefault?.(); e.stopPropagation?.();
+            activePointerId = e.pointerId ?? null;
+            beginDrag(e.clientX, e.clientY);
+        };
+        const onMouseDown = (e: any) => {
+            e.preventDefault?.(); e.stopPropagation?.();
+            beginDrag(e.clientX, e.clientY);
+        };
+        const onTouchStart = (e: any) => {
+            e.preventDefault?.(); e.stopPropagation?.();
+            const t = e.touches?.[0]; if (!t) return;
+            beginDrag(t.clientX, t.clientY);
+        };
+
+        // ── document 레벨 move/up ──
+        const onDocPointerMove = (e: any) => {
+            if (!dragging) return;
+            if (activePointerId !== null && e.pointerId !== activePointerId) return;
+            e.preventDefault?.();
+            doMove(e.clientX, e.clientY);
+        };
+        const onDocPointerUp = (e: any) => {
+            if (!dragging) return;
+            if (activePointerId !== null && e.pointerId !== activePointerId) return;
+            endDrag();
+        };
+        const onDocMouseMove = (e: any) => {
+            if (!dragging) return;
+            e.preventDefault?.();
+            doMove(e.clientX, e.clientY);
+        };
+        const onDocMouseUp = () => { if (dragging) endDrag(); };
+        const onDocTouchMove = (e: any) => {
+            if (!dragging) return;
+            const t = e.touches?.[0]; if (!t) return;
+            e.preventDefault?.();
+            doMove(t.clientX, t.clientY);
+        };
+        const onDocTouchEnd = () => { if (dragging) endDrag(); };
+
+        const opts: any = { passive: false };
+        // 객체에 down 만
+        node.addEventListener('pointerdown', onPointerDown, opts);
+        node.addEventListener('mousedown', onMouseDown, opts);
+        node.addEventListener('touchstart', onTouchStart, opts);
+
+        // document 에 move/up
+        document.addEventListener('pointermove', onDocPointerMove, opts);
+        document.addEventListener('pointerup', onDocPointerUp, opts);
+        document.addEventListener('pointercancel', onDocPointerUp, opts);
+        document.addEventListener('mousemove', onDocMouseMove, opts);
+        document.addEventListener('mouseup', onDocMouseUp, opts);
+        document.addEventListener('touchmove', onDocTouchMove, opts);
+        document.addEventListener('touchend', onDocTouchEnd, opts);
+        document.addEventListener('touchcancel', onDocTouchEnd, opts);
 
         return () => {
-            node.removeEventListener('pointerdown', onDown);
-            node.removeEventListener('pointermove', onMoveEvt);
-            node.removeEventListener('pointerup', onUp);
-            node.removeEventListener('pointercancel', onUp);
-            node.removeEventListener('mousedown', onDown);
-            node.removeEventListener('mousemove', onMoveEvt);
-            node.removeEventListener('mouseup', onUp);
+            node.removeEventListener('pointerdown', onPointerDown);
+            node.removeEventListener('mousedown', onMouseDown);
+            node.removeEventListener('touchstart', onTouchStart);
+            document.removeEventListener('pointermove', onDocPointerMove);
+            document.removeEventListener('pointerup', onDocPointerUp);
+            document.removeEventListener('pointercancel', onDocPointerUp);
+            document.removeEventListener('mousemove', onDocMouseMove);
+            document.removeEventListener('mouseup', onDocMouseUp);
+            document.removeEventListener('touchmove', onDocTouchMove);
+            document.removeEventListener('touchend', onDocTouchEnd);
+            document.removeEventListener('touchcancel', onDocTouchEnd);
         };
     }, []);
 
@@ -1017,60 +1052,95 @@ const ResizeHandle: React.FC<{
     useEffect(() => {
         const node = ref.current as any;
         if (!node || typeof node.addEventListener !== 'function') return;
+        if (typeof document === 'undefined') return;
+
         let dragging = false; let lx = 0; let ly = 0;
-        const down = (e: any) => {
-            e.preventDefault?.(); e.stopPropagation?.();
-            dragging = true; lx = e.clientX; ly = e.clientY;
-            if (e.pointerId !== undefined && typeof node.setPointerCapture === 'function') {
-                try { node.setPointerCapture(e.pointerId); } catch { /* noop */ }
-            }
+        let activePointerId: number | null = null;
+
+        const begin = (cx: number, cy: number) => {
+            dragging = true; lx = cx; ly = cy;
             cb.current.onDragStart?.();
         };
-        const move = (e: any) => {
+        const moveTo = (cx: number, cy: number) => {
             if (!dragging) return;
-            e.preventDefault?.();
             const s = cb.current.scale || 1;
-            const dx = (e.clientX - lx) / s;
-            const dy = (e.clientY - ly) / s;
-            lx = e.clientX; ly = e.clientY;
+            const dx = (cx - lx) / s;
+            const dy = (cy - ly) / s;
+            lx = cx; ly = cy;
             cb.current.onResize(dx, dy);
         };
-        const up = () => {
+        const end = () => {
             if (dragging) cb.current.onDragEnd?.();
             dragging = false;
+            activePointerId = null;
         };
+
+        const onPointerDown = (e: any) => {
+            e.preventDefault?.(); e.stopPropagation?.();
+            activePointerId = e.pointerId ?? null;
+            begin(e.clientX, e.clientY);
+        };
+        const onMouseDown = (e: any) => {
+            e.preventDefault?.(); e.stopPropagation?.();
+            begin(e.clientX, e.clientY);
+        };
+        const onTouchStart = (e: any) => {
+            e.preventDefault?.(); e.stopPropagation?.();
+            const t = e.touches?.[0]; if (!t) return;
+            begin(t.clientX, t.clientY);
+        };
+
+        const onDocPM = (e: any) => {
+            if (!dragging) return;
+            if (activePointerId !== null && e.pointerId !== activePointerId) return;
+            e.preventDefault?.();
+            moveTo(e.clientX, e.clientY);
+        };
+        const onDocPU = (e: any) => {
+            if (!dragging) return;
+            if (activePointerId !== null && e.pointerId !== activePointerId) return;
+            end();
+        };
+        const onDocMM = (e: any) => {
+            if (!dragging) return;
+            e.preventDefault?.();
+            moveTo(e.clientX, e.clientY);
+        };
+        const onDocMU = () => { if (dragging) end(); };
+        const onDocTM = (e: any) => {
+            if (!dragging) return;
+            const t = e.touches?.[0]; if (!t) return;
+            e.preventDefault?.();
+            moveTo(t.clientX, t.clientY);
+        };
+        const onDocTE = () => { if (dragging) end(); };
+
         const opts: any = { passive: false };
-        node.addEventListener('pointerdown', down, opts);
-        node.addEventListener('pointermove', move, opts);
-        node.addEventListener('pointerup', up, opts);
-        node.addEventListener('pointercancel', up, opts);
-        const tDown = (e: any) => {
-            const t = e.touches?.[0]; if (!t) return;
-            down({ clientX: t.clientX, clientY: t.clientY, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() });
-        };
-        const tMove = (e: any) => {
-            const t = e.touches?.[0]; if (!t) return;
-            move({ clientX: t.clientX, clientY: t.clientY, preventDefault: () => e.preventDefault() });
-        };
-        node.addEventListener('touchstart', tDown, opts);
-        node.addEventListener('touchmove', tMove, opts);
-        node.addEventListener('touchend', up, opts);
-        node.addEventListener('touchcancel', up, opts);
-        node.addEventListener('mousedown', down, opts);
-        node.addEventListener('mousemove', move, opts);
-        node.addEventListener('mouseup', up, opts);
+        node.addEventListener('pointerdown', onPointerDown, opts);
+        node.addEventListener('mousedown', onMouseDown, opts);
+        node.addEventListener('touchstart', onTouchStart, opts);
+
+        document.addEventListener('pointermove', onDocPM, opts);
+        document.addEventListener('pointerup', onDocPU, opts);
+        document.addEventListener('pointercancel', onDocPU, opts);
+        document.addEventListener('mousemove', onDocMM, opts);
+        document.addEventListener('mouseup', onDocMU, opts);
+        document.addEventListener('touchmove', onDocTM, opts);
+        document.addEventListener('touchend', onDocTE, opts);
+        document.addEventListener('touchcancel', onDocTE, opts);
+
         return () => {
-            node.removeEventListener('pointerdown', down);
-            node.removeEventListener('pointermove', move);
-            node.removeEventListener('pointerup', up);
-            node.removeEventListener('pointercancel', up);
-            node.removeEventListener('touchstart', tDown);
-            node.removeEventListener('touchmove', tMove);
-            node.removeEventListener('touchend', up);
-            node.removeEventListener('touchcancel', up);
-            node.removeEventListener('mousedown', down);
-            node.removeEventListener('mousemove', move);
-            node.removeEventListener('mouseup', up);
+            node.removeEventListener('pointerdown', onPointerDown);
+            node.removeEventListener('mousedown', onMouseDown);
+            node.removeEventListener('touchstart', onTouchStart);
+            document.removeEventListener('pointermove', onDocPM);
+            document.removeEventListener('pointerup', onDocPU);
+            document.removeEventListener('pointercancel', onDocPU);
+            document.removeEventListener('mousemove', onDocMM);
+            document.removeEventListener('mouseup', onDocMU);
+            document.removeEventListener('touchmove', onDocTM);
+            document.removeEventListener('touchend', onDocTE);
+            document.removeEventListener('touchcancel', onDocTE);
         };
     }, []);
 
