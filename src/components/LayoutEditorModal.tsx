@@ -476,35 +476,24 @@ export const LayoutEditorModal: React.FC<Props> = ({
                 </View>
 
                 {/* 캔버스 — Phase 3 P0: ScrollView 로 감싸 줌 시 팬 가능 */}
-                <ScrollView
-                    style={styles.canvasWrap}
-                    contentContainerStyle={{
-                        minWidth: canvasDisplayWidth + 24,
-                        minHeight: canvasDisplayHeight + 24,
-                        padding: 12,
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                    }}
-                    horizontal={false}
-                    showsVerticalScrollIndicator
-                    showsHorizontalScrollIndicator
-                    bounces={false}
-                    // iPad 터치: 객체 드래그 중 스크롤 차단
-                    scrollEnabled={!objectDragging}
+                {/* 캔버스 wrapper — ScrollView 대신 일반 View + CSS overflow (iPad 터치 가로채기 방지) */}
+                <View
+                    style={[
+                        styles.canvasWrap,
+                        ({
+                            // 객체 드래그 중엔 스크롤 차단 (iPad/모바일 웹)
+                            overflow: objectDragging ? 'hidden' : 'auto',
+                            WebkitOverflowScrolling: 'touch',
+                            padding: 12,
+                        } as any),
+                    ]}
                 >
-                    <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator
-                        bounces={false}
-                        contentContainerStyle={{ minWidth: canvasDisplayWidth }}
-                        scrollEnabled={!objectDragging}
-                    >
                     <View
                         ref={canvasRef as any}
                         style={[
                             styles.canvas,
                             { width: canvasDisplayWidth, height: canvasDisplayHeight },
-                            ({ touchAction: 'none' } as any),
+                            ({ touchAction: 'none', overflow: 'visible' } as any),
                         ]}
                         onStartShouldSetResponder={() => pathMode}
                         onResponderRelease={(e: any) => {
@@ -565,14 +554,25 @@ export const LayoutEditorModal: React.FC<Props> = ({
                                     x: Math.max(0, Math.min(CANVAS_WIDTH - obj.width, obj.x + dx)),
                                     y: Math.max(0, Math.min(CANVAS_HEIGHT - obj.height, obj.y + dy)),
                                 })}
-                                onResize={(dw, dh) => updateObject(obj.id, {
-                                    width: Math.max(20, Math.min(CANVAS_WIDTH - obj.x, obj.width + dw)),
-                                    height: Math.max(20, Math.min(CANVAS_HEIGHT - obj.y, obj.height + dh)),
-                                })}
                                 onDragStart={() => setObjectDragging(true)}
                                 onDragEnd={() => setObjectDragging(false)}
                             />
                         ))}
+
+                        {/* 리사이즈 핸들 — 선택된 객체 위에 별도 렌더 (이벤트 충돌 방지) */}
+                        {selected && (
+                            <ResizeHandle
+                                key={`handle-${selected.id}`}
+                                obj={selected}
+                                scale={scale}
+                                onResize={(dw, dh) => updateObject(selected.id, {
+                                    width: Math.max(20, Math.min(CANVAS_WIDTH - selected.x, selected.width + dw)),
+                                    height: Math.max(20, Math.min(CANVAS_HEIGHT - selected.y, selected.height + dh)),
+                                })}
+                                onDragStart={() => setObjectDragging(true)}
+                                onDragEnd={() => setObjectDragging(false)}
+                            />
+                        )}
 
                         {/* Phase 5: 동선 (paths) 렌더링 — pointerEvents=none 으로 객체 드래그 방해 X */}
                         <View pointerEvents="none" style={StyleSheet.absoluteFill}>
@@ -626,8 +626,7 @@ export const LayoutEditorModal: React.FC<Props> = ({
                             ))}
                         </View>
                     </View>
-                    </ScrollView>
-                </ScrollView>
+                </View>
 
                 {/* 선택된 객체 옵션 패널 */}
                 {selected && (
@@ -865,83 +864,18 @@ const DraggableObject: React.FC<{
     selected: boolean;
     onSelect: () => void;
     onMove: (dx: number, dy: number) => void;
-    // Phase 8: 모서리 리사이즈
-    onResize?: (dw: number, dh: number) => void;
     // iPad 픽스: 드래그 시작/끝 알림 — 부모에서 ScrollView scroll 차단
     onDragStart?: () => void;
     onDragEnd?: () => void;
-}> = ({ obj, scale, selected, onSelect, onMove, onResize, onDragStart, onDragEnd }) => {
+}> = ({ obj, scale, selected, onSelect, onMove, onDragStart, onDragEnd }) => {
     const ref = useRef<any>(null);
-    const handleRef = useRef<any>(null);
     // 콜백을 ref 로 보관해서 listener 재등록 최소화
-    const cbRef = useRef({ onMove, onSelect, scale, onResize, onDragStart, onDragEnd });
+    const cbRef = useRef({ onMove, onSelect, scale, onDragStart, onDragEnd });
     useEffect(() => {
-        cbRef.current = { onMove, onSelect, scale, onResize, onDragStart, onDragEnd };
-    }, [onMove, onSelect, scale, onResize, onDragStart, onDragEnd]);
+        cbRef.current = { onMove, onSelect, scale, onDragStart, onDragEnd };
+    }, [onMove, onSelect, scale, onDragStart, onDragEnd]);
 
-    // Phase 8 + iPad fix: SE 핸들 드래그 — 리사이즈 전용 (pointer + touch + mouse)
-    useEffect(() => {
-        if (!selected || !onResize) return;
-        const node = handleRef.current as any;
-        if (!node || typeof node.addEventListener !== 'function') return;
-        let dragging = false; let lx = 0; let ly = 0;
-        const down = (e: any) => {
-            e.preventDefault?.(); e.stopPropagation?.();
-            dragging = true; lx = e.clientX; ly = e.clientY;
-            if (e.pointerId !== undefined && typeof node.setPointerCapture === 'function') {
-                try { node.setPointerCapture(e.pointerId); } catch {}
-            }
-            cbRef.current.onDragStart?.();
-        };
-        const move = (e: any) => {
-            if (!dragging) return;
-            e.preventDefault?.();
-            const s = cbRef.current.scale || 1;
-            const dx = (e.clientX - lx) / s;
-            const dy = (e.clientY - ly) / s;
-            lx = e.clientX; ly = e.clientY;
-            cbRef.current.onResize?.(dx, dy);
-        };
-        const up = () => {
-            if (dragging) cbRef.current.onDragEnd?.();
-            dragging = false;
-        };
-        const opts: any = { passive: false };
-        node.addEventListener('pointerdown', down, opts);
-        node.addEventListener('pointermove', move, opts);
-        node.addEventListener('pointerup', up, opts);
-        node.addEventListener('pointercancel', up, opts);
-        // iPad 폴백 — touch events
-        const tDown = (e: any) => {
-            const t = e.touches?.[0]; if (!t) return;
-            down({ clientX: t.clientX, clientY: t.clientY, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() });
-        };
-        const tMove = (e: any) => {
-            const t = e.touches?.[0]; if (!t) return;
-            move({ clientX: t.clientX, clientY: t.clientY, preventDefault: () => e.preventDefault() });
-        };
-        node.addEventListener('touchstart', tDown, opts);
-        node.addEventListener('touchmove', tMove, opts);
-        node.addEventListener('touchend', up, opts);
-        node.addEventListener('touchcancel', up, opts);
-        // mouse 폴백
-        node.addEventListener('mousedown', down, opts);
-        node.addEventListener('mousemove', move, opts);
-        node.addEventListener('mouseup', up, opts);
-        return () => {
-            node.removeEventListener('pointerdown', down);
-            node.removeEventListener('pointermove', move);
-            node.removeEventListener('pointerup', up);
-            node.removeEventListener('pointercancel', up);
-            node.removeEventListener('touchstart', tDown);
-            node.removeEventListener('touchmove', tMove);
-            node.removeEventListener('touchend', up);
-            node.removeEventListener('touchcancel', up);
-            node.removeEventListener('mousedown', down);
-            node.removeEventListener('mousemove', move);
-            node.removeEventListener('mouseup', up);
-        };
-    }, [selected, onResize]);
+    // 리사이즈 핸들은 부모에서 별도로 처리 (객체 이벤트와 충돌 방지)
 
     // DOM Pointer Events 직접 — PanResponder 가 모바일 웹에서 잘 안 먹어서
     useEffect(() => {
@@ -1040,8 +974,9 @@ const DraggableObject: React.FC<{
                 shadowOpacity: selected ? 0.3 : 0.1,
                 shadowOffset: { width: 0, height: 1 },
                 shadowRadius: 2,
+                overflow: 'visible',
                 // 모바일 웹: 페이지 스크롤이 터치를 가로채는 걸 방지
-                ...(({ touchAction: 'none', userSelect: 'none', cursor: 'move' } as any)),
+                ...(({ touchAction: 'none', userSelect: 'none', cursor: 'move', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' } as any)),
             }}
         >
             {obj.label && (
@@ -1057,30 +992,118 @@ const DraggableObject: React.FC<{
                     {obj.label}
                 </Text>
             )}
-            {/* Phase 8 + iPad fix: 우하단 리사이즈 핸들 — 24x24 키워서 손가락 닿기 쉽게 */}
-            {selected && onResize && (
-                <View
-                    ref={handleRef as any}
-                    style={({
-                        position: 'absolute',
-                        right: -12,
-                        bottom: -12,
-                        width: 24,
-                        height: 24,
-                        backgroundColor: '#6366f1',
-                        borderRadius: 6,
-                        borderWidth: 3,
-                        borderColor: '#ffffff',
-                        cursor: 'nwse-resize',
-                        touchAction: 'none',
-                        userSelect: 'none',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                    } as any)}
-                >
-                    <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '900', lineHeight: 12 }}>⤡</Text>
-                </View>
-            )}
+            {/* 리사이즈 핸들은 부모(LayoutEditorModal) 레벨에 별도로 그림 — 객체 이벤트와 분리 */}
+        </View>
+    );
+};
+
+// ---------------------------------------------------------------------------
+// 리사이즈 핸들 (객체 외부에서 별도 렌더 — 이벤트 충돌 방지)
+// ---------------------------------------------------------------------------
+
+const ResizeHandle: React.FC<{
+    obj: LayoutObject;
+    scale: number;
+    onResize: (dw: number, dh: number) => void;
+    onDragStart?: () => void;
+    onDragEnd?: () => void;
+}> = ({ obj, scale, onResize, onDragStart, onDragEnd }) => {
+    const ref = useRef<any>(null);
+    const cb = useRef({ scale, onResize, onDragStart, onDragEnd });
+    useEffect(() => {
+        cb.current = { scale, onResize, onDragStart, onDragEnd };
+    }, [scale, onResize, onDragStart, onDragEnd]);
+
+    useEffect(() => {
+        const node = ref.current as any;
+        if (!node || typeof node.addEventListener !== 'function') return;
+        let dragging = false; let lx = 0; let ly = 0;
+        const down = (e: any) => {
+            e.preventDefault?.(); e.stopPropagation?.();
+            dragging = true; lx = e.clientX; ly = e.clientY;
+            if (e.pointerId !== undefined && typeof node.setPointerCapture === 'function') {
+                try { node.setPointerCapture(e.pointerId); } catch { /* noop */ }
+            }
+            cb.current.onDragStart?.();
+        };
+        const move = (e: any) => {
+            if (!dragging) return;
+            e.preventDefault?.();
+            const s = cb.current.scale || 1;
+            const dx = (e.clientX - lx) / s;
+            const dy = (e.clientY - ly) / s;
+            lx = e.clientX; ly = e.clientY;
+            cb.current.onResize(dx, dy);
+        };
+        const up = () => {
+            if (dragging) cb.current.onDragEnd?.();
+            dragging = false;
+        };
+        const opts: any = { passive: false };
+        node.addEventListener('pointerdown', down, opts);
+        node.addEventListener('pointermove', move, opts);
+        node.addEventListener('pointerup', up, opts);
+        node.addEventListener('pointercancel', up, opts);
+        const tDown = (e: any) => {
+            const t = e.touches?.[0]; if (!t) return;
+            down({ clientX: t.clientX, clientY: t.clientY, preventDefault: () => e.preventDefault(), stopPropagation: () => e.stopPropagation() });
+        };
+        const tMove = (e: any) => {
+            const t = e.touches?.[0]; if (!t) return;
+            move({ clientX: t.clientX, clientY: t.clientY, preventDefault: () => e.preventDefault() });
+        };
+        node.addEventListener('touchstart', tDown, opts);
+        node.addEventListener('touchmove', tMove, opts);
+        node.addEventListener('touchend', up, opts);
+        node.addEventListener('touchcancel', up, opts);
+        node.addEventListener('mousedown', down, opts);
+        node.addEventListener('mousemove', move, opts);
+        node.addEventListener('mouseup', up, opts);
+        return () => {
+            node.removeEventListener('pointerdown', down);
+            node.removeEventListener('pointermove', move);
+            node.removeEventListener('pointerup', up);
+            node.removeEventListener('pointercancel', up);
+            node.removeEventListener('touchstart', tDown);
+            node.removeEventListener('touchmove', tMove);
+            node.removeEventListener('touchend', up);
+            node.removeEventListener('touchcancel', up);
+            node.removeEventListener('mousedown', down);
+            node.removeEventListener('mousemove', move);
+            node.removeEventListener('mouseup', up);
+        };
+    }, []);
+
+    // 캔버스 절대좌표 — 객체의 우하단
+    const right = (obj.x + obj.width) * scale;
+    const bottom = (obj.y + obj.height) * scale;
+    return (
+        <View
+            ref={ref as any}
+            pointerEvents="auto"
+            style={({
+                position: 'absolute',
+                left: right - 16,
+                top: bottom - 16,
+                width: 32,
+                height: 32,
+                backgroundColor: '#6366f1',
+                borderRadius: 8,
+                borderWidth: 3,
+                borderColor: '#ffffff',
+                cursor: 'nwse-resize',
+                touchAction: 'none',
+                userSelect: 'none',
+                alignItems: 'center',
+                justifyContent: 'center',
+                zIndex: 9999,
+                shadowColor: '#000',
+                shadowOpacity: 0.3,
+                shadowOffset: { width: 0, height: 2 },
+                shadowRadius: 3,
+            } as any)}
+        >
+            <Text style={{ color: '#ffffff', fontSize: 14, fontWeight: '900', lineHeight: 16 }}>⤡</Text>
         </View>
     );
 };
