@@ -93,6 +93,9 @@ interface HomeScreenProps {
     companies?: Array<{ id: string; name: string; site?: string }>;
     /** 검색 결과에서 룸/자산 클릭 시 인프라 모달 + 룸 편집 진입 */
     onOpenRoomFromSearch?: (building: string, floor: string, roomName: string) => void;
+    /** Quick Task 토글 — App.tsx 에서 단일 source of truth */
+    disabledTaskIds?: Set<string>;
+    onToggleTaskDisabled?: (id: string) => void;
 }
 
 export interface FilterTemplate {
@@ -137,6 +140,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     infraRooms,
     companies,
     onOpenRoomFromSearch,
+    disabledTaskIds: disabledTaskIdsProp,
+    onToggleTaskDisabled,
 }) => {
     const sites = effectiveSites || SITES_DEFAULTS;
     const siteCounts = useMemo(
@@ -145,29 +150,9 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     );
     // 개별 큐 펼침 토글 — 기본 접힘 (통합이 기본 워크플로우)
     const [showIndividualTasks, setShowIndividualTasks] = useState(false);
-    // Quick Task 칩 토글 — localStorage 에 저장된 disabled task id 집합
-    const DISABLED_KEY = 'nexus-disabled-quick-tasks-v1';
-    const [disabledTaskIds, setDisabledTaskIds] = useState<Set<string>>(() => {
-        try {
-            if (typeof localStorage === 'undefined') return new Set();
-            const raw = localStorage.getItem(DISABLED_KEY);
-            if (!raw) return new Set();
-            const arr = JSON.parse(raw) as string[];
-            return new Set(Array.isArray(arr) ? arr : []);
-        } catch { return new Set(); }
-    });
-    const toggleTaskDisabled = (id: string) => {
-        setDisabledTaskIds(prev => {
-            const next = new Set(prev);
-            if (next.has(id)) next.delete(id); else next.add(id);
-            try {
-                if (typeof localStorage !== 'undefined') {
-                    localStorage.setItem(DISABLED_KEY, JSON.stringify(Array.from(next)));
-                }
-            } catch { /* noop */ }
-            return next;
-        });
-    };
+    // Quick Task 토글 — App.tsx 에서 prop 으로 받음 (대시보드와 공유)
+    const disabledTaskIds = disabledTaskIdsProp || new Set<string>();
+    const toggleTaskDisabled = onToggleTaskDisabled || (() => {});
     // 활성화된 Quick Task list (꺼진 것 제외)
     const enabledQuickTasks = useMemo(
         () => QUICK_TASKS.filter(t => !disabledTaskIds.has(t.id)),

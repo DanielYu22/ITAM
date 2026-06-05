@@ -132,6 +132,30 @@ export default function App() {
   const [showMonthlyResetModal, setShowMonthlyResetModal] = useState(false);
   const [showInfrastructureModal, setShowInfrastructureModal] = useState(false);
   const [infrastructure, setInfrastructure] = useState<InfrastructureData>(emptyInfrastructure());
+  // Quick Task on/off 토글 (localStorage 영속) — 통합 카드 + 과제 대시보드 공통
+  const DISABLED_TASK_KEY = 'nexus-disabled-quick-tasks-v1';
+  const [disabledTaskIds, setDisabledTaskIds] = useState<Set<string>>(() => {
+    try {
+      if (typeof localStorage === 'undefined') return new Set();
+      const raw = localStorage.getItem(DISABLED_TASK_KEY);
+      if (!raw) return new Set();
+      const arr = JSON.parse(raw) as string[];
+      return new Set(Array.isArray(arr) ? arr : []);
+    } catch { return new Set(); }
+  });
+  const toggleTaskDisabled = useCallback((id: string) => {
+    setDisabledTaskIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      try {
+        if (typeof localStorage !== 'undefined') {
+          localStorage.setItem(DISABLED_TASK_KEY, JSON.stringify(Array.from(next)));
+        }
+      } catch { /* noop */ }
+      return next;
+    });
+  }, []);
+
   // Phase B: 노션 DB 기반 — Map<roomId, RoomNode> 로 빠른 lookup + 입주사 마스터 캐시
   const [infraNodesById, setInfraNodesById] = useState<Map<string, RoomNode>>(new Map());
   const [companies, setCompanies] = useState<CompanyInfo[]>([]);
@@ -1411,6 +1435,8 @@ export default function App() {
                 setPendingRoomToEdit({ building: b, floor: f, room: r });
                 setShowInfrastructureModal(true);
               }}
+              disabledTaskIds={disabledTaskIds}
+              onToggleTaskDisabled={toggleTaskDisabled}
             />
 
             {/* 버전 표시 (배포 확인용) */}
@@ -1822,6 +1848,8 @@ export default function App() {
           onCompleteQuickTask={handleCompleteQuickTask}
           currentSite={currentSite}
           effectiveSites={effectiveSites}
+          disabledTaskIds={disabledTaskIds}
+          onToggleTaskDisabled={toggleTaskDisabled}
           onJumpToAsset={(asset) => {
             setShowTaskDashboardModal(false);
             // 카드 뷰로 점프 — 통합 큐 모드로 진입해 해당 자산을 시작점으로

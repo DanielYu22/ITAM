@@ -43,6 +43,9 @@ interface Props {
     /** 현재 사이트 컨텍스트. 'all' 일 때만 트리에 사이트 단계가 추가됨. */
     currentSite?: SiteId;
     effectiveSites?: SiteDef[];
+    /** Quick Task 토글 — 통합 카드와 공유 */
+    disabledTaskIds?: Set<string>;
+    onToggleTaskDisabled?: (id: string) => void;
 }
 
 interface AssetRow {
@@ -75,6 +78,8 @@ export const TaskDashboardModal: React.FC<Props> = ({
     onJumpToAsset,
     currentSite = 'all',
     effectiveSites,
+    disabledTaskIds,
+    onToggleTaskDisabled,
 }) => {
     const [searchQuery, setSearchQuery] = useState('');
     const [activeTaskFilter, setActiveTaskFilter] = useState<string | null>(null);
@@ -87,10 +92,12 @@ export const TaskDashboardModal: React.FC<Props> = ({
     }, [schemaProperties]);
 
     // 매칭되는 과제가 1건 이상인 자산만 추출 + 위치 정보
+    // disabled 된 Quick Task 는 매칭에서 제외
     const allRows = useMemo<AssetRow[]>(() => {
+        const enabledTasks = QUICK_TASKS.filter(t => !disabledTaskIds || !disabledTaskIds.has(t.id));
         const rows: AssetRow[] = [];
         for (const asset of assets) {
-            const matched = getMatchingQuickTasks(asset);
+            const matched = getMatchingQuickTasks(asset, enabledTasks);
             if (matched.length === 0) continue;
             const v = asset.values as any;
             rows.push({
@@ -103,7 +110,7 @@ export const TaskDashboardModal: React.FC<Props> = ({
             });
         }
         return rows;
-    }, [assets, effectiveSites]);
+    }, [assets, effectiveSites, disabledTaskIds]);
 
     // 검색 + Quick Task 필터 적용
     const filteredRows = useMemo(() => {
@@ -405,7 +412,8 @@ export const TaskDashboardModal: React.FC<Props> = ({
                             {QUICK_TASKS.map(t => {
                                 const cnt = stats.perTask[t.id] || 0;
                                 const active = activeTaskFilter === t.id;
-                                const dim = cnt === 0;
+                                const off = !!disabledTaskIds?.has(t.id);
+                                const dim = !off && cnt === 0;
                                 return (
                                     <TouchableOpacity
                                         key={t.id}
@@ -413,14 +421,17 @@ export const TaskDashboardModal: React.FC<Props> = ({
                                             styles.taskFilterChip,
                                             { backgroundColor: active ? t.color : t.bgColor },
                                             dim && !active && { opacity: 0.5 },
+                                            off && { backgroundColor: '#e5e7eb', opacity: 0.4 },
                                         ]}
-                                        onPress={() => !dim && setActiveTaskFilter(active ? null : t.id)}
-                                        disabled={dim}
+                                        onPress={() => !off && !dim && setActiveTaskFilter(active ? null : t.id)}
+                                        onLongPress={() => onToggleTaskDisabled?.(t.id)}
+                                        disabled={false}
                                     >
-                                        <Text style={styles.taskFilterChipEmoji}>{t.emoji}</Text>
+                                        <Text style={[styles.taskFilterChipEmoji, off && { textDecorationLine: 'line-through' as any }]}>{t.emoji}</Text>
                                         <Text style={[
                                             styles.taskFilterChipText,
-                                            { color: active ? '#ffffff' : t.color, fontWeight: '700' },
+                                            { color: active ? '#ffffff' : (off ? '#6b7280' : t.color), fontWeight: '700' },
+                                            off && { textDecorationLine: 'line-through' as any },
                                         ]}>
                                             {t.name} {cnt}
                                         </Text>
