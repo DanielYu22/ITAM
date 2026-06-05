@@ -366,6 +366,52 @@ export const DashboardModal: React.FC<Props> = ({
                 {/* 컬럼 픽커 패널 */}
                 {showColumnPicker && (
                     <ScrollView style={styles.panel} contentContainerStyle={styles.panelContent}>
+                        {/* 전체 선택 / 해제 토글 */}
+                        <View style={{
+                            flexDirection: 'row',
+                            gap: 8,
+                            paddingBottom: 8,
+                            marginBottom: 8,
+                            borderBottomWidth: 1,
+                            borderBottomColor: '#e5e7eb',
+                        }}>
+                            <TouchableOpacity
+                                style={{
+                                    flex: 1,
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 4,
+                                    paddingVertical: 8,
+                                    backgroundColor: visibleColumns.length === schema.length ? '#e0e7ff' : '#f1f5f9',
+                                    borderRadius: 8,
+                                }}
+                                onPress={() => setVisibleColumns([...schema])}
+                            >
+                                <Check size={12} color="#4338ca" />
+                                <Text style={{ fontSize: 12, fontWeight: '700', color: '#4338ca' }}>
+                                    전체 추가 ({schema.length})
+                                </Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity
+                                style={{
+                                    flex: 1,
+                                    flexDirection: 'row',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    gap: 4,
+                                    paddingVertical: 8,
+                                    backgroundColor: visibleColumns.length === 0 ? '#fee2e2' : '#f1f5f9',
+                                    borderRadius: 8,
+                                }}
+                                onPress={() => setVisibleColumns([])}
+                            >
+                                <X size={12} color="#b91c1c" />
+                                <Text style={{ fontSize: 12, fontWeight: '700', color: '#b91c1c' }}>
+                                    전체 해제
+                                </Text>
+                            </TouchableOpacity>
+                        </View>
                         {schema.map(col => {
                             const checked = visibleColumns.includes(col);
                             return (

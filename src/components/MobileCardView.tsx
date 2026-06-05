@@ -13,6 +13,7 @@ import {
     TouchableWithoutFeedback,
     Keyboard,
     Dimensions,
+    useWindowDimensions,
     FlatList,
     NativeSyntheticEvent,
     NativeScrollEvent,
@@ -22,10 +23,8 @@ import { Asset, NotionProperty } from '../lib/notion';
 import { FilterConfig, TargetCondition } from './FieldWorkFilter';
 import { QuickTaskDef, HISTORY_FIELD_NAME, getMatchingQuickTasks, QUICK_TASKS } from '../lib/quickTasks';
 
-const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get('window');
-// Explicit height calculation for web compatibility
-// Header ~60px, Pagination ~60px, Padding ~32px = 152px total chrome
-const CARD_HEIGHT = SCREEN_HEIGHT - 152;
+// SCREEN_WIDTH/CARD_HEIGHT 는 컴포넌트 내부 useWindowDimensions 로 실시간 추적
+// (브라우저 줌/리사이즈 시 stale 방지)
 
 interface MobileCardViewProps {
     assets: Asset[];
@@ -142,6 +141,10 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
     locationFilters,
     onRequestChangeLocation,
 }) => {
+    // 카드 잘림 fix: useWindowDimensions 로 실시간 반응 (줌/리사이즈 추적)
+    const { width: dynamicWidth, height: dynamicHeight } = useWindowDimensions();
+    const SCREEN_WIDTH = dynamicWidth;
+    const CARD_HEIGHT = dynamicHeight - 152;
     const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
     // 처리이력 펼침 상태 (assetId별)
     const [expandedHistory, setExpandedHistory] = useState<Record<string, boolean>>({});
@@ -503,7 +506,7 @@ export const MobileCardView: React.FC<MobileCardViewProps> = ({
         };
 
         return (
-            <View style={styles.cardContainer}>
+            <View style={[styles.cardContainer, { width: SCREEN_WIDTH, height: CARD_HEIGHT }]}>
                 <View style={styles.cardWrapper}>
                     <View style={styles.card}>
                         <View style={styles.cardHeader}>
@@ -1054,8 +1057,7 @@ const styles = StyleSheet.create({
         flex: 1,
     },
     cardContainer: {
-        width: SCREEN_WIDTH,
-        height: CARD_HEIGHT, // Explicit pixel height for web scroll support
+        // width/height 는 컴포넌트에서 useWindowDimensions 로 inline 주입
     },
     cardWrapper: {
         flex: 1,
