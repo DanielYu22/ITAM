@@ -71,7 +71,12 @@ export default async function handler(req, res) {
   }
 
   const apiKey = process.env.VITE_NOTION_KEY || process.env.NOTION_API_KEY;
-  const databaseId = process.env.VITE_NOTION_DATABASE_ID || process.env.NOTION_DATABASE_ID;
+  // [Phase 15] env 잘못된 값일 경우 fallback — NEXUS 가 실제 사용 중인 dbId
+  const REAL_DB_ID_FALLBACK = '2df17e12-9ccc-806b-8345-d3d840db15ca';
+  const envDbId = process.env.VITE_NOTION_DATABASE_ID || process.env.NOTION_DATABASE_ID;
+  // env 가 잘못된 (404 발생한) 값이면 fallback 사용
+  const WRONG_DB_ID = '2df17e12-9ccc-80b1-a34c-000b81da4a69';
+  const databaseId = (envDbId && envDbId !== WRONG_DB_ID) ? envDbId : REAL_DB_ID_FALLBACK;
   if (!apiKey || !databaseId) {
     return res.status(500).json({
       ok: false,
