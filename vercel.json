@@ -15,5 +15,17 @@
             "source": "/(.*)",
             "destination": "/index.html"
         }
+    ],
+    "redirects": [
+        {
+            "source": "/atlas/(.*)",
+            "destination": "https://ai-notion-task.vercel.app/$1",
+            "permanent": false
+        },
+        {
+            "source": "/atlas",
+            "destination": "https://ai-notion-task.vercel.app",
+            "permanent": false
+        }
     ]
 }

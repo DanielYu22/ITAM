@@ -26,7 +26,8 @@ import {
   PlusCircle,
   AlertCircle,
   Download,
-  Upload
+  Upload,
+  ExternalLink
 } from 'lucide-react-native';
 import { NotionClient, Asset, NotionProperty } from './src/lib/notion';
 import { filterUserFacingAssets } from './src/lib/ghostAssets';
@@ -1529,6 +1530,19 @@ export default function App() {
                 </Text>
               </View>
               <View style={styles.headerRight}>
+                {/* [Shell 통합] ATLAS (업무) 진입 — 새 탭. 데이터·계정 분리. */}
+                <TouchableOpacity
+                  style={styles.headerButton}
+                  onPress={() => {
+                    try {
+                      if (typeof window !== 'undefined' && window.open) {
+                        window.open('https://ai-notion-task.vercel.app', '_blank');
+                      }
+                    } catch {}
+                  }}
+                >
+                  <ExternalLink size={20} color="#6366f1" />
+                </TouchableOpacity>
                 <TouchableOpacity
                   style={styles.headerButton}
                   onPress={() => setShowBulkUpdateModal(true)}

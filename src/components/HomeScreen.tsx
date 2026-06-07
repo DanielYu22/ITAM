@@ -34,6 +34,7 @@ import {
     Wrench,
     CalendarClock,
     Building2,
+    ExternalLink,
 } from 'lucide-react-native';
 import { FilterConfig } from './FieldWorkFilter';
 import { Asset, NotionProperty } from '../lib/notion';
@@ -407,6 +408,20 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         <Text style={styles.title}>NEXUS ITAM</Text>
                         <Text style={styles.subtitle}>현장 작업 관리</Text>
                     </View>
+                    {/* [Shell 통합] ATLAS (업무) 진입 — 새 탭. 데이터·계정 분리 유지. */}
+                    <TouchableOpacity
+                        style={[styles.headerRefreshBtn, { marginRight: 8, backgroundColor: '#eef2ff', borderColor: '#c7d2fe' }]}
+                        onPress={() => {
+                            try {
+                                if (typeof window !== 'undefined' && window.open) {
+                                    window.open('https://ai-notion-task.vercel.app', '_blank');
+                                }
+                            } catch {}
+                        }}
+                        activeOpacity={0.7}
+                    >
+                        <ExternalLink size={16} color="#6366f1" />
+                    </TouchableOpacity>
                     {onRefresh && (
                         <TouchableOpacity
                             style={styles.headerRefreshBtn}
