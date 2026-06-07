@@ -1,29 +1,57 @@
 /**
- * NEXUS Cross-API — Asset 검색 endpoint (read-only)
+ * NEXUS Cross-API — Asset 검색 endpoint (read-only, v2)
  *
- * 사용처: ATLAS 채팅에서 "관제실 PC 들 보여줘" 같은 자연어 명령 → 이 endpoint 호출.
- * NEXUS 의 Notion 자산 DB 를 자기 키로 조회 → 결과 JSON 반환.
+ * [Phase 13] 카테고리 단어 → 자산 prefix 매핑 + 더 친절한 에러 메시지.
  *
- * 보안: CROSS_API_TOKEN env 토큰으로 간단 인증 (외부 무단 호출 차단).
+ * 예시 매핑:
+ *   "실험기기" → CEQ-, EXP-, RES-, LAB-
+ *   "PC" / "데스크탑" → DESKTOP-, PC-
+ *   "노트북" → LAPTOP-, NB-, NOTE-
+ *   "서버" → SRV-, SVR-, SERVER-
+ *   "방화벽" → FW-, FIREWALL-
+ *   "스위치" → SW-, SWITCH-
+ *   "UPS" → UPS-
+ *   "CCTV" → CCTV-, CAM-
+ *   "NAS" → NAS-
  *
  * 요청 (POST):
  *   {
- *     "filter": "관제실 PC" | "방화벽" | null,    // free text 검색 (모든 컬럼)
- *     "site": "IT쉐어드" | null,                  // 사이트 필터 (선택)
- *     "limit": 50                                  // 결과 수 제한 (기본 100, 최대 200)
+ *     "filter": "관제실 PC" | "방화벽" | "실험기기" | null,
+ *     "site": "용인" | null,
+ *     "limit": 50,
+ *     "category": "실험기기" (옵션, 카테고리 단어 명시)
  *   }
  *
  * 응답:
  *   {
  *     "ok": true,
  *     "count": 12,
- *     "assets": [
- *       { "id": "...", "title": "PC-001", "values": { "위치": "관제실", ... }, "url": "..." },
- *       ...
- *     ],
- *     "totalScanned": 234
+ *     "assets": [...],
+ *     "totalScanned": 234,
+ *     "inferredCategory": "실험기기" (있을 때만 — 추론된 카테고리),
+ *     "matchedPrefixes": ["CEQ-", "EXP-"] (실제 매칭한 prefix 들)
  *   }
  */
+const CATEGORY_PREFIXES = {
+  '실험기기': ['CEQ-', 'EXP-', 'RES-', 'LAB-', 'EQ-'],
+  '실험장비': ['CEQ-', 'EXP-', 'RES-', 'LAB-', 'EQ-'],
+  'PC':       ['DESKTOP-', 'PC-', 'WS-'],
+  '데스크탑':  ['DESKTOP-', 'PC-', 'WS-'],
+  '노트북':    ['LAPTOP-', 'NB-', 'NOTE-', 'NT-'],
+  '서버':      ['SRV-', 'SVR-', 'SERVER-', 'SV-'],
+  '방화벽':    ['FW-', 'FIREWALL-'],
+  '스위치':    ['SW-', 'SWITCH-'],
+  'UPS':      ['UPS-'],
+  'CCTV':     ['CCTV-', 'CAM-'],
+  'NAS':      ['NAS-', 'SYNOLOGY-'],
+  '네트워크':  ['NW-', 'NET-', 'SW-', 'FW-', 'RT-'],
+  '라우터':    ['RT-', 'ROUTER-'],
+  '백업':      ['BAK-', 'BACKUP-', 'NAS-'],
+  '실험':      ['CEQ-', 'EXP-', 'RES-', 'LAB-'],
+};
+
+const KOREAN_CATEGORY_KEYS = Object.keys(CATEGORY_PREFIXES);
+
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
@@ -32,30 +60,53 @@ export default async function handler(req, res) {
   if (req.method === 'OPTIONS') return res.status(200).end();
   if (req.method !== 'POST') return res.status(405).json({ ok: false, error: 'POST only' });
 
-  // 토큰 인증
   const expected = process.env.CROSS_API_TOKEN;
   const got = req.headers['x-cross-token'] || req.headers['X-Cross-Token'];
   if (expected && got !== expected) {
-    return res.status(401).json({ ok: false, error: 'invalid token' });
+    return res.status(401).json({
+      ok: false,
+      error: 'invalid token',
+      hint: 'ATLAS 의 VITE_CROSS_API_TOKEN 과 NEXUS 의 CROSS_API_TOKEN 이 같은지 확인'
+    });
   }
 
   const apiKey = process.env.VITE_NOTION_KEY || process.env.NOTION_API_KEY;
   const databaseId = process.env.VITE_NOTION_DATABASE_ID || process.env.NOTION_DATABASE_ID;
   if (!apiKey || !databaseId) {
-    return res.status(500).json({ ok: false, error: 'NEXUS Notion 설정 누락' });
+    return res.status(500).json({
+      ok: false,
+      error: 'NEXUS Notion 설정 누락',
+      hint: 'VITE_NOTION_KEY + VITE_NOTION_DATABASE_ID 양쪽 모두 Vercel 환경변수 필요'
+    });
   }
 
   const body = req.body || {};
-  const filter = String(body.filter || '').trim().toLowerCase();
+  const rawFilter = String(body.filter || '').trim();
+  const filterLower = rawFilter.toLowerCase();
   const site = String(body.site || '').trim();
   const limit = Math.min(Math.max(parseInt(body.limit) || 100, 1), 200);
+  const explicitCategory = String(body.category || '').trim();
 
-  // Notion DB 전체 조회 (필터는 클라이언트 측 — 단순 + 컬럼 무관 검색)
+  // [Phase 13] 카테고리 추론 — filter 안에 카테고리 단어 포함 여부
+  let inferredCategory = explicitCategory;
+  let matchedPrefixes = [];
+  if (!inferredCategory) {
+    for (const key of KOREAN_CATEGORY_KEYS) {
+      if (rawFilter.includes(key)) {
+        inferredCategory = key;
+        break;
+      }
+    }
+  }
+  if (inferredCategory && CATEGORY_PREFIXES[inferredCategory]) {
+    matchedPrefixes = CATEGORY_PREFIXES[inferredCategory];
+  }
+
+  // Notion DB 전체 조회 (필터는 클라이언트 측)
   try {
     const allResults = [];
     let cursor = undefined;
     let totalScanned = 0;
-    // pagination — 최대 5페이지 (500건) 안전 limit
     for (let i = 0; i < 5; i++) {
       const queryBody = {
         page_size: 100,
@@ -72,7 +123,22 @@ export default async function handler(req, res) {
       });
       const data = await r.json();
       if (!r.ok) {
-        return res.status(r.status).json({ ok: false, error: data.message || 'Notion query failed', notionError: data });
+        // [Phase 13] Notion API 에러 — 어떤 종류인지 분석해서 친절히 안내
+        const msg = data.message || 'Notion query failed';
+        let hint = '';
+        if (/Could not find database/i.test(msg)) {
+          hint = `NEXUS 의 Notion integration ("ITAM DB") 가 자산 데이터베이스 (${databaseId}) 에 접근 권한이 없어요. ` +
+                 `Notion 에서 해당 DB 페이지 → ⋯ 메뉴 → 연결 → "ITAM DB" 추가 필요.`;
+        } else if (/unauthorized|invalid api key|invalid_token/i.test(msg)) {
+          hint = `NEXUS 의 VITE_NOTION_KEY 가 유효하지 않아요. Notion → My integrations → 새 secret 발급 후 Vercel 환경변수 업데이트.`;
+        }
+        return res.status(r.status).json({
+          ok: false,
+          error: msg,
+          hint,
+          notionError: data,
+          databaseId: databaseId.slice(0, 8) + '…',
+        });
       }
       const rows = Array.isArray(data.results) ? data.results : [];
       totalScanned += rows.length;
@@ -83,7 +149,7 @@ export default async function handler(req, res) {
       cursor = data.next_cursor;
     }
 
-    // 자산 정규화 + 클라이언트 측 필터
+    // 자산 정규화
     const normalized = allResults.map(page => {
       const values = {};
       let title = '';
@@ -100,12 +166,19 @@ export default async function handler(req, res) {
       };
     });
 
-    // 검색 적용
+    // [Phase 13] 검색 — 카테고리 prefix 매칭 우선, 그 다음 substring contains
     let filtered = normalized;
-    if (filter) {
+    if (matchedPrefixes.length > 0) {
+      // 카테고리 prefix OR 매칭. 타이틀이 prefix 들 중 하나로 시작하면 포함.
+      filtered = filtered.filter(a => {
+        const upperTitle = (a.title || '').toUpperCase();
+        return matchedPrefixes.some(p => upperTitle.startsWith(p.toUpperCase()));
+      });
+    } else if (filterLower) {
+      // 기존 substring contains
       filtered = filtered.filter(a => {
         const haystack = (a.title + ' ' + Object.values(a.values).join(' ')).toLowerCase();
-        return haystack.includes(filter);
+        return haystack.includes(filterLower);
       });
     }
     if (site) {
@@ -115,7 +188,6 @@ export default async function handler(req, res) {
       });
     }
 
-    // limit 적용
     const result = filtered.slice(0, limit);
 
     return res.status(200).json({
@@ -124,10 +196,16 @@ export default async function handler(req, res) {
       assets: result,
       totalScanned,
       truncated: filtered.length > limit,
+      inferredCategory: inferredCategory || undefined,
+      matchedPrefixes: matchedPrefixes.length > 0 ? matchedPrefixes : undefined,
     });
   } catch (err) {
     console.error('[assets-query] error:', err);
-    return res.status(500).json({ ok: false, error: err.message || String(err) });
+    return res.status(500).json({
+      ok: false,
+      error: err.message || String(err),
+      hint: 'NEXUS 서버 내부 오류 — Vercel 로그 확인'
+    });
   }
 }
 
