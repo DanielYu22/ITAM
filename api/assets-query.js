@@ -171,6 +171,10 @@ export default async function handler(req, res) {
       };
     });
 
+    // [Phase 17] 시스템 자산 제외 — 사용자에게 의미 없는 settings/template 등
+    const SYSTEM_ASSET_RE = /^[_\s]|^(NEXUS_SETTINGS|SETTINGS|TEMPLATE|CONFIG|META)/i;
+    const userOnly = normalized.filter(a => !SYSTEM_ASSET_RE.test(a.title || ''));
+
     // [Phase 16] 검색 — 단어 분리 + 카테고리 prefix + AND/OR fallback
     const STOPWORDS = new Set(['장비','장비들','자산','자산들','의','에','에서','를','을','들','다','좀','보여','보여줘','뭐','있어','있는','하기','하나','말이야','말','말야']);
     const meaningfulWords = rawFilter
@@ -179,7 +183,7 @@ export default async function handler(req, res) {
       .map(w => w.trim())
       .filter(w => w.length >= 2 && !STOPWORDS.has(w));
 
-    let filtered = normalized;
+    let filtered = userOnly;
 
     // 카테고리 prefix 매칭
     if (matchedPrefixes.length > 0) {
