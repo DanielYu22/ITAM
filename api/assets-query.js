@@ -33,8 +33,8 @@
  *   }
  */
 const CATEGORY_PREFIXES = {
-  '실험기기': ['CEQ-', 'EXP-', 'RES-', 'LAB-', 'EQ-'],
-  '실험장비': ['CEQ-', 'EXP-', 'RES-', 'LAB-', 'EQ-'],
+  '실험기기': ['CEQ-', 'EXP-', 'RES-', 'LAB-', 'EQ-', 'DEQ-', 'AEQ-', 'BEQ-'],
+  '실험장비': ['CEQ-', 'EXP-', 'RES-', 'LAB-', 'EQ-', 'DEQ-', 'AEQ-', 'BEQ-'],
   'PC':       ['DESKTOP-', 'PC-', 'WS-'],
   '데스크탑':  ['DESKTOP-', 'PC-', 'WS-'],
   '노트북':    ['LAPTOP-', 'NB-', 'NOTE-', 'NT-'],
@@ -171,25 +171,56 @@ export default async function handler(req, res) {
       };
     });
 
-    // [Phase 13] 검색 — 카테고리 prefix 매칭 우선, 그 다음 substring contains
+    // [Phase 16] 검색 — 단어 분리 + 카테고리 prefix + AND/OR fallback
+    const STOPWORDS = new Set(['장비','장비들','자산','자산들','의','에','에서','를','을','들','다','좀','보여','보여줘','뭐','있어','있는','하기','하나','말이야','말','말야']);
+    const meaningfulWords = rawFilter
+      .toLowerCase()
+      .split(/[\s,]+/)
+      .map(w => w.trim())
+      .filter(w => w.length >= 2 && !STOPWORDS.has(w));
+
     let filtered = normalized;
+
+    // 카테고리 prefix 매칭
     if (matchedPrefixes.length > 0) {
-      // 카테고리 prefix OR 매칭. 타이틀이 prefix 들 중 하나로 시작하면 포함.
       filtered = filtered.filter(a => {
         const upperTitle = (a.title || '').toUpperCase();
         return matchedPrefixes.some(p => upperTitle.startsWith(p.toUpperCase()));
       });
-    } else if (filterLower) {
-      // 기존 substring contains
-      filtered = filtered.filter(a => {
-        const haystack = (a.title + ' ' + Object.values(a.values).join(' ')).toLowerCase();
-        return haystack.includes(filterLower);
-      });
     }
+    // 의미 있는 단어 매칭 (prefix 적용 후 또는 prefix 없을 때)
+    if (meaningfulWords.length > 0) {
+      const matchWords = (arr, mode) => arr.filter(a => {
+        const haystack = ((a.title || '') + ' ' + Object.values(a.values || {}).join(' ')).toLowerCase();
+        if (mode === 'and') return meaningfulWords.every(w => haystack.includes(w));
+        return meaningfulWords.some(w => haystack.includes(w));
+      });
+
+      if (matchedPrefixes.length > 0) {
+        // prefix + 단어 OR (조건 완화)
+        const narrowed = matchWords(filtered, 'or');
+        if (narrowed.length > 0) filtered = narrowed;
+      } else if (meaningfulWords.length === 1) {
+        filtered = matchWords(filtered, 'or');
+      } else {
+        // 2개 이상 단어 — 우선 AND, 0건이면 OR fallback
+        const andResult = matchWords(filtered, 'and');
+        filtered = andResult.length > 0 ? andResult : matchWords(filtered, 'or');
+      }
+    }
+
+    // [Phase 16] site 필터 — 컬럼명 후보 대폭 확장 + title/전체값 fallback
     if (site) {
+      const SITE_KEY_RE = /(site|사이트|장소|위치|지역|건물|사옥|캠퍼스|지점|location|건물명)/i;
+      const siteLower = site.toLowerCase();
       filtered = filtered.filter(a => {
-        const v = Object.entries(a.values).find(([k]) => /(site|사이트|장소|위치)/i.test(k))?.[1] || '';
-        return String(v).toLowerCase().includes(site.toLowerCase());
+        const siteEntries = Object.entries(a.values || {}).filter(([k]) => SITE_KEY_RE.test(k));
+        for (const [, v] of siteEntries) {
+          if (String(v).toLowerCase().includes(siteLower)) return true;
+        }
+        // Fallback — 어디든 site 단어 포함
+        const haystack = ((a.title || '') + ' ' + Object.values(a.values || {}).join(' ')).toLowerCase();
+        return haystack.includes(siteLower);
       });
     }
 
