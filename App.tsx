@@ -10,6 +10,7 @@ import {
   ScrollView,
   RefreshControl,
   Modal,
+  Platform,
 } from 'react-native';
 import { SafeAreaView, SafeAreaProvider } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
@@ -91,6 +92,23 @@ import {
 } from './src/lib/quickTasks';
 
 export default function App() {
+  // [Real 통합 Phase 1B] Shell 탭 — nexus(현장 본진) | atlas(업무 iframe). Web 빌드 전용.
+  const [shellTab, setShellTab] = useState<'nexus' | 'atlas'>(() => {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        return (localStorage.getItem('nexus_shell_tab') as any) || 'nexus';
+      }
+    } catch {}
+    return 'nexus';
+  });
+  React.useEffect(() => {
+    try {
+      if (typeof localStorage !== 'undefined') {
+        localStorage.setItem('nexus_shell_tab', shellTab);
+      }
+    } catch {}
+  }, [shellTab]);
+
   // Settings state for configuration - check these first
   const [apiKey, setApiKey] = useState(NOTION_API_KEY);
   const [databaseId, setDatabaseId] = useState(NOTION_DATABASE_ID);
@@ -1374,6 +1392,48 @@ export default function App() {
     <SafeAreaProvider>
       <SafeAreaView style={styles.container}>
         <StatusBar style="dark" />
+        {/* [Real 통합 Phase 1B] ATLAS 탭 — web 빌드만 iframe */}
+        {shellTab === 'atlas' && Platform.OS === 'web' ? (
+          <View style={{ flex: 1, backgroundColor: '#0f172a' }}>
+            <View style={{
+              flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 8,
+              backgroundColor: '#0f172a', borderBottomWidth: 1, borderBottomColor: '#1e293b', gap: 8,
+            }}>
+              <Text style={{ color: '#10b981', fontWeight: '700', fontSize: 14 }}>📋 ATLAS · 업무</Text>
+              <Text style={{ color: '#475569', fontSize: 11 }}>iframe embed · 데이터·계정 분리</Text>
+              <View style={{ flex: 1 }} />
+              <TouchableOpacity
+                onPress={() => setShellTab('nexus')}
+                style={{ paddingHorizontal: 10, paddingVertical: 4, borderRadius: 4, borderWidth: 1, borderColor: '#6366f1', backgroundColor: '#312e81' }}
+              >
+                <Text style={{ color: '#c7d2fe', fontSize: 11, fontWeight: '700' }}>← 🔧 현장</Text>
+              </TouchableOpacity>
+            </View>
+            {/* @ts-ignore — iframe is web-only */}
+            <iframe
+              src="https://ai-notion-task.vercel.app"
+              style={{ flex: 1, border: 'none', width: '100%', minHeight: '500px', background: '#0f172a' } as any}
+              title="ATLAS 업무 채팅"
+              allow="clipboard-read; clipboard-write"
+              loading="eager"
+            />
+          </View>
+        ) : (<>
+        {/* [Phase 1B] 미니 탭 위젯 — 우측 상단 (web only) */}
+        {Platform.OS === 'web' && (
+          <View style={{
+            position: 'absolute', top: 8, right: 8, zIndex: 1000,
+            flexDirection: 'row', gap: 4,
+            backgroundColor: 'rgba(15,23,42,0.85)', borderRadius: 6, padding: 2, borderWidth: 1, borderColor: '#334155',
+          }}>
+            <TouchableOpacity onPress={() => setShellTab('nexus')} style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4, backgroundColor: '#6366f1' }}>
+              <Text style={{ color: '#fff', fontSize: 10, fontWeight: '700' }}>🔧 현장</Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setShellTab('atlas')} style={{ paddingHorizontal: 8, paddingVertical: 3, borderRadius: 4 }}>
+              <Text style={{ color: '#94a3b8', fontSize: 10, fontWeight: '700' }}>📋 업무</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {/* 홈 화면 모드 */}
         {!isWorkMode ? (
@@ -1918,6 +1978,7 @@ export default function App() {
             )}
           </TouchableOpacity>
         </View>
+        </>)}
       </SafeAreaView>
     </SafeAreaProvider>
   );
