@@ -550,10 +550,22 @@ export const LayoutEditorModal: React.FC<Props> = ({
                                 scale={scale}
                                 selected={obj.id === selectedId}
                                 onSelect={() => setSelectedId(obj.id)}
-                                onMove={(dx, dy) => updateObject(obj.id, {
-                                    x: Math.max(0, Math.min(CANVAS_WIDTH - obj.width, obj.x + dx)),
-                                    y: Math.max(0, Math.min(CANVAS_HEIGHT - obj.height, obj.y + dy)),
-                                })}
+                                onMove={(dx, dy) => {
+                                    // 회전된 시각적 bounding box 기준으로 클램프 (회전 origin = center)
+                                    const rot = ((obj.rotation || 0) * Math.PI) / 180;
+                                    const c = Math.abs(Math.cos(rot));
+                                    const s = Math.abs(Math.sin(rot));
+                                    const effW = obj.width * c + obj.height * s;
+                                    const effH = obj.width * s + obj.height * c;
+                                    const newCx = obj.x + obj.width / 2 + dx;
+                                    const newCy = obj.y + obj.height / 2 + dy;
+                                    const clampedCx = Math.max(effW / 2, Math.min(CANVAS_WIDTH - effW / 2, newCx));
+                                    const clampedCy = Math.max(effH / 2, Math.min(CANVAS_HEIGHT - effH / 2, newCy));
+                                    updateObject(obj.id, {
+                                        x: clampedCx - obj.width / 2,
+                                        y: clampedCy - obj.height / 2,
+                                    });
+                                }}
                                 onDragStart={() => setObjectDragging(true)}
                                 onDragEnd={() => setObjectDragging(false)}
                             />
