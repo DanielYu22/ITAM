@@ -70,12 +70,45 @@ export default async function handler(req, res) {
     propPayload[name] = buildPropertyValue(spec);
   }
 
+  // [Track B] 변경이력 — 값이 실제 바뀌면 처리이력에 "[날짜] ATLAS 변경: 필드 prev→new" prepend.
+  //   (field-support.js 의 처리이력 누적 패턴 차용. 장비 변경의 감사 추적 보장.)
+  const HISTORY_RE = /처리이력|이력|history/i;
+  const todayYmd = new Date().toISOString().slice(0, 10);
+
   const updated = [];
   const failed = [];
   for (const id of ids) {
     try {
-      // 이전 값 조회 (Undo 용)
-      const prev = await fetchPagePropertyValues(apiKey, id, Object.keys(updates));
+      // 페이지 1회 조회 — 이전 값(Undo용) + 처리이력 현재값.
+      const pageRes = await fetch(`https://api.notion.com/v1/pages/${id}`, {
+        headers: { 'Authorization': `Bearer ${apiKey}`, 'Notion-Version': '2022-06-28' },
+      });
+      const page = pageRes.ok ? await pageRes.json() : null;
+      const props = page?.properties || {};
+      const prev = {};
+      for (const n of Object.keys(updates)) prev[n] = extractStringValue(props[n]);
+
+      // 실제로 바뀐 필드만 변경 라인에 담는다.
+      const changedParts = [];
+      for (const [k, spec] of Object.entries(updates)) {
+        const nv = Array.isArray(spec.value) ? spec.value.join(', ') : String(spec.value);
+        if (String(prev[k] ?? '') !== nv) changedParts.push(`${k} ${prev[k] || '∅'}→${nv}`);
+      }
+
+      // 처리이력 prop 탐지(이름 가변 대비) + prepend.
+      let historyName = null, historyCur = '';
+      for (const [k, val] of Object.entries(props)) {
+        if (HISTORY_RE.test(k) && val?.type === 'rich_text') { historyName = k; historyCur = extractStringValue(val); break; }
+      }
+      const pageProps = { ...propPayload };
+      let historyAdded = false;
+      if (changedParts.length > 0 && historyName) {
+        const line = `[${todayYmd}] ATLAS 변경: ${changedParts.join(', ')}`;
+        const newHist = (line + (historyCur ? '\n' + historyCur : '')).slice(0, 1990);
+        pageProps[historyName] = { rich_text: [{ type: 'text', text: { content: newHist } }] };
+        historyAdded = true;
+      }
+
       // PATCH
       const r = await fetch(`https://api.notion.com/v1/pages/${id}`, {
         method: 'PATCH',
@@ -84,7 +117,7 @@ export default async function handler(req, res) {
           'Notion-Version': '2022-06-28',
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ properties: propPayload }),
+        body: JSON.stringify({ properties: pageProps }),
       });
       const data = await r.json();
       if (!r.ok) {
@@ -94,6 +127,7 @@ export default async function handler(req, res) {
           id,
           prevValues: prev,
           newValues: Object.fromEntries(Object.entries(updates).map(([k, v]) => [k, v.value])),
+          historyAdded,
         });
       }
     } catch (err) {
