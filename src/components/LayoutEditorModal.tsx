@@ -40,6 +40,7 @@ import {
     OBJECT_TYPE_LABEL,
     OBJECT_TYPE_EMOJI,
     roomKey,
+    FLOOR_PLAN_ROOM,
     type LayoutsStore,
 } from '../lib/layouts';
 
@@ -66,6 +67,8 @@ interface Props {
     onSave: (layout: RoomLayout) => Promise<void>;
     /** [A-2] 실험실 타일 썸네일 렌더용 — 전체 방 레이아웃 저장소 */
     layoutsStore?: LayoutsStore;
+    /** [A-2] 층 평면도 모드에서 배치 가능한 실험실(L)연구실) 이름 목록 */
+    availableRooms?: string[];
 }
 
 const COLOR_PALETTE = [
@@ -91,10 +94,13 @@ export const LayoutEditorModal: React.FC<Props> = ({
     roomMeta,
     onSave,
     layoutsStore,
+    availableRooms,
 }) => {
     const [layout, setLayout] = useState<RoomLayout>(() => initialLayout || emptyLayout());
     const [selectedId, setSelectedId] = useState<string | null>(null);
     const [showAssetPicker, setShowAssetPicker] = useState(false);
+    const [showLabPicker, setShowLabPicker] = useState(false);
+    const [labSearch, setLabSearch] = useState('');
     const [showMoreTools, setShowMoreTools] = useState(false);
     const [assetSearch, setAssetSearch] = useState('');
     const [labelInput, setLabelInput] = useState('');
@@ -256,6 +262,23 @@ export const LayoutEditorModal: React.FC<Props> = ({
         setShowAssetPicker(false);
         setAssetSearch('');
     };
+
+    // ----- [A-2] 층 평면도 모드: 실험실(lab) 타일 추가 -----
+    const isFloorPlan = room === FLOOR_PLAN_ROOM;
+    const addLabObject = (roomName: string) => {
+        addObject('lab', { roomName, label: roomName });
+        setShowLabPicker(false);
+        setLabSearch('');
+    };
+    const filteredRooms = useMemo(() => {
+        const placed = new Set(
+            layout.objects.filter(o => o.type === 'lab').map(o => o.roomName).filter(Boolean) as string[]
+        );
+        const pool = (availableRooms || []).filter(r => !placed.has(r));
+        if (!labSearch.trim()) return pool;
+        const q = labSearch.toLowerCase();
+        return pool.filter(r => r.toLowerCase().includes(q));
+    }, [availableRooms, layout.objects, labSearch]);
 
     // ----- Phase 3 P0: PNG 출력 (웹 환경에서 dom-to-image-like 대신 SVG → 다운로드) -----
     const exportPNG = useCallback(async () => {
@@ -423,13 +446,23 @@ export const LayoutEditorModal: React.FC<Props> = ({
                         <Box size={14} color="#b45309" />
                         <Text style={[styles.toolBtnText, { color: '#b45309' }]}>테이블</Text>
                     </TouchableOpacity>
-                    <TouchableOpacity
-                        style={[styles.toolBtn, { backgroundColor: '#e0e7ff' }]}
-                        onPress={() => setShowAssetPicker(true)}
-                    >
-                        <Cpu size={14} color="#4338ca" />
-                        <Text style={[styles.toolBtnText, { color: '#4338ca' }]}>기기</Text>
-                    </TouchableOpacity>
+                    {isFloorPlan ? (
+                        <TouchableOpacity
+                            style={[styles.toolBtn, { backgroundColor: '#eef2ff' }]}
+                            onPress={() => setShowLabPicker(true)}
+                        >
+                            <Text style={{ fontSize: 14 }}>🧪</Text>
+                            <Text style={[styles.toolBtnText, { color: '#4338ca' }]}>실험실</Text>
+                        </TouchableOpacity>
+                    ) : (
+                        <TouchableOpacity
+                            style={[styles.toolBtn, { backgroundColor: '#e0e7ff' }]}
+                            onPress={() => setShowAssetPicker(true)}
+                        >
+                            <Cpu size={14} color="#4338ca" />
+                            <Text style={[styles.toolBtnText, { color: '#4338ca' }]}>기기</Text>
+                        </TouchableOpacity>
+                    )}
                     {/* Phase 3 P0: 인프라/안전 객체 토글 */}
                     <TouchableOpacity
                         style={[styles.toolBtn, showMoreTools && { backgroundColor: '#fee2e2' }]}
@@ -946,6 +979,62 @@ export const LayoutEditorModal: React.FC<Props> = ({
                                                     {v['PC Hostname'] || '—'}{meta ? ` · ${meta}` : ''}
                                                 </Text>
                                             </View>
+                                        </TouchableOpacity>
+                                    );
+                                })
+                            )}
+                        </ScrollView>
+                    </View>
+                </Modal>
+
+                {/* [A-2] 실험실 선택 모달 — 층 평면도 모드에서 실험실 타일 배치 */}
+                <Modal visible={showLabPicker} animationType="slide" presentationStyle="pageSheet">
+                    <View style={styles.container}>
+                        <View style={styles.header}>
+                            <View style={{ flex: 1 }}>
+                                <Text style={styles.title}>실험실 배치</Text>
+                                <Text style={styles.subtitle}>
+                                    {floor}의 연구실을 골라 평면도에 타일로 추가 (저장된 레이아웃은 썸네일로 보임)
+                                </Text>
+                            </View>
+                            <TouchableOpacity style={styles.headerBtn} onPress={() => setShowLabPicker(false)}>
+                                <X size={20} color="#475569" />
+                            </TouchableOpacity>
+                        </View>
+                        <View style={styles.searchRow}>
+                            <Search size={14} color="#94a3b8" />
+                            <TextInput
+                                style={styles.searchInput}
+                                value={labSearch}
+                                onChangeText={setLabSearch}
+                                placeholder="연구실명 검색"
+                                placeholderTextColor="#94a3b8"
+                            />
+                        </View>
+                        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 12, gap: 6 }}>
+                            {filteredRooms.length === 0 ? (
+                                <Text style={styles.emptyText}>
+                                    {(availableRooms || []).length === 0
+                                        ? '이 층에서 자동 추출된 연구실이 없어요. (자산 L)연구실 값 확인)'
+                                        : '검색 결과가 없거나 모두 배치된 상태예요.'}
+                                </Text>
+                            ) : (
+                                filteredRooms.map(r => {
+                                    const saved = !!layoutsStore?.rooms?.[roomKey(building, floor, r)];
+                                    return (
+                                        <TouchableOpacity
+                                            key={r}
+                                            style={styles.assetItem}
+                                            onPress={() => addLabObject(r)}
+                                        >
+                                            <Text style={{ fontSize: 14 }}>🧪</Text>
+                                            <View style={{ flex: 1 }}>
+                                                <Text style={styles.assetItemName} numberOfLines={1}>{r}</Text>
+                                                <Text style={styles.assetItemSub} numberOfLines={1}>
+                                                    {saved ? '레이아웃 저장됨 · 썸네일 표시' : '레이아웃 미작성 · 빈 타일'}
+                                                </Text>
+                                            </View>
+                                            {saved && <Text style={styles.savedBadge}>✓</Text>}
                                         </TouchableOpacity>
                                     );
                                 })
@@ -1515,4 +1604,5 @@ const styles = StyleSheet.create({
     },
     assetItemName: { fontSize: 13, fontWeight: '700', color: '#1f2937' },
     assetItemSub: { fontSize: 11, color: '#64748b', marginTop: 2 },
+    savedBadge: { fontSize: 13, fontWeight: '800', color: '#16a34a' },
 });

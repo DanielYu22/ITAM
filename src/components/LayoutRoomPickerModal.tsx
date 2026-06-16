@@ -15,8 +15,9 @@ import {
     Modal,
     TextInput,
 } from 'react-native';
-import { X, Search, ChevronRight, MapPin } from 'lucide-react-native';
+import { X, Search, ChevronRight, MapPin, Building2 } from 'lucide-react-native';
 import { Asset } from '../lib/notion';
+import { FLOOR_PLAN_ROOM } from '../lib/layouts';
 
 interface Props {
     visible: boolean;
@@ -133,6 +134,22 @@ export const LayoutRoomPickerModal: React.FC<Props> = ({
                                 {b.floors.map(f => (
                                     <View key={`${b.building}/${f.floor}`} style={styles.floorBlock}>
                                         <Text style={styles.floorName}>{f.floor}</Text>
+                                        {(() => {
+                                            const floorKey = `${b.building}||${f.floor}||${FLOOR_PLAN_ROOM}`;
+                                            const floorHas = existingRoomKeys.has(floorKey);
+                                            return (
+                                                <TouchableOpacity
+                                                    style={styles.floorPlanRow}
+                                                    onPress={() => onSelect(b.building, f.floor, FLOOR_PLAN_ROOM)}
+                                                    activeOpacity={0.7}
+                                                >
+                                                    <Building2 size={13} color="#6366f1" />
+                                                    <Text style={styles.floorPlanName}>이 층 평면도 (실험실 배치·동선)</Text>
+                                                    {floorHas && <Text style={styles.savedBadge}>✓ 저장됨</Text>}
+                                                    <ChevronRight size={14} color="#94a3b8" />
+                                                </TouchableOpacity>
+                                            );
+                                        })()}
                                         {f.rooms.map(r => {
                                             const key = `${b.building}||${f.floor}||${r.room}`;
                                             const has = existingRoomKeys.has(key);
@@ -225,6 +242,18 @@ const styles = StyleSheet.create({
         borderRadius: 8,
     },
     roomName: { flex: 1, fontSize: 12, fontWeight: '600', color: '#1f2937' },
+    floorPlanRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingHorizontal: 10,
+        paddingVertical: 8,
+        backgroundColor: '#eef2ff',
+        borderRadius: 8,
+        borderWidth: 1,
+        borderColor: '#c7d2fe',
+    },
+    floorPlanName: { flex: 1, fontSize: 12, fontWeight: '700', color: '#4338ca' },
     roomCount: { fontSize: 10, color: '#64748b' },
     savedBadge: { fontSize: 10, fontWeight: '700', color: '#16a34a' },
 });

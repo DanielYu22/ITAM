@@ -1870,6 +1870,16 @@ export default function App() {
               && v['L)연구실'] === editingRoom.room;
           });
           const titleField = Object.keys(schemaProperties).find(p => schemaProperties[p].type === 'title') || 'Name';
+          // [A-2] 층 평면도 모드용 — 이 건물·층의 실제 연구실 목록(자산에서 자동 추출)
+          const availableRooms = Array.from(new Set(
+            assets
+              .filter(a => {
+                const v = a.values as any;
+                return v['L)건물'] === editingRoom.building && v['L)층'] === editingRoom.floor;
+              })
+              .map(a => String((a.values as any)['L)연구실'] ?? '').trim())
+              .filter(Boolean)
+          )).sort((x, y) => x.localeCompare(y, 'ko'));
           return (
             <LayoutEditorModal
               visible
@@ -1887,6 +1897,7 @@ export default function App() {
               roomAssets={roomAssets}
               titleField={titleField}
               layoutsStore={layoutsStore}
+              availableRooms={availableRooms}
               roomMeta={(() => {
                 // Phase 5: 인프라 DB에서 룸 정보 찾아 메타 전달
                 const node = Array.from(infraNodesById.values()).find(n =>
