@@ -686,32 +686,34 @@ export const LayoutEditorModal: React.FC<Props> = ({
                                 const ordered = layout.objects
                                     .filter(o => typeof o.order === 'number')
                                     .sort((a, b) => (a.order as number) - (b.order as number));
-                                const center = (o: typeof ordered[number]) => ({ x: (o.x + o.width / 2) * scale, y: (o.y + o.height / 2) * scale });
+                                // 배지·선을 기기 '좌상단 모서리'에 — 가운데 기기명을 가리지 않게.
+                                const anchor = (o: typeof ordered[number]) => ({ x: o.x * scale, y: o.y * scale });
                                 return (
                                     <>
                                         {ordered.slice(0, -1).map((o, i) => {
-                                            const p = center(o); const q = center(ordered[i + 1]);
+                                            const p = anchor(o); const q = anchor(ordered[i + 1]);
                                             const dx = q.x - p.x; const dy = q.y - p.y;
                                             const len = Math.sqrt(dx * dx + dy * dy);
                                             const angle = Math.atan2(dy, dx) * 180 / Math.PI;
                                             return (
                                                 <View key={`ord-seg-${o.id}`} style={{
-                                                    position: 'absolute', left: p.x, top: p.y - 1.5,
-                                                    width: len, height: 3, backgroundColor: '#4338ca',
+                                                    position: 'absolute', left: p.x, top: p.y - 1,
+                                                    width: len, height: 2, backgroundColor: '#4338ca',
                                                     transform: [{ rotate: `${angle}deg` }], transformOrigin: '0 50%' as any,
-                                                    borderRadius: 2, opacity: 0.85,
+                                                    borderRadius: 1, opacity: 0.55,
                                                 }} />
                                             );
                                         })}
                                         {ordered.map(o => {
-                                            const c = center(o);
+                                            const c = anchor(o);
+                                            // 좌상단 모서리에 살짝 걸치게 — 기기명(가운데) 회피
                                             return (
                                                 <View key={`ord-badge-${o.id}`} style={{
-                                                    position: 'absolute', left: c.x - 11, top: c.y - 11,
-                                                    width: 22, height: 22, borderRadius: 11, backgroundColor: '#4338ca',
+                                                    position: 'absolute', left: c.x - 9, top: c.y - 9,
+                                                    width: 18, height: 18, borderRadius: 9, backgroundColor: '#4338ca',
                                                     borderWidth: 2, borderColor: '#ffffff', alignItems: 'center', justifyContent: 'center',
                                                 }}>
-                                                    <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>{o.order}</Text>
+                                                    <Text style={{ color: '#ffffff', fontSize: 10, fontWeight: '700' }}>{o.order}</Text>
                                                 </View>
                                             );
                                         })}
