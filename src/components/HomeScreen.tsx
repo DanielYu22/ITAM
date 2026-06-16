@@ -43,6 +43,16 @@ import { QUICK_TASKS, QuickTaskDef, getMatchingQuickTasks } from '../lib/quickTa
 import { type LayoutsStore, parseRoomKey } from '../lib/layouts';
 import { SITES_DEFAULTS, SiteDef, SiteId, getSiteCounts } from '../lib/sites';
 
+// [필수값] 장비로서 존재하기 위한 필수 컬럼 — 비어있으면 홈에서 누락 알람.
+//   물리위치 + 기기담당자 + 망구분(백신 온라인/폐쇄망). (hostname/백업/시놀로지는 광범위해 제외)
+const REQUIRED_FIELDS: { col: string; label: string }[] = [
+    { col: 'L)건물', label: '건물' },
+    { col: 'L)층', label: '층' },
+    { col: 'L)연구실', label: '연구실' },
+    { col: 'User)기기관리자', label: '담당자' },
+    { col: 'M)알약 온라인구분', label: '망구분' },
+];
+
 interface HomeScreenProps {
     // 전체 자산 (사이트 토글 카운트 계산용)
     allAssets: Asset[];
@@ -218,6 +228,27 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         }
         return out.sort((a, b) => b.unmarked - a.unmarked);
     }, [layoutsStore]);
+
+    // [필수값] 필수 컬럼이 하나라도 비어있는 기기 (현재 사이트 컨텍스트 기준).
+    const missingAssets = useMemo(() => {
+        const out: { asset: Asset; name: string; missing: string[] }[] = [];
+        for (const a of assets) {
+            const v = a.values as any;
+            const missing = REQUIRED_FIELDS.filter(f => !String(v[f.col] ?? '').trim()).map(f => f.label);
+            if (missing.length) out.push({ asset: a, name: String(v[titleField] ?? '').trim() || '(이름없음)', missing });
+        }
+        return out;
+    }, [assets, titleField]);
+    // 누락 필드별 카운트 요약
+    const missingByField = useMemo(() => {
+        const c: Record<string, number> = {};
+        for (const m of missingAssets) for (const f of m.missing) c[f] = (c[f] || 0) + 1;
+        return c;
+    }, [missingAssets]);
+
+    // [접고 펼치기] 홈 알람 섹션 — 화면 정리용. 기본 접힘.
+    const [showUnmarked, setShowUnmarked] = useState(false);
+    const [showMissing, setShowMissing] = useState(false);
 
     // 글로벌 검색 결과 — 자산만 (기존)
     const searchResults = useMemo(() => {
@@ -578,11 +609,42 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                     </View>
                 )}
 
-                {/* [B] 동선 미마킹 검출 — 순서 안 매긴 연구실. 클릭 시 그 방 레이아웃 편집기로 직행 */}
+                {/* [필수값] 누락 알람 — 존재 필수 컬럼(위치·담당자·망구분) 비어있는 기기. 접고 펼치기 */}
+                {missingAssets.length > 0 && (
+                    <View style={styles.alarmSection}>
+                        <TouchableOpacity style={styles.alarmHeader} onPress={() => setShowMissing(v => !v)}>
+                            <Text style={styles.alarmTitle}>⚠️ 필수값 누락 {missingAssets.length}대</Text>
+                            <Text style={styles.alarmSummary}>  {Object.entries(missingByField).map(([k, n]) => `${k} ${n}`).join(' · ')}</Text>
+                            <View style={{ flex: 1 }} />
+                            <Text style={styles.alarmCaret}>{showMissing ? '▾' : '▸'}</Text>
+                        </TouchableOpacity>
+                        {showMissing && missingAssets.slice(0, 40).map((m, i) => (
+                            <TouchableOpacity
+                                key={`miss-${m.asset.id}-${i}`}
+                                style={styles.alarmRow}
+                                onPress={() => onEditAsset(m.asset)}
+                            >
+                                <Text style={styles.alarmName}>{m.name}</Text>
+                                <View style={{ flex: 1 }} />
+                                <Text style={styles.alarmMissing}>{m.missing.join('·')} 없음</Text>
+                                <Text style={styles.unmarkedArrow}>›</Text>
+                            </TouchableOpacity>
+                        ))}
+                        {showMissing && missingAssets.length > 40 && (
+                            <Text style={styles.alarmMore}>외 {missingAssets.length - 40}대… (필터로 전체 보기)</Text>
+                        )}
+                    </View>
+                )}
+
+                {/* [B] 동선 미마킹 검출 — 순서 안 매긴 연구실. 접고 펼치기. 클릭 시 그 방 레이아웃 편집기로 */}
                 {unmarkedRooms.length > 0 && (
                     <View style={styles.unmarkedSection}>
-                        <Text style={styles.unmarkedTitle}>🧭 동선 미마킹 — 순서 안 매긴 연구실 {unmarkedRooms.length}곳</Text>
-                        {unmarkedRooms.map((r, i) => (
+                        <TouchableOpacity style={styles.alarmHeader} onPress={() => setShowUnmarked(v => !v)}>
+                            <Text style={styles.unmarkedTitle}>🧭 동선 미마킹 {unmarkedRooms.length}곳</Text>
+                            <View style={{ flex: 1 }} />
+                            <Text style={styles.alarmCaret}>{showUnmarked ? '▾' : '▸'}</Text>
+                        </TouchableOpacity>
+                        {showUnmarked && unmarkedRooms.map((r, i) => (
                             <TouchableOpacity
                                 key={`${r.building}/${r.floor}/${r.room}/${i}`}
                                 style={styles.unmarkedRow}
@@ -1359,6 +1421,60 @@ const styles = StyleSheet.create({
     unmarkedArrow: {
         fontSize: 18,
         color: '#94a3b8',
+    },
+    // [필수값] 누락 알람 섹션
+    alarmSection: {
+        backgroundColor: '#fffbeb',
+        borderWidth: 1,
+        borderColor: '#fde68a',
+        borderRadius: 12,
+        paddingHorizontal: 12,
+        paddingVertical: 4,
+        marginBottom: 16,
+    },
+    alarmHeader: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        paddingVertical: 10,
+    },
+    alarmTitle: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#b45309',
+    },
+    alarmSummary: {
+        fontSize: 11,
+        color: '#a16207',
+    },
+    alarmCaret: {
+        fontSize: 13,
+        color: '#a16207',
+        fontWeight: '700',
+    },
+    alarmRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingVertical: 7,
+        paddingHorizontal: 4,
+        borderTopWidth: 1,
+        borderTopColor: '#fef3c7',
+    },
+    alarmName: {
+        fontSize: 13,
+        color: '#1e293b',
+        fontWeight: '600',
+    },
+    alarmMissing: {
+        fontSize: 11,
+        color: '#dc2626',
+        fontWeight: '600',
+    },
+    alarmMore: {
+        fontSize: 11,
+        color: '#a16207',
+        paddingVertical: 8,
+        paddingHorizontal: 4,
     },
     combinedCard: {
         backgroundColor: '#4338ca',
