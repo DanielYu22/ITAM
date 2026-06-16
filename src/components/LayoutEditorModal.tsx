@@ -105,6 +105,8 @@ export const LayoutEditorModal: React.FC<Props> = ({
     const skipNextHistoryRef = useRef(false);
     // Phase 5: 동선 모드 — true 면 캔버스 빈 곳 탭 시 path 점 추가
     const [pathMode, setPathMode] = useState(false);
+    // Phase 6: 순서 매기기 모드 — true 면 기기 탭 시 방문 순서(①②③) 부여
+    const [orderMode, setOrderMode] = useState(false);
     const [activePathId, setActivePathId] = useState<string | null>(null);
 
     // layout 변경 시 history 에 추가
@@ -203,6 +205,35 @@ export const LayoutEditorModal: React.FC<Props> = ({
         }));
         setSelectedId(null);
     }, [selectedId]);
+
+    // Phase 6: 동선 순서 매기기 — 기기 탭 시 다음 번호 부여(없으면) / 해제 후 재번호(있으면).
+    const toggleOrder = useCallback((id: string) => {
+        setLayout(prev => {
+            const target = prev.objects.find(o => o.id === id);
+            if (!target) return prev;
+            let objects;
+            if (typeof target.order === 'number') {
+                const removed = target.order;
+                objects = prev.objects.map(o => {
+                    if (o.id === id) { const { order, ...rest } = o; return rest; }
+                    if (typeof o.order === 'number' && o.order > removed) return { ...o, order: o.order - 1 };
+                    return o;
+                });
+            } else {
+                const maxOrder = prev.objects.reduce((m, o) => Math.max(m, o.order || 0), 0);
+                objects = prev.objects.map(o => o.id === id ? { ...o, order: maxOrder + 1 } : o);
+            }
+            return { ...prev, objects, updatedAt: new Date().toISOString() };
+        });
+    }, []);
+
+    const clearOrders = useCallback(() => {
+        setLayout(prev => ({
+            ...prev,
+            objects: prev.objects.map(o => { const { order, ...rest } = o; return rest; }),
+            updatedAt: new Date().toISOString(),
+        }));
+    }, []);
 
     // Phase 3 P0: 클릭은 15도, 길게 누르면 90도 (자유 회전 + 빠른 회전)
     const rotateSelected = useCallback((step: number = 15) => {
@@ -468,6 +499,18 @@ export const LayoutEditorModal: React.FC<Props> = ({
                         <Route size={13} color={pathMode ? '#a16207' : '#475569'} />
                         <Text style={[styles.toolBtnText, pathMode && { color: '#a16207' }]}>{pathMode ? '동선 종료' : '동선'}</Text>
                     </TouchableOpacity>
+                    {/* Phase 6: 순서 매기기 모드 — 기기 탭으로 ①②③ */}
+                    <TouchableOpacity
+                        style={[styles.zoomBtn, orderMode && { backgroundColor: '#e0e7ff' }]}
+                        onPress={() => { if (pathMode) { setPathMode(false); setActivePathId(null); } setOrderMode(v => !v); }}
+                    >
+                        <Text style={[styles.toolBtnText, orderMode && { color: '#4338ca', fontWeight: '700' }]}>{orderMode ? '①②③ 종료' : '① 순서'}</Text>
+                    </TouchableOpacity>
+                    {orderMode && (
+                        <TouchableOpacity style={[styles.zoomBtn]} onPress={clearOrders}>
+                            <Text style={styles.toolBtnText}>순서 초기화</Text>
+                        </TouchableOpacity>
+                    )}
                     <View style={{ flex: 1 }} />
                     <TouchableOpacity style={[styles.zoomBtn, { backgroundColor: '#dbeafe' }]} onPress={exportPNG}>
                         <Download size={13} color="#1d4ed8" />
@@ -549,7 +592,7 @@ export const LayoutEditorModal: React.FC<Props> = ({
                                 obj={obj}
                                 scale={scale}
                                 selected={obj.id === selectedId}
-                                onSelect={() => setSelectedId(obj.id)}
+                                onSelect={() => { if (orderMode) { toggleOrder(obj.id); } else { setSelectedId(obj.id); } }}
                                 onMove={(dx, dy) => {
                                     // 회전된 시각적 bounding box 기준으로 클램프 (회전 origin = center)
                                     const rot = ((obj.rotation || 0) * Math.PI) / 180;
@@ -636,6 +679,45 @@ export const LayoutEditorModal: React.FC<Props> = ({
                                     ))}
                                 </View>
                             ))}
+                        </View>
+                        {/* Phase 6: 동선 순서 — 기기 중심을 잇는 선 + 번호 배지 (pointerEvents=none) */}
+                        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+                            {(() => {
+                                const ordered = layout.objects
+                                    .filter(o => typeof o.order === 'number')
+                                    .sort((a, b) => (a.order as number) - (b.order as number));
+                                const center = (o: typeof ordered[number]) => ({ x: (o.x + o.width / 2) * scale, y: (o.y + o.height / 2) * scale });
+                                return (
+                                    <>
+                                        {ordered.slice(0, -1).map((o, i) => {
+                                            const p = center(o); const q = center(ordered[i + 1]);
+                                            const dx = q.x - p.x; const dy = q.y - p.y;
+                                            const len = Math.sqrt(dx * dx + dy * dy);
+                                            const angle = Math.atan2(dy, dx) * 180 / Math.PI;
+                                            return (
+                                                <View key={`ord-seg-${o.id}`} style={{
+                                                    position: 'absolute', left: p.x, top: p.y - 1.5,
+                                                    width: len, height: 3, backgroundColor: '#4338ca',
+                                                    transform: [{ rotate: `${angle}deg` }], transformOrigin: '0 50%' as any,
+                                                    borderRadius: 2, opacity: 0.85,
+                                                }} />
+                                            );
+                                        })}
+                                        {ordered.map(o => {
+                                            const c = center(o);
+                                            return (
+                                                <View key={`ord-badge-${o.id}`} style={{
+                                                    position: 'absolute', left: c.x - 11, top: c.y - 11,
+                                                    width: 22, height: 22, borderRadius: 11, backgroundColor: '#4338ca',
+                                                    borderWidth: 2, borderColor: '#ffffff', alignItems: 'center', justifyContent: 'center',
+                                                }}>
+                                                    <Text style={{ color: '#ffffff', fontSize: 11, fontWeight: '700' }}>{o.order}</Text>
+                                                </View>
+                                            );
+                                        })}
+                                    </>
+                                );
+                            })()}
                         </View>
                     </View>
                 </View>

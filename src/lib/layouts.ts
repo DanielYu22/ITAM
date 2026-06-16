@@ -59,6 +59,8 @@ export interface LayoutObject {
     label?: string;
     /** 객체 색상 (테이블/벽) */
     color?: string;
+    /** Phase 6: 동선 방문 순서 (1부터). 미지정이면 없음. '순서' 모드에서 기기를 탭하면 부여 */
+    order?: number;
 }
 
 /** Phase 5: 동선 (작업자가 한 점씩 찍어 만드는 폴리라인) */
