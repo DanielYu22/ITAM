@@ -1922,6 +1922,7 @@ export default function App() {
           onCompleteQuickTask={handleCompleteQuickTask}
           currentSite={currentSite}
           effectiveSites={effectiveSites}
+          layoutsStore={layoutsStore}
           disabledTaskIds={disabledTaskIds}
           onToggleTaskDisabled={toggleTaskDisabled}
           onJumpToAsset={(asset) => {

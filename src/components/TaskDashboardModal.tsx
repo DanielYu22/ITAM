@@ -12,6 +12,7 @@
  */
 
 import React, { useState, useMemo, useCallback } from 'react';
+import { roomKey, type LayoutsStore } from '../lib/layouts';
 import {
     View,
     Text,
@@ -43,6 +44,8 @@ interface Props {
     /** 현재 사이트 컨텍스트. 'all' 일 때만 트리에 사이트 단계가 추가됨. */
     currentSite?: SiteId;
     effectiveSites?: SiteDef[];
+    /** [A-1.5] 레이아웃 동선 순서 — 방별 기기 방문순서로 대시보드 정렬에 사용 */
+    layoutsStore?: LayoutsStore;
     /** Quick Task 토글 — 통합 카드와 공유 */
     disabledTaskIds?: Set<string>;
     onToggleTaskDisabled?: (id: string) => void;
@@ -78,6 +81,7 @@ export const TaskDashboardModal: React.FC<Props> = ({
     onJumpToAsset,
     currentSite = 'all',
     effectiveSites,
+    layoutsStore,
     disabledTaskIds,
     onToggleTaskDisabled,
 }) => {
@@ -173,13 +177,24 @@ export const TaskDashboardModal: React.FC<Props> = ({
                     const rooms = floors[f];
                     const roomNodes: TreeNode[] = [];
                     for (const rm of Object.keys(rooms).sort(krSort)) {
-                        const rows = rooms[rm].sort((a, b) =>
-                            String((a.asset.values as any)[titleField] ?? '').localeCompare(
-                                String((b.asset.values as any)[titleField] ?? ''),
-                                'ko',
-                                { numeric: true },
-                            )
-                        );
+                        // [A-1.5] 레이아웃 동선 순서 — 이 방의 기기별 방문순서 조회.
+                        //   주의: 레이아웃 assetId 는 이관 전 회사 DB id 라 개인 자산 id 와 불일치 →
+                        //   기기명(label/이름)으로 매칭한다.
+                        const orderMap: Record<string, number> = {};
+                        const rl = layoutsStore?.rooms?.[roomKey(b, f, rm)];
+                        if (rl) for (const o of rl.objects || []) {
+                            const nm = String(o.label ?? '').trim();
+                            if (nm && typeof o.order === 'number') orderMap[nm] = o.order;
+                        }
+                        const nameOf = (r: AssetRow) => String((r.asset.values as any)[titleField] ?? '');
+                        const rows = rooms[rm].sort((ra, rb) => {
+                            const oa = orderMap[nameOf(ra).trim()]; const ob = orderMap[nameOf(rb).trim()];
+                            // 동선 순서 지정된 기기 우선(순서대로), 나머지는 이름순.
+                            if (oa != null && ob != null) return oa - ob;
+                            if (oa != null) return -1;
+                            if (ob != null) return 1;
+                            return nameOf(ra).localeCompare(nameOf(rb), 'ko', { numeric: true });
+                        });
                         roomNodes.push({
                             key: `${siteKey}/${b}/${f}/${rm}`,
                             label: rm,
@@ -228,7 +243,7 @@ export const TaskDashboardModal: React.FC<Props> = ({
             }
         }
         return siteNodes;
-    }, [filteredRows, currentSite, titleField]);
+    }, [filteredRows, currentSite, titleField, layoutsStore]);
 
     // 트리 안 모든 노드 key 수집 (펼치기 토글용)
     const allNodeKeys = useMemo(() => {
