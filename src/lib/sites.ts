@@ -136,22 +136,22 @@ export const getAssetSite = (asset: Asset, effective?: SiteDef[]): SiteId => {
     const building = String(values['L)건물'] ?? '').trim();
     const real = sites.filter(s => s.id !== 'all' && s.id !== 'unclassified');
 
-    // [2026-06-17] 1순위: 명시적 '사이트' 컬럼 (사용자가 큐레이션한 권위 데이터).
-    //   배경: 자산이 용인→마곡 물리 이동 시 건물은 갱신되나 IP(10.5=용인)가 stale → 오분류.
-    //   사용자가 직접 태깅한 '사이트' 값을 최우선으로 신뢰.
-    const explicit = String(values['사이트'] ?? '').trim();
-    if (explicit) {
-        const m = real.find(s => s.name === explicit || s.id === explicit);
-        if (m) return m.id;
-    }
-    // 2순위: 건물 매칭 — 실제 현재 위치. IP보다 우선(이동 시 IP는 신뢰 불가).
+    // [2026-06-17] 분류 우선순위 — 건물(실제값) > 사이트컬럼(보조) > IP(추정).
+    //   배경: 자산이 용인→마곡 물리 이동 시 건물은 갱신되나 IP(10.5=용인)는 stale → IP는 추정으로만 다룬다.
+    // 1순위: 건물 — 자산이 이동하면 갱신되는 '실제 현재 위치'. 가장 권위 있는 값.
     if (building) {
         for (const site of real) {
             if (site.buildingExactMatches?.some(b => building === b)) return site.id;
             if (site.buildingContains?.some(k => building.includes(k))) return site.id;
         }
     }
-    // 3순위: IP 프리픽스 — 건물 정보가 없을 때만 보조 추정.
+    // 2순위: '사이트' 컬럼 — 건물 미기입 자산 보조. (이관 시 건물에서 파생해 둔 값이라 건물 다음 순위)
+    const explicit = String(values['사이트'] ?? '').trim();
+    if (explicit) {
+        const m = real.find(s => s.name === explicit || s.id === explicit);
+        if (m) return m.id;
+    }
+    // 3순위: IP 프리픽스 — 추정값. 건물·사이트 둘 다 없을 때만. (이동 시 stale 가능 → 최후순위)
     if (ip) {
         for (const site of real) {
             if (site.ipPrefixes.some(p => ip.startsWith(p))) return site.id;
