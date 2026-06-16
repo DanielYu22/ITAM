@@ -40,6 +40,7 @@ import { FilterConfig } from './FieldWorkFilter';
 import { Asset, NotionProperty } from '../lib/notion';
 import { APP_VERSION } from '../lib/version';
 import { QUICK_TASKS, QuickTaskDef, getMatchingQuickTasks } from '../lib/quickTasks';
+import { type LayoutsStore, parseRoomKey } from '../lib/layouts';
 import { SITES_DEFAULTS, SiteDef, SiteId, getSiteCounts } from '../lib/sites';
 
 interface HomeScreenProps {
@@ -80,6 +81,10 @@ interface HomeScreenProps {
     onMonthlyReset?: () => void;
     // 레이아웃 편집 진입
     onEditLayout?: () => void;
+    /** [B] 동선 미마킹 검출용 레이아웃 데이터 */
+    layoutsStore?: LayoutsStore;
+    /** [B] 특정 연구실 레이아웃 편집기로 바로 진입 (동선 미마킹 항목 클릭) */
+    onOpenRoomLayout?: (building: string, floor: string, room: string) => void;
     // 인프라 트리 (사이트·건물·층·실험실) 진입
     onOpenInfrastructure?: () => void;
     /** 사용자 오버라이드가 합성된 최종 사이트 정의 (카운트/표시용) */
@@ -133,6 +138,8 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     onSubmitFieldSupport,
     onMonthlyReset,
     onEditLayout,
+    layoutsStore,
+    onOpenRoomLayout,
     onOpenInfrastructure,
     effectiveSites,
     onOpenDashboard,
@@ -195,6 +202,22 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     const titleField = useMemo(() => {
         return Object.keys(schemaProperties).find(k => schemaProperties[k].type === 'title') || 'Name';
     }, [schemaProperties]);
+
+    // [B] 동선 미마킹 검출 — 레이아웃에 기기는 있으나 방문순서(order) 안 매긴 연구실.
+    const unmarkedRooms = useMemo(() => {
+        const out: { building: string; floor: string; room: string; unmarked: number; total: number }[] = [];
+        const rooms = layoutsStore?.rooms || {};
+        for (const [key, rl] of Object.entries(rooms)) {
+            const assets = (rl.objects || []).filter(o => o.type === 'asset');
+            if (assets.length === 0) continue;
+            const unmarked = assets.filter(o => typeof o.order !== 'number').length;
+            if (unmarked > 0) {
+                const { building, floor, room } = parseRoomKey(key);
+                out.push({ building, floor, room, unmarked, total: assets.length });
+            }
+        }
+        return out.sort((a, b) => b.unmarked - a.unmarked);
+    }, [layoutsStore]);
 
     // 글로벌 검색 결과 — 자산만 (기존)
     const searchResults = useMemo(() => {
@@ -552,6 +575,26 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         <Text style={styles.progressDetail}>
                             {assets.length - filteredCount}개 완료 / {assets.length}개 전체
                         </Text>
+                    </View>
+                )}
+
+                {/* [B] 동선 미마킹 검출 — 순서 안 매긴 연구실. 클릭 시 그 방 레이아웃 편집기로 직행 */}
+                {unmarkedRooms.length > 0 && (
+                    <View style={styles.unmarkedSection}>
+                        <Text style={styles.unmarkedTitle}>🧭 동선 미마킹 — 순서 안 매긴 연구실 {unmarkedRooms.length}곳</Text>
+                        {unmarkedRooms.map((r, i) => (
+                            <TouchableOpacity
+                                key={`${r.building}/${r.floor}/${r.room}/${i}`}
+                                style={styles.unmarkedRow}
+                                onPress={() => onOpenRoomLayout?.(r.building, r.floor, r.room)}
+                                disabled={!onOpenRoomLayout}
+                            >
+                                <Text style={styles.unmarkedRoomText}>📍 {r.building} · {r.floor} · {r.room}</Text>
+                                <View style={{ flex: 1 }} />
+                                <Text style={styles.unmarkedCount}>미마킹 {r.unmarked}/{r.total}</Text>
+                                <Text style={styles.unmarkedArrow}>›</Text>
+                            </TouchableOpacity>
+                        ))}
                     </View>
                 )}
 
@@ -1278,6 +1321,44 @@ const styles = StyleSheet.create({
         gap: 10,
         marginBottom: 20,
         flexWrap: 'wrap',
+    },
+    // [B] 동선 미마킹 섹션
+    unmarkedSection: {
+        backgroundColor: '#eef2ff',
+        borderWidth: 1,
+        borderColor: '#c7d2fe',
+        borderRadius: 12,
+        padding: 12,
+        marginBottom: 16,
+    },
+    unmarkedTitle: {
+        fontSize: 13,
+        fontWeight: '700',
+        color: '#4338ca',
+        marginBottom: 8,
+    },
+    unmarkedRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingVertical: 8,
+        paddingHorizontal: 6,
+        borderTopWidth: 1,
+        borderTopColor: '#e0e7ff',
+    },
+    unmarkedRoomText: {
+        fontSize: 13,
+        color: '#1e293b',
+        fontWeight: '600',
+    },
+    unmarkedCount: {
+        fontSize: 12,
+        color: '#4338ca',
+        fontWeight: '700',
+    },
+    unmarkedArrow: {
+        fontSize: 18,
+        color: '#94a3b8',
     },
     combinedCard: {
         backgroundColor: '#4338ca',

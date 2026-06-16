@@ -1454,6 +1454,8 @@ export default function App() {
               onQuickTask={handleQuickTask}
               onCombinedQuickTask={handleCombinedQuickTask}
               onTaskDashboard={() => setShowTaskDashboardModal(true)}
+              layoutsStore={layoutsStore}
+              onOpenRoomLayout={(b, f, r) => setEditingRoom({ building: b, floor: f, room: r })}
               onEditAsset={(asset) => {
                 // 검색에서 선택한 자산을 편집하기 위해 작업 모드로 전환
                 setLocationSelectedAssets([asset]);
