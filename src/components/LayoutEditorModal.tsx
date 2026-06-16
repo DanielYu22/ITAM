@@ -39,6 +39,8 @@ import {
     DEFAULT_COLORS,
     OBJECT_TYPE_LABEL,
     OBJECT_TYPE_EMOJI,
+    roomKey,
+    type LayoutsStore,
 } from '../lib/layouts';
 
 interface Props {
@@ -62,6 +64,8 @@ interface Props {
         notes?: string;
     };
     onSave: (layout: RoomLayout) => Promise<void>;
+    /** [A-2] 실험실 타일 썸네일 렌더용 — 전체 방 레이아웃 저장소 */
+    layoutsStore?: LayoutsStore;
 }
 
 const COLOR_PALETTE = [
@@ -86,6 +90,7 @@ export const LayoutEditorModal: React.FC<Props> = ({
     titleField,
     roomMeta,
     onSave,
+    layoutsStore,
 }) => {
     const [layout, setLayout] = useState<RoomLayout>(() => initialLayout || emptyLayout());
     const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -592,6 +597,9 @@ export const LayoutEditorModal: React.FC<Props> = ({
                                 obj={obj}
                                 scale={scale}
                                 selected={obj.id === selectedId}
+                                thumbnail={obj.type === 'lab'
+                                    ? <RoomThumbnail layout={layoutsStore?.rooms?.[roomKey(building, floor, obj.roomName || '')]} width={obj.width * scale} height={obj.height * scale} />
+                                    : undefined}
                                 onSelect={() => { if (orderMode) { toggleOrder(obj.id); } else { setSelectedId(obj.id); } }}
                                 onMove={(dx, dy) => {
                                     // 회전된 시각적 bounding box 기준으로 클램프 (회전 origin = center)
@@ -954,6 +962,32 @@ export const LayoutEditorModal: React.FC<Props> = ({
 // 드래그 가능 객체
 // ---------------------------------------------------------------------------
 
+// [A-2] 실험실 타일용 — 그 방 레이아웃을 작은 박스에 축소 렌더(퍼즐 조각 썸네일).
+const RoomThumbnail: React.FC<{ layout?: RoomLayout; width: number; height: number }> = ({ layout, width, height }) => {
+    if (!layout || !(layout.objects || []).length) {
+        return (
+            <View style={{ width, height, alignItems: 'center', justifyContent: 'center' }}>
+                <Text style={{ fontSize: 9, color: '#94a3b8' }}>레이아웃 없음</Text>
+            </View>
+        );
+    }
+    const sx = width / CANVAS_WIDTH;
+    const sy = height / CANVAS_HEIGHT;
+    return (
+        <View style={{ width, height, position: 'relative', overflow: 'hidden' }}>
+            {layout.objects.map(o => (
+                <View key={o.id} style={{
+                    position: 'absolute',
+                    left: o.x * sx, top: o.y * sy,
+                    width: Math.max(2, o.width * sx), height: Math.max(2, o.height * sy),
+                    backgroundColor: o.type === 'asset' ? '#c7d2fe' : (o.color || DEFAULT_COLORS[o.type] || '#cbd5e1'),
+                    borderRadius: 1,
+                }} />
+            ))}
+        </View>
+    );
+};
+
 const DraggableObject: React.FC<{
     obj: LayoutObject;
     scale: number;
@@ -963,7 +997,9 @@ const DraggableObject: React.FC<{
     // iPad 픽스: 드래그 시작/끝 알림 — 부모에서 ScrollView scroll 차단
     onDragStart?: () => void;
     onDragEnd?: () => void;
-}> = ({ obj, scale, selected, onSelect, onMove, onDragStart, onDragEnd }) => {
+    // [A-2] lab 타입일 때 타일 안에 렌더할 썸네일
+    thumbnail?: React.ReactNode;
+}> = ({ obj, scale, selected, onSelect, onMove, onDragStart, onDragEnd, thumbnail }) => {
     const ref = useRef<any>(null);
     // 콜백을 ref 로 보관해서 listener 재등록 최소화
     const cbRef = useRef({ onMove, onSelect, scale, onDragStart, onDragEnd });
@@ -1110,7 +1146,17 @@ const DraggableObject: React.FC<{
                 ...(({ touchAction: 'none', userSelect: 'none', cursor: 'move', WebkitUserSelect: 'none', WebkitTouchCallout: 'none' } as any)),
             }}
         >
-            {obj.label && (
+            {obj.type === 'lab' ? (
+                <>
+                    {/* 퍼즐 조각 — 그 방 레이아웃 썸네일 + 하단 방 이름 바 */}
+                    {thumbnail}
+                    <View style={{ position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: 'rgba(67,56,202,0.88)', paddingVertical: 2, paddingHorizontal: 3 }}>
+                        <Text numberOfLines={1} style={{ fontSize: Math.max(8, 10 * scale), color: '#ffffff', fontWeight: '700', textAlign: 'center' }}>
+                            {obj.roomName || obj.label}
+                        </Text>
+                    </View>
+                </>
+            ) : obj.label ? (
                 <Text
                     style={{
                         fontSize: Math.max(9, 11 * scale * 1.5),
@@ -1122,7 +1168,7 @@ const DraggableObject: React.FC<{
                 >
                     {obj.label}
                 </Text>
-            )}
+            ) : null}
             {/* 리사이즈 핸들은 부모(LayoutEditorModal) 레벨에 별도로 그림 — 객체 이벤트와 분리 */}
         </View>
     );

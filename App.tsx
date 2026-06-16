@@ -1886,6 +1886,7 @@ export default function App() {
               initialLayout={layoutsStore.rooms[k] || null}
               roomAssets={roomAssets}
               titleField={titleField}
+              layoutsStore={layoutsStore}
               roomMeta={(() => {
                 // Phase 5: 인프라 DB에서 룸 정보 찾아 메타 전달
                 const node = Array.from(infraNodesById.values()).find(n =>

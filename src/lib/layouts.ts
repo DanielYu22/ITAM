@@ -13,7 +13,9 @@ export type LayoutObjectType =
     | 'wall' | 'table' | 'asset'
     // Phase 3 P0: 안전·인프라 도면 필수 객체
     | 'door' | 'window' | 'exit'
-    | 'outlet' | 'gas' | 'water' | 'aisle';
+    | 'outlet' | 'gas' | 'water' | 'aisle'
+    // Phase 7 (A-2): 층 평면도용 — 실험실 타일(그 방 레이아웃 썸네일)
+    | 'lab';
 
 /** 객체 카테고리별 한글 라벨 (UI 표시용) */
 export const OBJECT_TYPE_LABEL: Record<LayoutObjectType, string> = {
@@ -27,6 +29,7 @@ export const OBJECT_TYPE_LABEL: Record<LayoutObjectType, string> = {
     gas: '가스',
     water: '물',
     aisle: '통로',
+    lab: '실험실',
 };
 
 /** 카테고리별 이모지 (캔버스 표시용) */
@@ -41,6 +44,19 @@ export const OBJECT_TYPE_EMOJI: Record<LayoutObjectType, string> = {
     gas: '🔥',
     water: '💧',
     aisle: '➡️',
+    lab: '🧪',
+};
+
+/** [A-2] 층 평면도 = roomKey 의 room 자리에 이 sentinel 을 쓴다. 객체는 'lab' 타입(실험실 타일). */
+export const FLOOR_PLAN_ROOM = '(층 평면도)';
+
+/** [A-2] 층 정렬 순서 — 지하(B*) → 저층 → 고층. "B2"<"B1"<"1F"<"2F"... */
+export const floorOrder = (floor: string): number => {
+    const f = String(floor || '').trim().toUpperCase();
+    const bm = f.match(/^B\s*(\d+)/);          // 지하 Bn → 음수 (B2 < B1)
+    if (bm) return -parseInt(bm[1], 10);
+    const m = f.match(/(\d+)/);                // 1F, 2F → 양수
+    return m ? parseInt(m[1], 10) : 99;
 };
 
 export interface LayoutObject {
@@ -61,6 +77,8 @@ export interface LayoutObject {
     color?: string;
     /** Phase 6: 동선 방문 순서 (1부터). 미지정이면 없음. '순서' 모드에서 기기를 탭하면 부여 */
     order?: number;
+    /** Phase 7 (A-2): lab 타입일 때 — 이 타일이 가리키는 연구실 이름(L)연구실). 썸네일·드릴다운 키 */
+    roomName?: string;
 }
 
 /** Phase 5: 동선 (작업자가 한 점씩 찍어 만드는 폴리라인) */
@@ -126,6 +144,7 @@ export const DEFAULT_SIZES: Record<LayoutObjectType, { width: number; height: nu
     gas: { width: 40, height: 40 },
     water: { width: 40, height: 40 },
     aisle: { width: 160, height: 36 },
+    lab: { width: 230, height: 170 },  // 실험실 타일 — 썸네일이 들어가게 크게
 };
 
 export const DEFAULT_COLORS: Record<LayoutObjectType, string> = {
@@ -139,6 +158,7 @@ export const DEFAULT_COLORS: Record<LayoutObjectType, string> = {
     gas: '#f97316',
     water: '#0ea5e9',
     aisle: 'rgba(168, 162, 158, 0.35)',  // 반투명 회색 — 길 표시
+    lab: '#eef2ff',  // 실험실 타일 배경(연보라)
 };
 
 export const makeObject = (
