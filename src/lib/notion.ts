@@ -495,16 +495,35 @@ export class NotionClient {
             }
 
             if (!settingsJson || !settingsJson.startsWith('{')) return null;
-            return JSON.parse(settingsJson);
+
+            let parsed: Record<string, any>;
+            try {
+                parsed = JSON.parse(settingsJson);
+            } catch (parseErr) {
+                // [2026-06-16 안전 하드닝] 파싱 실패해도 절대 자동 삭제(빈 설정 덮어쓰기) 금지.
+                //   과거: saveSettings({}) 로 자동 wipe → 레이아웃·사이트룰 전체 소실 위험(실제 사고).
+                //   이제: 원본(잘렸을 수 있는) 텍스트만 localStorage 에 백업하고 null 반환 → Notion 원본 보존(복구 가능).
+                console.error('[Notion Settings] 파싱 실패 — 자동복구(빈 설정 덮어쓰기) 안 함. 원본 보존.', parseErr);
+                try { if (typeof window !== 'undefined') window.localStorage?.setItem('nexus_settings_corrupt_backup', settingsJson); } catch { /* */ }
+                return null;
+            }
+            // 마지막 정상 설정 백업 (로컬, 복구용 last-good)
+            try { if (typeof window !== 'undefined') window.localStorage?.setItem('nexus_settings_lastgood', settingsJson); } catch { /* */ }
+            return parsed;
         } catch (error) {
-            console.warn('[Notion Settings] Load error (corrupted data detected). Resetting settings to defaults...', error);
-            // Auto-repair: overwrite bad data with empty settings to fix future loads
-            this.saveSettings({}).catch(e => console.error('[Notion Settings] Auto-repair failed:', e));
+            // 네트워크/조회 오류 — 자동 삭제 금지, null 반환만.
+            console.error('[Notion Settings] Load 오류(네트워크 등) — 원본 보존, 자동복구 안 함.', error);
             return null;
         }
     }
 
     async saveSettings(settings: Record<string, any>): Promise<boolean> {
+        // [2026-06-16 안전] 빈 설정으로 기존을 덮어쓰지 않는다 (자동 wipe 방지).
+        //   레이아웃·사이트룰이 단일 JSON 셀이라, {} 저장 한 번이면 전체 소실. 저장할 게 없으면 쓰지 않는다.
+        if (!settings || Object.keys(settings).length === 0) {
+            console.warn('[Notion Settings] 빈 설정 저장 거부 — 기존 데이터 보호.');
+            return false;
+        }
         try {
             const settingsJson = JSON.stringify(settings);
             const schemaProps = await this.getDatabaseSchema();
