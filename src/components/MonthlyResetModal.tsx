@@ -34,6 +34,7 @@ import {
     ALYAK_STATUS_NORMAL,
 } from '../lib/quickTasks';
 import { SiteDef, SiteId, SITES_DEFAULTS } from '../lib/sites';
+import { classifyBackup } from '../lib/assetGovernance';
 
 interface Props {
     visible: boolean;
@@ -47,7 +48,8 @@ interface Props {
 }
 
 type Step = 'select' | 'preview' | 'running' | 'done';
-type CycleId = 'closed-network' | 'quarterly-backup' | 'alyak-status-check';
+type CycleId = 'closed-network' | 'quarterly-backup' | 'alyak-status-check'
+    | 'quarterly-backup-all' | 'vaccine-action-all';
 
 // Phase 1 픽스: '미등록'은 별도 흐름이지만 사이클 마킹 대상에서 제외하기 위해
 // 정상으로 취급. quickTasks.ts 의 ALYAK_STATUS_NORMAL 에 '미등록' 포함하지 않으므로
@@ -124,6 +126,43 @@ const CYCLE_DEFS: CycleDef[] = [
         needTag: '온라인구분점검필요',
         completedTag: '온라인구분확인완료',
         historyLabel: (now) => `${getCurrentMonthLabel(now)} 알약 온라인구분 점검 큐 초기화`,
+    },
+    // [거버넌스] 분기백업 전체(분기) — 백업대상 전 기기(실시간/Client/IT현장/USB) 조치여부 초기화.
+    //   IT/현장만 보던 기존 사이클의 거버넌스 확장판. 다음 분기 '백업필요'로 리셋.
+    {
+        id: 'quarterly-backup-all',
+        title: '분기백업 전체 (분기)',
+        get badge() { return `분기 · ${getCurrentQuarterLabel()}`; },
+        emoji: '💾',
+        color: '#0f766e',
+        bgColor: '#ccfbf1',
+        description: '백업대상 전 기기(대상아님 제외) 분기백업 조치여부 초기화',
+        targetFilter: (a) => {
+            const c = classifyBackup(String((a.values as any)['QA)백업 방법'] ?? ''));
+            return c !== 'none' && c !== 'unknown';
+        },
+        statusField: BACKUP_STATUS_FIELD,
+        needTag: '백업필요',
+        completedTag: '백업완료',
+        historyLabel: (now) => `${getCurrentQuarterLabel(now)} 분기백업 전체 큐 초기화 (백업필요 마킹)`,
+    },
+    // [거버넌스] 백신 조치 전체(월간) — 알약 관리대상(온라인/폐쇄망) 백신 조치여부 초기화.
+    {
+        id: 'vaccine-action-all',
+        title: '백신 조치 전체 (월간)',
+        get badge() { return `월간 · ${getCurrentMonthLabel()}`; },
+        emoji: '🛡',
+        color: '#1d4ed8',
+        bgColor: '#dbeafe',
+        description: '알약 관리대상(온라인·폐쇄망) 백신 조치여부 초기화',
+        targetFilter: (a) => {
+            const o = String((a.values as any)['M)알약 온라인구분'] ?? '').trim();
+            return o === '온라인' || o === '폐쇄망';
+        },
+        statusField: 'M)알약 현장조치',
+        needTag: '백신조치필요',
+        completedTag: '백신조치완료',
+        historyLabel: (now) => `${getCurrentMonthLabel(now)} 백신 조치 전체 큐 초기화 (백신조치필요 마킹)`,
     },
 ];
 
