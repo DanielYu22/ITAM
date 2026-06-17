@@ -84,7 +84,10 @@ export const GOV_FIELDS: GovField[] = [
     } },
   { canonical: 'M)V3PoC대상', prefix: 'M', label: 'V3 PoC 대상 PC', source: 'v3-poc', trust: 'authoritative' },
   // 백업/NAS — 현장+스케줄러 권위
-  { canonical: 'B)NAS클라이언트', current: 'M)Synology Client 설치', prefix: 'B', label: 'NAS클라이언트 설치(스케줄러 가동 확인)', source: 'nas-scheduler', trust: 'authoritative' },
+  // 7시 로그 스케줄러 — PC에 설치(배포)했는지. C:\SynologyDrive 존재 시 매일 07시 로그를 남기도록 등록.
+  { canonical: 'B)스케줄러설치', prefix: 'B', label: '07시 로그 스케줄러 설치 여부', source: 'field-survey', trust: 'authoritative' },
+  // NAS 가동 신호 — NAS 서버에 "최신 07시 로그 파일"이 있으면 가동(=NAS설치+온라인)으로 당위 인정.
+  { canonical: 'B)NAS가동', current: 'M)Synology Client 설치', prefix: 'B', label: 'NAS 가동(최신 07시 로그 확인)', source: 'nas-scheduler', trust: 'authoritative' },
   { canonical: 'B)백업방법', current: 'QA)백업 방법', prefix: 'B', label: '백업방법', source: 'derived', trust: 'authoritative' },
 ];
 
@@ -123,15 +126,26 @@ export const validateIntegrity = (values: Record<string, any>): Violation[] => {
   const out: Violation[] = [];
   const online = read(values, fieldByCanonical('M)온라인구분')!);
   const backup = read(values, fieldByCanonical('B)백업방법')!);
-  const nasClient = read(values, fieldByCanonical('B)NAS클라이언트')!);
+  const schedInstalled = read(values, fieldByCanonical('B)스케줄러설치')!);
+  const nasActive = read(values, fieldByCanonical('B)NAS가동')!);
   const asmConn = read(values, fieldByCanonical('S)접속상태')!).toUpperCase();
   const site = read(values, fieldByCanonical('L)사이트')!);
   const building = read(values, fieldByCanonical('L)건물')!);
+  const truthy = (v: string) => /설치|가동|확인|있음|존재|online|y(es)?|true|^o$|완료/i.test(v);
+  const negatory = (v: string) => /미설치|없음|안됨|미가동|미확인|불가|offline|no?$|false|x/i.test(v);
 
-  // R1) NAS 스케줄러 가동(설치됨/온라인) 기기는 백업방법이 IT현장백업·USB불출이면 안 됨
-  const nasRunning = /설치|가동|확인|있음|online|y(es)?|true|o/i.test(nasClient) || online === '온라인';
+  // R1) NAS 가동(최신 07시 로그 확인 = 온라인) 기기는 백업방법이 IT현장백업·USB불출이면 안 됨(당위)
+  const nasRunning = truthy(nasActive) || online === '온라인';
   if (nasRunning && OFFLINE_BACKUP_METHODS.includes(backup as any)) {
     out.push({ field: 'B)백업방법', level: 'integrity', message: `NAS 가동(온라인) 기기인데 백업방법이 '${backup}' — 모순(현장백업/USB불출 불가)` });
+  }
+  // R1b) NAS 가동(07시 로그 존재)인데 온라인구분이 온라인이 아니면 모순(당위: 가동=온라인)
+  if (truthy(nasActive) && online && online !== '온라인') {
+    out.push({ field: 'M)온라인구분', level: 'integrity', message: `NAS 최신 07시 로그 존재(가동)인데 온라인구분이 '${online}' — 당위상 '온라인'이어야 함` });
+  }
+  // R1c) 스케줄러는 설치됐는데 NAS 최신 07시 로그가 안 옴 → SynologyDrive 부재/네트워크 끊김 점검
+  if (truthy(schedInstalled) && negatory(nasActive)) {
+    out.push({ field: 'B)NAS가동', level: 'integrity', message: '스케줄러 설치됨인데 NAS 최신 07시 로그 없음 — C:\\SynologyDrive 부재/네트워크 끊김 점검' });
   }
   // R2) ASM 접속상태 ON ↔ 온라인구분: ON 인데 폐쇄망이면 점검(폐쇄망은 통상 ASM 미접속)
   if (asmConn === 'ON' && online === '폐쇄망') {
