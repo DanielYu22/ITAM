@@ -47,6 +47,7 @@ import {
 } from '../lib/infrastructure';
 import { RoomNode } from '../lib/infrastructureDb';
 import { CompanyInfo } from '../lib/companiesDb';
+import { FLOOR_PLAN_ROOM } from '../lib/layouts';
 import { InfraAsset } from '../lib/infrastructureAssetsDb';
 import { RoomEditDialog } from './RoomEditDialog';
 
@@ -439,6 +440,7 @@ export const InfrastructureModal: React.FC<Props> = ({
                                             onAddFloor={() => openAdd({ kind: 'floor', building: b.name })}
                                             onAddRoom={(floor) => openAdd({ kind: 'room', building: b.name, floor })}
                                             onEditRoom={(floor, room) => setEditingRoom({ building: b.name, floor, room })}
+                                            onOpenFloorPlan={onOpenLayout ? (floor) => onOpenLayout(b.name, floor, FLOOR_PLAN_ROOM) : undefined}
                                         />
                                     ))}
                                 </View>
@@ -549,7 +551,8 @@ const BuildingNode: React.FC<{
     onAddFloor: () => void;
     onAddRoom: (floor: string) => void;
     onEditRoom: (floor: string, room: RoomInfo) => void;
-}> = ({ building, expanded, onToggle, siteColor, onAddFloor, onAddRoom, onEditRoom }) => {
+    onOpenFloorPlan?: (floor: string) => void;
+}> = ({ building, expanded, onToggle, siteColor, onAddFloor, onAddRoom, onEditRoom, onOpenFloorPlan }) => {
     const key = `b:${building.name}`;
     const open = expanded.has(key);
     const roomCount = building.floors.reduce((a, f) => a + f.rooms.length, 0);
@@ -583,6 +586,7 @@ const BuildingNode: React.FC<{
                     onToggle={onToggle}
                     onAddRoom={() => onAddRoom(f.name)}
                     onEditRoom={(room) => onEditRoom(f.name, room)}
+                    onOpenFloorPlan={onOpenFloorPlan ? () => onOpenFloorPlan(f.name) : undefined}
                 />
             ))}
         </View>
@@ -596,7 +600,8 @@ const FloorNode: React.FC<{
     onToggle: (key: string) => void;
     onAddRoom: () => void;
     onEditRoom: (room: RoomInfo) => void;
-}> = ({ floor, buildingName, expanded, onToggle, onAddRoom, onEditRoom }) => {
+    onOpenFloorPlan?: () => void;
+}> = ({ floor, buildingName, expanded, onToggle, onAddRoom, onEditRoom, onOpenFloorPlan }) => {
     const key = `f:${buildingName}/${floor.name}`;
     const open = expanded.has(key);
     return (
@@ -612,6 +617,12 @@ const FloorNode: React.FC<{
                     <Text style={styles.floorName}>{floor.name}</Text>
                     <Text style={styles.floorCount}>{floor.rooms.length}개 공간</Text>
                 </TouchableOpacity>
+                {onOpenFloorPlan && (
+                    <TouchableOpacity style={[styles.miniBtn, { backgroundColor: '#eef2ff', borderColor: '#c7d2fe' }]} onPress={onOpenFloorPlan}>
+                        <Building2 size={11} color="#4338ca" />
+                        <Text style={[styles.miniBtnText, { color: '#4338ca' }]}>평면도</Text>
+                    </TouchableOpacity>
+                )}
                 <TouchableOpacity style={styles.miniBtn} onPress={onAddRoom}>
                     <Plus size={11} color="#475569" />
                     <Text style={styles.miniBtnText}>공간</Text>
