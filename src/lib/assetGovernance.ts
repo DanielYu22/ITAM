@@ -16,6 +16,7 @@ export type AuthSource =
   | 'asm-export'     // ASM Console 출력: Hostname/IP/OS/접속상태/정책/버전
   | 'master-file'    // 마스터파일(당위적): 소속센터/팀 → NAS계정/쉐어계정/패스워드
   | 'nas-scheduler'  // NAS 스케줄러 가동 확인(당위적): 온라인상태/백업방법 제약
+  | 'backup-report'  // 분기백업 자동화 산출물(Final_Integrity_Report.csv): 백업 실제 PASS/FAIL
   | 'v3-poc'         // V3 PoC 대상 여부(현장/정책)
   | 'derived'        // 위 권위값들로부터 파생/검증되는 값
   | 'legacy-ref';    // 기존 입력값 — 참고만, 권위 아님(신뢰도 낮음)
@@ -61,6 +62,11 @@ export const NAS_BACKUP_CLASSES: BackupClass[] = ['realtime', 'client'];
 export const OFFLINE_BACKUP_CLASSES: BackupClass[] = ['it-field', 'usb-user'];
 /** 자산명이 실험기기 코드(CEQ/DEQ/AEQ/BEQ/EQ-)인가 — 1↔4 혼동 점검용 */
 export const isLabEquipCode = (name: string): boolean => /\b[A-Z]?(CEQ|DEQ|AEQ|BEQ|EQ)-/i.test(String(name || ''));
+
+/** 분기백업 자동화 ResultCode (Final_Integrity_Report.csv). PASS 만 정합성 통과. */
+export const BACKUP_RESULT_CODES = ['PASS', 'FAIL_NO_NAS_FOLDER', 'FAIL_NO_CHECK_FILE', 'FAIL_MISMATCH'] as const;
+/** 스케줄러 모드 ↔ 백업분류: STAT=실시간(1, synologydrive가 로데이터경로), COPY=백업Client(4, 원본→synologydrive 복사). */
+export const SCHED_MODE_TO_CLASS: Record<string, BackupClass> = { STAT: 'realtime', COPY: 'client' };
 
 // ── 필드 레지스트리 ────────────────────────────────────────────────────
 export interface GovField {
@@ -115,6 +121,11 @@ export const GOV_FIELDS: GovField[] = [
   { canonical: 'B)NAS가동', current: 'M)Synology Client 설치', prefix: 'B', label: 'NAS 가동(최신 07시 로그 확인)', source: 'nas-scheduler', trust: 'authoritative' },
   { canonical: 'B)백업방법', current: 'QA)백업 방법', prefix: 'B', label: '백업방법', source: 'derived', trust: 'authoritative',
     validate: v => classifyBackup(v) === 'unknown' ? '백업방법 미분류(실시간/IT현장백업/USB사용자백업/백업(Client)/백업대상아님 중 하나)' : null },
+  // 분기백업 자동화 산출물 — 실제 백업 결과(권위). 데이터상(백업방법) vs 실제(이 값) 오차 검출용.
+  { canonical: 'B)분기백업상태', current: 'M)분기백업 상태', prefix: 'B', label: '분기백업 정합성결과', source: 'backup-report', trust: 'authoritative', allowed: BACKUP_RESULT_CODES },
+  { canonical: 'B)분기백업증빙', prefix: 'B', label: '백업증빙(온라인NAS/오프라인/없음)', source: 'backup-report', trust: 'authoritative' },
+  // 스케줄러 모드 — 1↔4 의 결정적 구분(STAT=실시간, COPY=백업Client). schtasks 조회로 확인.
+  { canonical: 'B)스케줄러모드', prefix: 'B', label: '스케줄러모드(STAT실시간/COPY백업Client)', source: 'field-survey', trust: 'authoritative' },
 ];
 
 export const fieldByCanonical = (k: string) => GOV_FIELDS.find(f => f.canonical === k);
@@ -192,6 +203,26 @@ export const validateIntegrity = (values: Record<string, any>): Violation[] => {
   if (building && !site) {
     out.push({ field: 'L)사이트', level: 'integrity', message: '건물은 있는데 사이트 미정 — 용인/마곡/향남 확정 필요' });
   }
+
+  // ── 분기백업 자동화(실제) ↔ 백업방법(데이터상) 오차 검출 ──
+  const bkStatus = read(values, fieldByCanonical('B)분기백업상태')!).toUpperCase();
+  const bkEvidence = read(values, fieldByCanonical('B)분기백업증빙')!);
+  const schedMode = read(values, fieldByCanonical('B)스케줄러모드')!).toUpperCase();
+
+  // R4) NAS 백업방식(실시간/Client)인데 분기백업 정합성 FAIL → 실제 백업 안 됨(데이터상≠실제)
+  if (NAS_BACKUP_CLASSES.includes(bclass) && /^FAIL/.test(bkStatus)) {
+    out.push({ field: 'B)분기백업상태', level: 'integrity', message: `백업방법 '${backup}'(NAS)인데 분기백업 ${bkStatus} — 실제로 백업 안 되는 중(데이터상≠실제)` });
+  }
+  // R5) 분기백업 증빙=온라인NAS(PASS) → NAS가동·온라인 당위. 온라인구분이 다르면 모순
+  if (/온라인|nas/i.test(bkEvidence) && bkStatus === 'PASS' && online && online !== '온라인') {
+    out.push({ field: 'M)온라인구분', level: 'integrity', message: `분기백업이 온라인NAS PASS인데 온라인구분이 '${online}' — 당위상 '온라인'` });
+  }
+  // R6) 스케줄러모드(실제)로 1↔4 확정 — 백업방법(데이터상)과 어긋나면 정정
+  const modeClass = SCHED_MODE_TO_CLASS[schedMode];
+  if (modeClass && bclass !== 'unknown' && modeClass !== bclass) {
+    const want = modeClass === 'realtime' ? '실시간(1)' : '백업(Client)(4)';
+    out.push({ field: 'B)백업방법', level: 'integrity', message: `스케줄러 ${schedMode} 모드 → 실제는 ${want} — 백업방법 '${backup}' 정정 필요` });
+  }
   return out;
 };
 
@@ -232,4 +263,21 @@ export const parseDeptString = (dept: string): { site?: string; category?: strin
   const bit = (s.match(/(\d{2})\s*bit/i) || [])[1];
   const category = /실험기기/.test(s) ? '실험기기' : undefined;
   return { site: site ? site : undefined, category, bit: bit ? `${bit}bit` : undefined };
+};
+
+// ── 분기백업 자동화 출력(Final_Integrity_Report.csv) 판별 & 매핑 ──────────
+/** 헤더로 분기백업 정합성 리포트인지 판별. */
+export const isBackupIntegrityReport = (headers: string[]): boolean => {
+  const h = headers.map(x => String(x).trim());
+  return h.includes('DeviceName') && h.includes('FINAL_VERIFICATION') && h.includes('ResultCode') && h.includes('ManifestSource');
+};
+/** 리포트 한 행 → 권위 필드 값. ManifestSource→증빙(온라인NAS/오프라인/없음). */
+export const mapBackupReportRow = (row: Record<string, any>): { Name: string; 'B)분기백업상태': string; 'B)분기백업증빙': string } => {
+  const ms = String(row['ManifestSource'] ?? '').trim();
+  const evidence = /online|nas/i.test(ms) ? '온라인NAS' : (ms && ms.toLowerCase() !== 'none' ? '오프라인' : '없음');
+  return {
+    Name: String(row['DeviceName'] ?? '').trim(),
+    'B)분기백업상태': String(row['ResultCode'] ?? row['FINAL_VERIFICATION'] ?? '').trim(),
+    'B)분기백업증빙': evidence,
+  };
 };
