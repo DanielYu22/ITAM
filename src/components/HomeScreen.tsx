@@ -43,6 +43,7 @@ import { QUICK_TASKS, QuickTaskDef, getMatchingQuickTasks } from '../lib/quickTa
 import { type LayoutsStore, parseRoomKey } from '../lib/layouts';
 import { SITES_DEFAULTS, SiteDef, SiteId, getSiteCounts } from '../lib/sites';
 import { validateAsset } from '../lib/assetGovernance';
+import { classifyBackupTarget, classifyVaccineTarget } from '../lib/kpiTargets';
 
 // [필수값] 장비로서 존재하기 위한 필수 컬럼 — 비어있으면 홈에서 누락 알람.
 //   물리위치 + 기기담당자 + 망구분(백신 온라인/폐쇄망). (hostname/백업/시놀로지는 광범위해 제외)
@@ -267,10 +268,26 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         return c;
     }, [govViolations]);
 
+    // [KPI] 2대 KPI(분기백업·백신) 타겟 분류 → 조치 필요(action) 자산 목록.
+    const kpiActions = useMemo(() => {
+        const backup: { asset: Asset; name: string; label: string; action: string }[] = [];
+        const vaccine: { asset: Asset; name: string; label: string; action: string }[] = [];
+        for (const a of assets) {
+            const nm = String((a.values as any)[titleField] ?? '').trim() || '(이름없음)';
+            const b = classifyBackupTarget(a.values as any);
+            if (b.status === 'action') backup.push({ asset: a, name: nm, label: b.targetLabel, action: b.action });
+            const vc = classifyVaccineTarget(a.values as any);
+            if (vc.status === 'action') vaccine.push({ asset: a, name: nm, label: vc.targetLabel, action: vc.action });
+        }
+        return { backup, vaccine };
+    }, [assets, titleField]);
+
     // [접고 펼치기] 홈 알람 섹션 — 화면 정리용. 기본 접힘.
     const [showUnmarked, setShowUnmarked] = useState(false);
     const [showMissing, setShowMissing] = useState(false);
     const [showGov, setShowGov] = useState(false);
+    const [showKpiBk, setShowKpiBk] = useState(false);
+    const [showKpiVac, setShowKpiVac] = useState(false);
 
     // 글로벌 검색 결과 — 자산만 (기존)
     const searchResults = useMemo(() => {
@@ -655,6 +672,48 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         {showMissing && missingAssets.length > 40 && (
                             <Text style={styles.alarmMore}>외 {missingAssets.length - 40}대… (필터로 전체 보기)</Text>
                         )}
+                    </View>
+                )}
+
+                {/* [KPI] 분기데이터백업 — 조치 필요(타겟 분류별 다음 액션) */}
+                {kpiActions.backup.length > 0 && (
+                    <View style={styles.alarmSection}>
+                        <TouchableOpacity style={styles.alarmHeader} onPress={() => setShowKpiBk(v => !v)}>
+                            <Text style={styles.alarmTitle}>💾 분기백업 조치 {kpiActions.backup.length}대</Text>
+                            <View style={{ flex: 1 }} />
+                            <Text style={styles.alarmCaret}>{showKpiBk ? '▾' : '▸'}</Text>
+                        </TouchableOpacity>
+                        {showKpiBk && kpiActions.backup.slice(0, 50).map((m, i) => (
+                            <TouchableOpacity key={`kbk-${m.asset.id}-${i}`} style={styles.alarmRow} onPress={() => onEditAsset(m.asset)}>
+                                <Text style={styles.alarmName}>{m.name}</Text>
+                                <Text style={{ fontSize: 10, color: '#64748b', marginLeft: 6 }}>{m.label}</Text>
+                                <View style={{ flex: 1 }} />
+                                <Text style={styles.alarmMissing} numberOfLines={1}>{m.action}</Text>
+                                <Text style={styles.unmarkedArrow}>›</Text>
+                            </TouchableOpacity>
+                        ))}
+                        {showKpiBk && kpiActions.backup.length > 50 && <Text style={styles.alarmMore}>외 {kpiActions.backup.length - 50}대…</Text>}
+                    </View>
+                )}
+
+                {/* [KPI] 백신업데이트(알약+V3) — 조치 필요 */}
+                {kpiActions.vaccine.length > 0 && (
+                    <View style={styles.alarmSection}>
+                        <TouchableOpacity style={styles.alarmHeader} onPress={() => setShowKpiVac(v => !v)}>
+                            <Text style={styles.alarmTitle}>🛡 백신 조치 {kpiActions.vaccine.length}대</Text>
+                            <View style={{ flex: 1 }} />
+                            <Text style={styles.alarmCaret}>{showKpiVac ? '▾' : '▸'}</Text>
+                        </TouchableOpacity>
+                        {showKpiVac && kpiActions.vaccine.slice(0, 50).map((m, i) => (
+                            <TouchableOpacity key={`kvc-${m.asset.id}-${i}`} style={styles.alarmRow} onPress={() => onEditAsset(m.asset)}>
+                                <Text style={styles.alarmName}>{m.name}</Text>
+                                <Text style={{ fontSize: 10, color: '#64748b', marginLeft: 6 }}>{m.label}</Text>
+                                <View style={{ flex: 1 }} />
+                                <Text style={styles.alarmMissing} numberOfLines={1}>{m.action}</Text>
+                                <Text style={styles.unmarkedArrow}>›</Text>
+                            </TouchableOpacity>
+                        ))}
+                        {showKpiVac && kpiActions.vaccine.length > 50 && <Text style={styles.alarmMore}>외 {kpiActions.vaccine.length - 50}대…</Text>}
                     </View>
                 )}
 
