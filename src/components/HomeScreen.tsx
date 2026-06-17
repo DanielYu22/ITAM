@@ -99,6 +99,8 @@ interface HomeScreenProps {
     onOpenRoomLayout?: (building: string, floor: string, room: string) => void;
     // 인프라 트리 (사이트·건물·층·실험실) 진입
     onOpenInfrastructure?: () => void;
+    // 현장 서베이 모드(동선 순서 권위값 입력) 진입
+    onOpenFieldSurvey?: () => void;
     /** 사용자 오버라이드가 합성된 최종 사이트 정의 (카운트/표시용) */
     effectiveSites?: SiteDef[];
     /** 'all' = 전체장비, 'filtered' = 작업대상 대시보드 오픈 */
@@ -153,6 +155,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     layoutsStore,
     onOpenRoomLayout,
     onOpenInfrastructure,
+    onOpenFieldSurvey,
     effectiveSites,
     onOpenDashboard,
     workTargetCount,
@@ -834,6 +837,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             <Building2 size={22} color="#0369a1" />
                         </View>
                         <Text style={styles.toolLabel}>인프라 · 레이아웃</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                        style={styles.toolCard}
+                        onPress={onOpenFieldSurvey}
+                        disabled={!onOpenFieldSurvey}
+                    >
+                        <View style={[styles.toolIconContainer, { backgroundColor: '#ede9fe' }]}>
+                            <MapPin size={22} color="#6d28d9" />
+                        </View>
+                        <Text style={styles.toolLabel}>현장 서베이</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity

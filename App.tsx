@@ -42,6 +42,7 @@ import { ExportPreviewModal } from './src/components/ExportPreviewModal';
 import { BulkUpdateModal } from './src/components/BulkUpdateModal';
 import { SourceImportModal } from './src/components/SourceImportModal';
 import { DashboardModal } from './src/components/DashboardModal';
+import { FieldSurveyModal } from './src/components/FieldSurveyModal';
 import { TaskDashboardModal } from './src/components/TaskDashboardModal';
 import { SiteRulesModal } from './src/components/SiteRulesModal';
 import { DBManagementModal } from './src/components/DBManagementModal';
@@ -140,6 +141,7 @@ export default function App() {
   const [showBulkUpdateModal, setShowBulkUpdateModal] = useState(false);
   const [showSourceImportModal, setShowSourceImportModal] = useState(false);
   const [showDashboardModal, setShowDashboardModal] = useState(false);
+  const [showSurveyModal, setShowSurveyModal] = useState(false);
   // 대시보드 모드: 'all' = 전체장비, 'filtered' = 작업대상(워크 필터 적용)
   const [dashboardMode, setDashboardMode] = useState<'all' | 'filtered'>('all');
   const [showTaskDashboardModal, setShowTaskDashboardModal] = useState(false);
@@ -1468,6 +1470,7 @@ export default function App() {
               onSubmitFieldSupport={() => setShowFieldSupportModal(true)}
               onMonthlyReset={() => setShowMonthlyResetModal(true)}
               onOpenInfrastructure={() => setShowInfrastructureModal(true)}
+              onOpenFieldSurvey={() => setShowSurveyModal(true)}
               onDashboard={() => {
                 setDashboardMode('all');
                 setShowDashboardModal(true);
@@ -1774,6 +1777,16 @@ export default function App() {
           schemaProperties={schemaProperties}
           onUpdate={handleUpdateAsset}
           title={dashboardMode === 'filtered' ? '작업 대상' : '전체 장비'}
+        />
+
+        <FieldSurveyModal
+          visible={showSurveyModal}
+          onClose={() => setShowSurveyModal(false)}
+          assets={siteFilteredAssets}
+          schema={schema}
+          schemaProperties={schemaProperties}
+          layoutsStore={layoutsStore}
+          onUpdate={handleUpdateAsset}
         />
 
         <SiteRulesModal
