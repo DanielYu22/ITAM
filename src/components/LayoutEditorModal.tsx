@@ -98,7 +98,13 @@ export const LayoutEditorModal: React.FC<Props> = ({
     availableRooms,
 }) => {
     const [layout, setLayout] = useState<RoomLayout>(() => initialLayout || emptyLayout());
-    const [selectedId, setSelectedId] = useState<string | null>(null);
+    // 다중 선택 — 빈 공간 드래그(마퀴)로 여러 객체 선택 + 일괄 이동
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    // 인스펙터/리사이즈는 "정확히 1개" 선택일 때만 (기존 단일 로직 호환)
+    const selectedId = selectedIds.size === 1 ? Array.from(selectedIds)[0] : null;
+    const setSelectedId = (id: string | null) => setSelectedIds(id ? new Set([id]) : new Set());
+    // 마퀴 사각형(캔버스 로컬 px, 화면 표시용) — 드래그 중에만 non-null
+    const [marquee, setMarquee] = useState<{ x: number; y: number; w: number; h: number } | null>(null);
     const [showAssetPicker, setShowAssetPicker] = useState(false);
     const [showLabPicker, setShowLabPicker] = useState(false);
     const [labSearch, setLabSearch] = useState('');
@@ -242,14 +248,86 @@ export const LayoutEditorModal: React.FC<Props> = ({
     }, []);
 
     const deleteSelected = useCallback(() => {
-        if (!selectedId) return;
+        if (selectedIds.size === 0) return;
         setLayout(prev => ({
             ...prev,
-            objects: prev.objects.filter(o => o.id !== selectedId),
+            objects: prev.objects.filter(o => !selectedIds.has(o.id)),
             updatedAt: new Date().toISOString(),
         }));
-        setSelectedId(null);
-    }, [selectedId]);
+        setSelectedIds(new Set());
+    }, [selectedIds]);
+
+    // 일괄 이동 — 선택 집합을 증분 (dx,dy) 만큼 이동(그룹 bbox 를 캔버스 안으로 클램프해 상대 위치 유지)
+    const moveGroup = useCallback((ids: Set<string>, dx: number, dy: number) => {
+        setLayout(prev => {
+            const sel = prev.objects.filter(o => ids.has(o.id));
+            if (sel.length === 0) return prev;
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const o of sel) {
+                minX = Math.min(minX, o.x); minY = Math.min(minY, o.y);
+                maxX = Math.max(maxX, o.x + o.width); maxY = Math.max(maxY, o.y + o.height);
+            }
+            const cdx = Math.max(-minX, Math.min(CANVAS_WIDTH - maxX, dx));
+            const cdy = Math.max(-minY, Math.min(CANVAS_HEIGHT - maxY, dy));
+            if (cdx === 0 && cdy === 0) return prev;
+            return {
+                ...prev,
+                objects: prev.objects.map(o => ids.has(o.id) ? { ...o, x: o.x + cdx, y: o.y + cdy } : o),
+                updatedAt: new Date().toISOString(),
+            };
+        });
+    }, []);
+
+    // [마퀴] 빈 캔버스에서 드래그 → 사각형 선택. 객체는 pointerdown 에서 stopPropagation 하므로
+    //   빈 곳 누름만 캔버스 노드에 도달한다. 최신 상태는 ref 로 읽어 리스너 재등록 최소화.
+    const marqueeRef = useRef({ objects: layout.objects, scale: 1, pathMode: false, orderMode: false });
+    useEffect(() => {
+        marqueeRef.current = { objects: layout.objects, scale, pathMode, orderMode };
+    });
+    useEffect(() => {
+        const node = canvasRef.current as any;
+        if (!node || typeof node.addEventListener !== 'function' || typeof document === 'undefined') return;
+        let active = false, startX = 0, startY = 0, originLeft = 0, originTop = 0;
+        const THRESH = 4;
+        const begin = (cx: number, cy: number) => {
+            if (marqueeRef.current.pathMode || marqueeRef.current.orderMode) return;
+            const r = node.getBoundingClientRect();
+            active = true; originLeft = r.left; originTop = r.top;
+            startX = cx - r.left; startY = cy - r.top;
+            setMarquee({ x: startX, y: startY, w: 0, h: 0 });
+        };
+        const move = (cx: number, cy: number) => {
+            if (!active) return;
+            const x = cx - originLeft, y = cy - originTop;
+            setMarquee({ x: Math.min(startX, x), y: Math.min(startY, y), w: Math.abs(x - startX), h: Math.abs(y - startY) });
+        };
+        const end = (cx: number, cy: number) => {
+            if (!active) return;
+            active = false;
+            setMarquee(null);
+            const ex = cx - originLeft, ey = cy - originTop;
+            if (Math.hypot(ex - startX, ey - startY) < THRESH) { setSelectedIds(new Set()); return; }
+            const sc = marqueeRef.current.scale || 1;
+            const x0 = Math.min(startX, ex) / sc, y0 = Math.min(startY, ey) / sc;
+            const x1 = Math.max(startX, ex) / sc, y1 = Math.max(startY, ey) / sc;
+            const hit = new Set<string>();
+            for (const o of marqueeRef.current.objects) {
+                if (o.x < x1 && o.x + o.width > x0 && o.y < y1 && o.y + o.height > y0) hit.add(o.id);
+            }
+            setSelectedIds(hit);
+        };
+        const onDown = (e: any) => { if (e.button != null && e.button !== 0) return; begin(e.clientX, e.clientY); };
+        const onMove = (e: any) => move(e.clientX, e.clientY);
+        const onUp = (e: any) => end(e.clientX, e.clientY);
+        node.addEventListener('pointerdown', onDown);
+        document.addEventListener('pointermove', onMove, { passive: true } as any);
+        document.addEventListener('pointerup', onUp, { passive: true } as any);
+        return () => {
+            node.removeEventListener('pointerdown', onDown);
+            document.removeEventListener('pointermove', onMove as any);
+            document.removeEventListener('pointerup', onUp as any);
+        };
+    }, [visible]);
 
     // Phase 6: 동선 순서 매기기 — 기기 탭 시 다음 번호 부여(없으면) / 해제 후 재번호(있으면).
     const toggleOrder = useCallback((id: string) => {
@@ -671,12 +749,18 @@ export const LayoutEditorModal: React.FC<Props> = ({
                                 key={obj.id}
                                 obj={obj}
                                 scale={scale}
-                                selected={obj.id === selectedId}
+                                selected={selectedIds.has(obj.id)}
                                 thumbnail={obj.type === 'lab'
                                     ? <RoomThumbnail layout={layoutsStore?.rooms?.[roomKey(building, floor, obj.roomName || '')]} width={obj.width * scale} height={obj.height * scale} />
                                     : undefined}
-                                onSelect={() => { if (orderMode) { toggleOrder(obj.id); } else { setSelectedId(obj.id); } }}
+                                onSelect={() => {
+                                    if (orderMode) { toggleOrder(obj.id); return; }
+                                    // 이미 다중 선택에 포함된 객체면 선택 유지(그룹 드래그) — 아니면 단일 선택
+                                    setSelectedIds(prev => (prev.size > 1 && prev.has(obj.id)) ? prev : new Set([obj.id]));
+                                }}
                                 onMove={(dx, dy) => {
+                                    // 다중 선택 + 이 객체가 그 안이면 그룹 일괄 이동
+                                    if (selectedIds.size > 1 && selectedIds.has(obj.id)) { moveGroup(selectedIds, dx, dy); return; }
                                     // 회전된 시각적 bounding box 기준으로 클램프 (회전 origin = center)
                                     const rot = ((obj.rotation || 0) * Math.PI) / 180;
                                     const c = Math.abs(Math.cos(rot));
@@ -696,6 +780,19 @@ export const LayoutEditorModal: React.FC<Props> = ({
                                 onDragEnd={() => setObjectDragging(false)}
                             />
                         ))}
+
+                        {/* [마퀴] 드래그 선택 사각형 */}
+                        {marquee && (marquee.w > 1 || marquee.h > 1) && (
+                            <View
+                                pointerEvents="none"
+                                style={{
+                                    position: 'absolute',
+                                    left: marquee.x, top: marquee.y, width: marquee.w, height: marquee.h,
+                                    borderWidth: 1.5, borderColor: '#6366f1', borderStyle: 'dashed',
+                                    backgroundColor: 'rgba(99,102,241,0.10)', borderRadius: 4,
+                                }}
+                            />
+                        )}
 
                         {/* 리사이즈 핸들 — 선택된 객체 위에 별도 렌더 (이벤트 충돌 방지) */}
                         {selected && (
@@ -806,6 +903,23 @@ export const LayoutEditorModal: React.FC<Props> = ({
                         </View>
                     </View>
                 </View>
+
+                {/* [다중 선택] 그룹 액션 바 — 2개 이상 선택 시 */}
+                {selectedIds.size > 1 && (
+                    <View style={styles.selectedPanel}>
+                        <View style={[styles.selectedPanelRow, { justifyContent: 'space-between' }]}>
+                            <Text style={[styles.selectedLabel, { fontWeight: '800' }]}>{selectedIds.size}개 선택됨 · 드래그로 일괄 이동</Text>
+                            <View style={{ flexDirection: 'row', gap: 8 }}>
+                                <TouchableOpacity style={styles.smallBtn} onPress={() => setSelectedIds(new Set())}>
+                                    <Text>선택 해제</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity style={[styles.smallBtn, { backgroundColor: '#fee2e2' }]} onPress={deleteSelected}>
+                                    <Text style={{ color: '#b91c1c' }}>🗑 삭제</Text>
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                    </View>
+                )}
 
                 {/* 선택된 객체 옵션 패널 */}
                 {selected && (
