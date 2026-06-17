@@ -113,7 +113,7 @@ export const GOV_FIELDS: GovField[] = [
       if (!ONLINE_KINDS.includes(t as any)) return `온라인구분은 ${ONLINE_KINDS.join('/')} 중 하나`;
       return null;
     } },
-  { canonical: 'M)V3PoC대상', prefix: 'M', label: 'V3 PoC 대상 PC', source: 'v3-poc', trust: 'authoritative' },
+  { canonical: 'M)V3PoC대상', current: 'V3 POC', prefix: 'M', label: 'V3 PoC 대상 PC', source: 'v3-poc', trust: 'authoritative' },
   // 백업/NAS — 현장+스케줄러 권위
   // 7시 로그 스케줄러 — PC에 설치(배포)했는지. C:\SynologyDrive 존재 시 매일 07시 로그를 남기도록 등록.
   { canonical: 'B)스케줄러설치', prefix: 'B', label: '07시 로그 스케줄러 설치 여부', source: 'field-survey', trust: 'authoritative' },

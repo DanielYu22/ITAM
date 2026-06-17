@@ -61,7 +61,7 @@ export const classifyBackupTarget = (v: V): KpiResult => {
 /** 백신업데이트 KPI(알약 + V3 PoC) — 타겟 분류 + 액션 */
 export const classifyVaccineTarget = (v: V): KpiResult => {
   const online = g(v, 'M)알약 온라인구분', 'M)온라인구분');
-  const v3 = g(v, 'M)V3PoC대상', 'V3 PoC 대상 PC', 'V3 PoC 대상 여부');
+  const v3 = g(v, 'V3 POC', 'M)V3PoC대상', 'V3 PoC 대상 PC');
   const push = g(v, 'M)ASM Push');
   const field = g(v, 'M)알약 현장조치');
   const isV3 = /대상|poc|^y|^o|예|true/i.test(v3) && !/아님|^n|no|false/i.test(v3);

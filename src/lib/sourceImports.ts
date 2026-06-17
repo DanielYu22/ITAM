@@ -307,6 +307,9 @@ export const SOURCES: SourceDef[] = [
             const updates: FieldUpdate[] = [];
             const code = String(row['ResultCode'] ?? row['FINAL_VERIFICATION'] ?? '').trim();
             if (code) updates.push({ field: 'M)분기백업 상태', value: code });
+            const ms = String(row['ManifestSource'] ?? '').trim();
+            const evidence = /online|nas/i.test(ms) ? '온라인NAS' : (ms && ms.toLowerCase() !== 'none' ? '오프라인' : '없음');
+            updates.push({ field: 'B)분기백업증빙', value: evidence });
             return updates;
         },
         unmatchedBehavior: 'skip',

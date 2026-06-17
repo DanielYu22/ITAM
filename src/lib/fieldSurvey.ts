@@ -39,7 +39,7 @@ export const SURVEY_FIELD_DEFS: SurveyFieldDef[] = [
     validate: v => v && classifyBackup(v) === 'unknown' ? '5분류 중 하나' : null },
   { col: 'B)스케줄러설치', label: '7시 로그 스케줄러 설치', input: 'yesno', hint: '신규 컬럼 — 생성 후 노출' },
   { col: 'B)스케줄러모드', label: '스케줄러모드', input: 'enum', options: ['STAT', 'COPY'], hint: 'STAT=실시간/COPY=백업Client (신규 컬럼)' },
-  { col: 'M)V3PoC대상', label: 'V3 PoC 대상', input: 'yesno' },
+  { col: 'V3 POC', label: 'V3 PoC 대상', input: 'yesno' },
   { col: 'User)기기관리자', label: '기기관리자', input: 'text' },
   { col: 'M)알약 현장조치', label: '알약 현장조치', input: 'text', hint: '폐쇄망 등 현장 조치 메모' },
 ];
