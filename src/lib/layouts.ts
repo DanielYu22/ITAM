@@ -161,6 +161,40 @@ export const DEFAULT_COLORS: Record<LayoutObjectType, string> = {
     lab: '#eef2ff',  // 실험실 타일 배경(연보라)
 };
 
+/**
+ * [리맵] 레이아웃 'asset' 객체의 assetId 를 현재(개인) DB 자산 id 로 재연결.
+ *
+ * 회사 DB → 개인 DB 이관 후 layout 의 assetId 는 옛 회사 id 라 현재 자산 id 와 불일치한다.
+ * 같은 연구실의 자산 중 이름(label === titleField 값)이 일치하는 항목으로 assetId 를 갱신한다.
+ * 순수 함수: 변경이 없으면 입력 layout 을 그대로 반환(참조 동일 → 불필요한 dirty 방지).
+ */
+export const remapLayoutAssetIds = (
+    layout: RoomLayout,
+    roomAssets: { id: string; values: Record<string, any> }[],
+    titleField: string,
+): { layout: RoomLayout; remapped: number } => {
+    const liveIds = new Set(roomAssets.map(a => a.id));
+    const byName = new Map<string, string>(); // 이름 → 현재 id
+    for (const a of roomAssets) {
+        const nm = String(a.values?.[titleField] ?? '').trim();
+        if (nm && !byName.has(nm)) byName.set(nm, a.id);
+    }
+    let remapped = 0;
+    const objects = layout.objects.map(o => {
+        if (o.type !== 'asset') return o;
+        if (o.assetId && liveIds.has(o.assetId)) return o; // 이미 현재 id
+        const nm = String(o.label ?? '').trim();
+        const live = nm ? byName.get(nm) : undefined;
+        if (live && live !== o.assetId) {
+            remapped++;
+            return { ...o, assetId: live };
+        }
+        return o;
+    });
+    if (remapped === 0) return { layout, remapped: 0 };
+    return { layout: { ...layout, objects }, remapped };
+};
+
 export const makeObject = (
     type: LayoutObjectType,
     overrides: Partial<LayoutObject> = {},

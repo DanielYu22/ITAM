@@ -41,6 +41,7 @@ import {
     OBJECT_TYPE_EMOJI,
     roomKey,
     FLOOR_PLAN_ROOM,
+    remapLayoutAssetIds,
     type LayoutsStore,
 } from '../lib/layouts';
 
@@ -177,6 +178,8 @@ export const LayoutEditorModal: React.FC<Props> = ({
         setLabelInput(selected?.label ?? '');
     }, [selected?.id, selected?.label]);
 
+    const isFloorPlan = room === FLOOR_PLAN_ROOM;
+
     // 자산 검색 결과
     const filteredAssets = useMemo(() => {
         const placedIds = new Set(layout.objects.filter(o => o.type === 'asset').map(o => o.assetId));
@@ -187,6 +190,19 @@ export const LayoutEditorModal: React.FC<Props> = ({
             .filter(a => String((a.values as any)[titleField] ?? '').toLowerCase().includes(q))
             .slice(0, 30);
     }, [roomAssets, layout.objects, assetSearch, titleField]);
+
+    // ----- [리맵] 이관된 stale assetId 감지 — 이름매칭으로 재연결 가능한 기기 수 -----
+    const staleRemapCount = useMemo(() => {
+        if (isFloorPlan || roomAssets.length === 0) return 0;
+        return remapLayoutAssetIds(layout, roomAssets, titleField).remapped;
+    }, [layout, roomAssets, titleField, isFloorPlan]);
+
+    const applyRemap = useCallback(() => {
+        const { layout: next, remapped } = remapLayoutAssetIds(layout, roomAssets, titleField);
+        if (remapped === 0) return;
+        setLayout({ ...next, updatedAt: new Date().toISOString() });
+        Alert.alert('재연결 완료', `${remapped}개 기기의 ID를 현재 자산과 다시 연결했어요. 저장하면 반영됩니다.`);
+    }, [layout, roomAssets, titleField]);
 
     // ----- 객체 조작 -----
     const updateObject = useCallback((id: string, patch: Partial<LayoutObject>) => {
@@ -264,7 +280,6 @@ export const LayoutEditorModal: React.FC<Props> = ({
     };
 
     // ----- [A-2] 층 평면도 모드: 실험실(lab) 타일 추가 -----
-    const isFloorPlan = room === FLOOR_PLAN_ROOM;
     const addLabObject = (roomName: string) => {
         addObject('lab', { roomName, label: roomName });
         setShowLabPicker(false);
@@ -555,6 +570,15 @@ export const LayoutEditorModal: React.FC<Props> = ({
                         <Text style={[styles.toolBtnText, { color: '#1d4ed8' }]}>PNG</Text>
                     </TouchableOpacity>
                 </View>
+
+                {/* [리맵] 이관된 stale assetId 재연결 배너 */}
+                {staleRemapCount > 0 && (
+                    <TouchableOpacity style={styles.remapBanner} onPress={applyRemap} activeOpacity={0.8}>
+                        <Text style={styles.remapBannerText}>
+                            🔗 이관 전 기기 ID {staleRemapCount}개가 현재 자산과 끊겨 있어요. 탭하면 이름으로 재연결 (저장 시 반영)
+                        </Text>
+                    </TouchableOpacity>
+                )}
 
                 {/* 캔버스 — Phase 3 P0: ScrollView 로 감싸 줌 시 팬 가능 */}
                 {/* 캔버스 wrapper — ScrollView 대신 일반 View + CSS overflow (iPad 터치 가로채기 방지) */}
@@ -1483,6 +1507,14 @@ const styles = StyleSheet.create({
         textAlign: 'center',
     },
 
+    remapBanner: {
+        backgroundColor: '#fffbeb',
+        borderBottomWidth: 1,
+        borderBottomColor: '#fde68a',
+        paddingHorizontal: 12,
+        paddingVertical: 8,
+    },
+    remapBannerText: { fontSize: 11, fontWeight: '700', color: '#b45309' },
     canvasWrap: {
         flex: 1,
         backgroundColor: '#f1f5f9',
