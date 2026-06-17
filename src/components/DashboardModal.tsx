@@ -94,11 +94,17 @@ export const DashboardModal: React.FC<Props> = ({
         DEFAULT_VISIBLE_COLUMNS.filter(c => schema.includes(c))
     );
     const [filterRows, setFilterRows] = useState<FilterRow[]>([]);
+    // 필터 결합 방식 — AND(모두 만족) / OR(하나라도 만족)
+    const [filterMode, setFilterMode] = useState<'and' | 'or'>('and');
     const [sortRows, setSortRows] = useState<SortRow[]>([]);
     const [showColumnPicker, setShowColumnPicker] = useState(false);
     const [showFilterPanel, setShowFilterPanel] = useState(false);
     const [showSortPanel, setShowSortPanel] = useState(false);
+    const [showGroupPanel, setShowGroupPanel] = useState(false);
     const [quickSearch, setQuickSearch] = useState('');
+    // 그룹 — 이 컬럼 값으로 행을 묶음('' = 그룹 없음). 접힌 그룹 값 집합.
+    const [groupColumn, setGroupColumn] = useState('');
+    const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
 
     // 편집 다이얼로그 상태
     const [editingCell, setEditingCell] = useState<{ asset: Asset; field: string } | null>(null);
@@ -150,24 +156,27 @@ export const DashboardModal: React.FC<Props> = ({
             );
         }
 
-        // 다중 필터 (AND)
-        if (filterRows.length > 0) {
-            result = result.filter(a => {
-                return filterRows.every(f => {
-                    if (!f.column) return true;
-                    const v = String((a.values as any)[f.column] ?? '');
-                    const vl = v.toLowerCase();
-                    const tl = f.value.toLowerCase();
-                    switch (f.op) {
-                        case 'contains': return tl ? vl.includes(tl) : true;
-                        case 'not_contains': return tl ? !vl.includes(tl) : true;
-                        case 'equals': return tl ? vl === tl : true;
-                        case 'not_equals': return tl ? vl !== tl : true;
-                        case 'is_empty': return !v || v === '';
-                        case 'is_not_empty': return !!v && v !== '';
-                    }
-                });
-            });
+        // 다중 필터 — filterMode 에 따라 AND(every) / OR(some)
+        const activeFilters = filterRows.filter(f => f.column);
+        if (activeFilters.length > 0) {
+            const testOne = (a: Asset, f: FilterRow) => {
+                const v = String((a.values as any)[f.column] ?? '');
+                const vl = v.toLowerCase();
+                const tl = f.value.toLowerCase();
+                switch (f.op) {
+                    case 'contains': return tl ? vl.includes(tl) : true;
+                    case 'not_contains': return tl ? !vl.includes(tl) : true;
+                    case 'equals': return tl ? vl === tl : true;
+                    case 'not_equals': return tl ? vl !== tl : true;
+                    case 'is_empty': return !v || v === '';
+                    case 'is_not_empty': return !!v && v !== '';
+                }
+            };
+            result = result.filter(a =>
+                filterMode === 'or'
+                    ? activeFilters.some(f => testOne(a, f))
+                    : activeFilters.every(f => testOne(a, f))
+            );
         }
 
         // 다중 정렬 (위에 있는 게 우선)
@@ -185,7 +194,36 @@ export const DashboardModal: React.FC<Props> = ({
         }
 
         return result;
-    }, [assets, filterRows, sortRows, quickSearch, visibleColumns]);
+    }, [assets, filterRows, filterMode, sortRows, quickSearch, visibleColumns]);
+
+    // 그룹 적용 — FlatList 가상화 유지를 위해 헤더/데이터 행을 평탄화한 배열로 변환
+    type GroupRow =
+        | { kind: 'header'; key: string; label: string; count: number }
+        | { kind: 'data'; key: string; asset: Asset; idx: number };
+    const groupedRows = useMemo<GroupRow[]>(() => {
+        if (!groupColumn) {
+            return displayedAssets.map((a, i) => ({ kind: 'data', key: a.id, asset: a, idx: i }));
+        }
+        const groups = new Map<string, Asset[]>();
+        for (const a of displayedAssets) {
+            const g = String((a.values as any)[groupColumn] ?? '').trim() || '(비어있음)';
+            (groups.get(g) || groups.set(g, []).get(g)!).push(a);
+        }
+        const keys = Array.from(groups.keys()).sort((a, b) => a.localeCompare(b, 'ko', { numeric: true }));
+        const rows: GroupRow[] = [];
+        for (const g of keys) {
+            const list = groups.get(g)!;
+            rows.push({ kind: 'header', key: `h:${g}`, label: g, count: list.length });
+            if (!collapsedGroups.has(g)) {
+                list.forEach((a, i) => rows.push({ kind: 'data', key: a.id, asset: a, idx: i }));
+            }
+        }
+        return rows;
+    }, [displayedAssets, groupColumn, collapsedGroups]);
+
+    const tableWidth = visibleColumns.length * 160;
+    const toggleGroupCollapse = (g: string) =>
+        setCollapsedGroups(prev => { const n = new Set(prev); n.has(g) ? n.delete(g) : n.add(g); return n; });
 
     const toggleColumn = (col: string) => {
         setVisibleColumns(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]);
@@ -361,6 +399,15 @@ export const DashboardModal: React.FC<Props> = ({
                             정렬 ({sortRows.length})
                         </Text>
                     </TouchableOpacity>
+                    <TouchableOpacity
+                        style={[styles.ctrlBtn, (showGroupPanel || !!groupColumn) && styles.ctrlBtnActive]}
+                        onPress={() => setShowGroupPanel(v => !v)}
+                    >
+                        <Columns size={14} color={(showGroupPanel || !!groupColumn) ? '#ffffff' : '#475569'} style={{ transform: [{ rotate: '90deg' }] }} />
+                        <Text style={[styles.ctrlBtnText, (showGroupPanel || !!groupColumn) && { color: '#ffffff' }]}>
+                            그룹 ({groupColumn || '없음'})
+                        </Text>
+                    </TouchableOpacity>
                 </View>
 
                 {/* 컬럼 픽커 패널 */}
@@ -434,6 +481,22 @@ export const DashboardModal: React.FC<Props> = ({
                 {showFilterPanel && (
                     <View style={styles.panel}>
                         <ScrollView contentContainerStyle={styles.panelContent}>
+                            {/* 결합 방식 — 모두 만족(AND) / 하나라도(OR) */}
+                            <View style={{ flexDirection: 'row', gap: 6, marginBottom: 8 }}>
+                                <Text style={[styles.helperText, { marginBottom: 0, alignSelf: 'center' }]}>조건 결합:</Text>
+                                <TouchableOpacity
+                                    style={[styles.dirBtn, filterMode === 'and' && styles.dirBtnActive]}
+                                    onPress={() => setFilterMode('and')}
+                                >
+                                    <Text style={[styles.dirBtnText, filterMode === 'and' && { color: '#ffffff' }]}>모두(AND)</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity
+                                    style={[styles.dirBtn, filterMode === 'or' && styles.dirBtnActive]}
+                                    onPress={() => setFilterMode('or')}
+                                >
+                                    <Text style={[styles.dirBtnText, filterMode === 'or' && { color: '#ffffff' }]}>하나라도(OR)</Text>
+                                </TouchableOpacity>
+                            </View>
                             {filterRows.map(f => (
                                 <View key={f.id} style={styles.filterRow}>
                                     <ColumnPicker
@@ -505,6 +568,32 @@ export const DashboardModal: React.FC<Props> = ({
                     </View>
                 )}
 
+                {/* 그룹 패널 — 한 컬럼 값으로 행 묶기 */}
+                {showGroupPanel && (
+                    <View style={styles.panel}>
+                        <ScrollView contentContainerStyle={styles.panelContent}>
+                            <Text style={styles.helperText}>선택한 컬럼 값으로 행을 묶어 그룹 헤더(개수)와 함께 표시합니다. 헤더를 누르면 접기/펼치기.</Text>
+                            <TouchableOpacity style={styles.colItem} onPress={() => { setGroupColumn(''); setCollapsedGroups(new Set()); }}>
+                                <View style={[styles.checkbox, !groupColumn && styles.checkboxOn]}>
+                                    {!groupColumn && <Check size={12} color="#ffffff" />}
+                                </View>
+                                <Text style={styles.colItemText}>그룹 없음</Text>
+                            </TouchableOpacity>
+                            {schema.map(col => {
+                                const on = groupColumn === col;
+                                return (
+                                    <TouchableOpacity key={col} style={styles.colItem} onPress={() => { setGroupColumn(col); setCollapsedGroups(new Set()); }}>
+                                        <View style={[styles.checkbox, on && styles.checkboxOn]}>
+                                            {on && <Check size={12} color="#ffffff" />}
+                                        </View>
+                                        <Text style={styles.colItemText}>{col}</Text>
+                                    </TouchableOpacity>
+                                );
+                            })}
+                        </ScrollView>
+                    </View>
+                )}
+
                 {/* 테이블 */}
                 <View style={styles.tableWrap}>
                     <ScrollView horizontal showsHorizontalScrollIndicator>
@@ -519,29 +608,52 @@ export const DashboardModal: React.FC<Props> = ({
                             </View>
                             {/* 데이터 행들 (FlatList로 가상화) */}
                             <FlatList
-                                data={displayedAssets}
-                                keyExtractor={a => a.id}
+                                data={groupedRows}
+                                keyExtractor={r => r.key}
                                 initialNumToRender={30}
                                 windowSize={10}
-                                renderItem={({ item: asset, index }) => (
-                                    <View style={[styles.dataRow, index % 2 === 0 && styles.dataRowAlt]}>
-                                        {visibleColumns.map(col => {
-                                            const v = String((asset.values as any)[col] ?? '');
-                                            return (
-                                                <TouchableOpacity
-                                                    key={col}
-                                                    style={[styles.cell, styles.dataCell]}
-                                                    onPress={() => openCellEdit(asset, col)}
-                                                    activeOpacity={0.6}
-                                                >
-                                                    <Text style={styles.dataCellText} numberOfLines={2}>
-                                                        {v || <Text style={styles.empty}>—</Text>}
-                                                    </Text>
-                                                </TouchableOpacity>
-                                            );
-                                        })}
-                                    </View>
-                                )}
+                                renderItem={({ item }) => {
+                                    if (item.kind === 'header') {
+                                        const collapsed = collapsedGroups.has(item.label);
+                                        return (
+                                            <TouchableOpacity
+                                                style={[styles.groupHeader, { width: tableWidth || undefined }]}
+                                                onPress={() => toggleGroupCollapse(item.label)}
+                                                activeOpacity={0.7}
+                                            >
+                                                <ChevronDown
+                                                    size={14}
+                                                    color="#4338ca"
+                                                    style={{ transform: [{ rotate: collapsed ? '-90deg' : '0deg' }] }}
+                                                />
+                                                <Text style={styles.groupHeaderText} numberOfLines={1}>
+                                                    {groupColumn}: {item.label}
+                                                </Text>
+                                                <Text style={styles.groupHeaderCount}>{item.count}</Text>
+                                            </TouchableOpacity>
+                                        );
+                                    }
+                                    const asset = item.asset;
+                                    return (
+                                        <View style={[styles.dataRow, item.idx % 2 === 0 && styles.dataRowAlt]}>
+                                            {visibleColumns.map(col => {
+                                                const v = String((asset.values as any)[col] ?? '');
+                                                return (
+                                                    <TouchableOpacity
+                                                        key={col}
+                                                        style={[styles.cell, styles.dataCell]}
+                                                        onPress={() => openCellEdit(asset, col)}
+                                                        activeOpacity={0.6}
+                                                    >
+                                                        <Text style={styles.dataCellText} numberOfLines={2}>
+                                                            {v || <Text style={styles.empty}>—</Text>}
+                                                        </Text>
+                                                    </TouchableOpacity>
+                                                );
+                                            })}
+                                        </View>
+                                    );
+                                }}
                             />
                         </View>
                     </ScrollView>
@@ -806,6 +918,16 @@ const styles = StyleSheet.create({
     headerCellText: { fontSize: 11, fontWeight: '700', color: '#ffffff' },
     dataRow: { flexDirection: 'row', borderBottomWidth: 1, borderBottomColor: '#f1f5f9' },
     dataRowAlt: { backgroundColor: '#fafafa' },
+    groupHeader: {
+        flexDirection: 'row', alignItems: 'center', gap: 8,
+        backgroundColor: '#eef2ff', borderBottomWidth: 1, borderBottomColor: '#c7d2fe',
+        paddingVertical: 8, paddingHorizontal: 12,
+    },
+    groupHeaderText: { fontSize: 12.5, fontWeight: '800', color: '#3730a3', flexShrink: 1 },
+    groupHeaderCount: {
+        fontSize: 11, fontWeight: '700', color: '#4338ca',
+        backgroundColor: '#e0e7ff', borderRadius: 10, paddingHorizontal: 8, paddingVertical: 1,
+    },
     dataCell: {},
     dataCellText: { fontSize: 12, color: '#1f2937' },
     cell: {
