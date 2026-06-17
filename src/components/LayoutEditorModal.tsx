@@ -105,6 +105,9 @@ export const LayoutEditorModal: React.FC<Props> = ({
     const [showMoreTools, setShowMoreTools] = useState(false);
     const [assetSearch, setAssetSearch] = useState('');
     const [labelInput, setLabelInput] = useState('');
+    // W/H 직접 입력용 draft — 타이핑 중 전환값(빈칸·한 자리)이 즉시 거부되지 않게 로컬 보관 후 blur 시 커밋
+    const [wInput, setWInput] = useState('');
+    const [hInput, setHInput] = useState('');
     const [saving, setSaving] = useState(false);
     // Phase 3 P0: 줌 (0.5 ~ 2.5)
     const [zoom, setZoom] = useState(1);
@@ -177,6 +180,21 @@ export const LayoutEditorModal: React.FC<Props> = ({
     useEffect(() => {
         setLabelInput(selected?.label ?? '');
     }, [selected?.id, selected?.label]);
+
+    // 선택/크기 변경 시 W/H draft 동기화(±버튼·다른 객체 선택 반영). 타이핑 중엔 selected.width 가 안 바뀌어 덮어쓰지 않음.
+    useEffect(() => {
+        setWInput(selected ? String(Math.round(selected.width)) : '');
+        setHInput(selected ? String(Math.round(selected.height)) : '');
+    }, [selected?.id, selected?.width, selected?.height]);
+
+    const commitSize = (dim: 'width' | 'height', raw: string) => {
+        if (!selected) return;
+        const max = dim === 'width' ? CANVAS_WIDTH : CANVAS_HEIGHT;
+        const n = parseInt(raw.replace(/[^\d]/g, ''), 10);
+        const clamped = Number.isNaN(n) ? Math.round(selected[dim]) : Math.max(20, Math.min(max, n));
+        updateObject(selected.id, { [dim]: clamped });
+        if (dim === 'width') setWInput(String(clamped)); else setHInput(String(clamped));
+    };
 
     const isFloorPlan = room === FLOOR_PLAN_ROOM;
 
@@ -850,13 +868,11 @@ export const LayoutEditorModal: React.FC<Props> = ({
                                     minWidth: 50,
                                     textAlign: 'center',
                                 }]}
-                                value={String(Math.round(selected.width))}
-                                onChangeText={(t) => {
-                                    const n = parseInt(t.replace(/[^\d]/g, ''), 10);
-                                    if (!Number.isNaN(n) && n >= 20 && n <= CANVAS_WIDTH) {
-                                        updateObject(selected.id, { width: n });
-                                    }
-                                }}
+                                value={wInput}
+                                onChangeText={(t) => setWInput(t.replace(/[^\d]/g, ''))}
+                                onBlur={() => commitSize('width', wInput)}
+                                onSubmitEditing={() => commitSize('width', wInput)}
+                                returnKeyType="done"
                                 keyboardType="numeric"
                                 selectTextOnFocus
                             />
@@ -885,13 +901,11 @@ export const LayoutEditorModal: React.FC<Props> = ({
                                     minWidth: 50,
                                     textAlign: 'center',
                                 }]}
-                                value={String(Math.round(selected.height))}
-                                onChangeText={(t) => {
-                                    const n = parseInt(t.replace(/[^\d]/g, ''), 10);
-                                    if (!Number.isNaN(n) && n >= 20 && n <= CANVAS_HEIGHT) {
-                                        updateObject(selected.id, { height: n });
-                                    }
-                                }}
+                                value={hInput}
+                                onChangeText={(t) => setHInput(t.replace(/[^\d]/g, ''))}
+                                onBlur={() => commitSize('height', hInput)}
+                                onSubmitEditing={() => commitSize('height', hInput)}
+                                returnKeyType="done"
                                 keyboardType="numeric"
                                 selectTextOnFocus
                             />
