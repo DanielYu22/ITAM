@@ -285,11 +285,20 @@ export const TaskDashboardModal: React.FC<Props> = ({
     const copyBriefing = useCallback(async () => {
         if (!briefingText) return;
         try {
-            if (typeof navigator !== 'undefined' && navigator.clipboard) {
-                await navigator.clipboard.writeText(briefingText);
-            } else {
-                const Clipboard = require('expo-clipboard');
-                await Clipboard.setStringAsync(briefingText);
+            const nav = (typeof navigator !== 'undefined' ? navigator : undefined) as any;
+            if (nav?.clipboard?.writeText) {
+                await nav.clipboard.writeText(briefingText);
+            } else if (typeof document !== 'undefined') {
+                // 비보안 컨텍스트/구형 브라우저 폴백 (expo-clipboard 미설치 → require 금지: 웹 번들 깨짐)
+                const ta = document.createElement('textarea');
+                ta.value = briefingText;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.focus();
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
             }
             setCopied(true);
         } catch (e) {
