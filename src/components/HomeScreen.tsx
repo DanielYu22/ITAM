@@ -688,10 +688,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         </TouchableOpacity>
                         {showKpiBk && kpiActions.backup.slice(0, 50).map((m, i) => (
                             <TouchableOpacity key={`kbk-${m.asset.id}-${i}`} style={styles.alarmRow} onPress={() => onEditAsset(m.asset)}>
-                                <Text style={styles.alarmName}>{m.name}</Text>
-                                <Text style={{ fontSize: 10, color: '#64748b', marginLeft: 6 }}>{m.label}</Text>
-                                <View style={{ flex: 1 }} />
-                                <Text style={styles.alarmMissing} numberOfLines={1}>{m.action}</Text>
+                                <View style={{ flex: 1, gap: 2 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                        <Text style={styles.alarmName}>{m.name}</Text>
+                                        <Text style={{ fontSize: 10, color: '#64748b' }}>{m.label}</Text>
+                                    </View>
+                                    <Text style={[styles.alarmMissing, { fontWeight: '500' }]}>{m.action}</Text>
+                                </View>
                                 <Text style={styles.unmarkedArrow}>›</Text>
                             </TouchableOpacity>
                         ))}
@@ -709,10 +712,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         </TouchableOpacity>
                         {showKpiVac && kpiActions.vaccine.slice(0, 50).map((m, i) => (
                             <TouchableOpacity key={`kvc-${m.asset.id}-${i}`} style={styles.alarmRow} onPress={() => onEditAsset(m.asset)}>
-                                <Text style={styles.alarmName}>{m.name}</Text>
-                                <Text style={{ fontSize: 10, color: '#64748b', marginLeft: 6 }}>{m.label}</Text>
-                                <View style={{ flex: 1 }} />
-                                <Text style={styles.alarmMissing} numberOfLines={1}>{m.action}</Text>
+                                <View style={{ flex: 1, gap: 2 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                        <Text style={styles.alarmName}>{m.name}</Text>
+                                        <Text style={{ fontSize: 10, color: '#64748b' }}>{m.label}</Text>
+                                    </View>
+                                    <Text style={[styles.alarmMissing, { fontWeight: '500' }]}>{m.action}</Text>
+                                </View>
                                 <Text style={styles.unmarkedArrow}>›</Text>
                             </TouchableOpacity>
                         ))}
@@ -735,9 +741,10 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                                 style={styles.alarmRow}
                                 onPress={() => onEditAsset(g.asset)}
                             >
-                                <Text style={styles.alarmName}>{g.name}</Text>
-                                <View style={{ flex: 1 }} />
-                                <Text style={styles.alarmMissing} numberOfLines={1}>{g.msgs.join(' · ')}</Text>
+                                <View style={{ flex: 1, gap: 2 }}>
+                                    <Text style={styles.alarmName}>{g.name}</Text>
+                                    <Text style={[styles.alarmMissing, { fontWeight: '500' }]}>{g.msgs.join(' · ')}</Text>
+                                </View>
                                 <Text style={styles.unmarkedArrow}>›</Text>
                             </TouchableOpacity>
                         ))}
