@@ -22,8 +22,9 @@ import {
     Modal,
     TextInput,
     FlatList,
+    Platform,
 } from 'react-native';
-import { X, Search, ClipboardCheck, MapPin, Check, ChevronDown, ChevronRight, FoldVertical, UnfoldVertical } from 'lucide-react-native';
+import { X, Search, ClipboardCheck, MapPin, Check, ChevronDown, ChevronRight, FoldVertical, UnfoldVertical, Navigation, Copy } from 'lucide-react-native';
 import { Asset, NotionProperty } from '../lib/notion';
 import {
     QUICK_TASKS,
@@ -90,6 +91,9 @@ export const TaskDashboardModal: React.FC<Props> = ({
     const [completingKey, setCompletingKey] = useState<string | null>(null);
     // 펼쳐진 노드 key 집합. 기본 비어있음 = 모두 접힘.
     const [expandedKeys, setExpandedKeys] = useState<Set<string>>(new Set());
+    // [브리핑] 방문 동선 브리핑 텍스트 (null = 미표시)
+    const [briefingText, setBriefingText] = useState<string | null>(null);
+    const [copied, setCopied] = useState(false);
 
     const titleField = useMemo(() => {
         return Object.keys(schemaProperties).find(k => schemaProperties[k].type === 'title') || 'Name';
@@ -245,6 +249,54 @@ export const TaskDashboardModal: React.FC<Props> = ({
         return siteNodes;
     }, [filteredRows, currentSite, titleField, layoutsStore]);
 
+    // [브리핑] 동선 순서대로 정렬된 트리를 방문용 워크플랜 텍스트로 직렬화.
+    //   현재 검색/필터/사이트가 그대로 반영되므로 "창조관" 검색 후 브리핑하면 그 건물만 나온다.
+    const openBriefing = useCallback(() => {
+        const lines: string[] = [];
+        let totalRows = 0, totalTasks = 0;
+        const taskLabel = (t: QuickTaskDef) => `${t.emoji}${t.name}`;
+        const walk = (nodes: TreeNode[]) => {
+            for (const n of nodes) {
+                if (n.level === 'site') {
+                    lines.push(`\n■ ${n.label}  (${n.rowCount}대 · ${n.taskCount}건)`);
+                    walk(n.children || []);
+                } else if (n.level === 'building') {
+                    lines.push(`\n● ${n.label}  (${n.rowCount}대 · ${n.taskCount}건)`);
+                    walk(n.children || []);
+                } else if (n.level === 'floor') {
+                    lines.push(` ▸ ${n.label}`);
+                    walk(n.children || []);
+                } else if (n.level === 'room') {
+                    lines.push(`   〔${n.label}〕`);
+                    (n.rows || []).forEach((r, i) => {
+                        const nm = String((r.asset.values as any)[titleField] ?? '(이름없음)');
+                        lines.push(`    ${i + 1}. ${nm} — ${r.matched.map(taskLabel).join(', ')}`);
+                    });
+                }
+            }
+        };
+        walk(tree);
+        for (const n of tree) { totalRows += n.rowCount; totalTasks += n.taskCount; }
+        const header = `🧭 방문 동선 브리핑\n대상 ${totalRows}대 · 처리할 과제 ${totalTasks}건 (레이아웃 동선 순서)\n`;
+        setBriefingText(totalRows === 0 ? `${header}\n표시할 대상이 없어요. 검색/필터를 확인해 주세요.` : header + lines.join('\n'));
+        setCopied(false);
+    }, [tree, titleField]);
+
+    const copyBriefing = useCallback(async () => {
+        if (!briefingText) return;
+        try {
+            if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                await navigator.clipboard.writeText(briefingText);
+            } else {
+                const Clipboard = require('expo-clipboard');
+                await Clipboard.setStringAsync(briefingText);
+            }
+            setCopied(true);
+        } catch (e) {
+            console.error('briefing copy failed:', e);
+        }
+    }, [briefingText]);
+
     // 트리 안 모든 노드 key 수집 (펼치기 토글용)
     const allNodeKeys = useMemo(() => {
         const keys: string[] = [];
@@ -397,9 +449,15 @@ export const TaskDashboardModal: React.FC<Props> = ({
                                 ` · 필터링 ${filteredRows.length}대`}
                         </Text>
                     </View>
-                    <TouchableOpacity onPress={onClose}>
-                        <X size={24} color="#6b7280" />
-                    </TouchableOpacity>
+                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                        <TouchableOpacity style={styles.briefingBtn} onPress={openBriefing}>
+                            <Navigation size={14} color="#4338ca" />
+                            <Text style={styles.briefingBtnText}>방문 브리핑</Text>
+                        </TouchableOpacity>
+                        <TouchableOpacity onPress={onClose}>
+                            <X size={24} color="#6b7280" />
+                        </TouchableOpacity>
+                    </View>
                 </View>
 
                 {/* 검색 + Quick Task 필터 칩 */}
@@ -510,6 +568,30 @@ export const TaskDashboardModal: React.FC<Props> = ({
                         tree.map(n => renderNode(n, 0))
                     )}
                 </ScrollView>
+
+                {/* [브리핑] 방문 동선 브리핑 오버레이 */}
+                <Modal visible={briefingText !== null} animationType="slide" presentationStyle="pageSheet">
+                    <View style={styles.container}>
+                        <View style={styles.header}>
+                            <View>
+                                <Text style={styles.title}>방문 동선 브리핑</Text>
+                                <Text style={styles.subtitle}>동선 순서대로 · 복사해서 AI/메모에 활용</Text>
+                            </View>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+                                <TouchableOpacity style={styles.briefingBtn} onPress={copyBriefing}>
+                                    <Copy size={14} color="#4338ca" />
+                                    <Text style={styles.briefingBtnText}>{copied ? '복사됨 ✓' : '복사'}</Text>
+                                </TouchableOpacity>
+                                <TouchableOpacity onPress={() => setBriefingText(null)}>
+                                    <X size={24} color="#6b7280" />
+                                </TouchableOpacity>
+                            </View>
+                        </View>
+                        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
+                            <Text selectable style={styles.briefingBody}>{briefingText}</Text>
+                        </ScrollView>
+                    </View>
+                </Modal>
             </View>
         </Modal>
     );
@@ -517,6 +599,22 @@ export const TaskDashboardModal: React.FC<Props> = ({
 
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#f8fafc' },
+    briefingBtn: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 5,
+        backgroundColor: '#e0e7ff',
+        paddingHorizontal: 10,
+        paddingVertical: 6,
+        borderRadius: 8,
+    },
+    briefingBtnText: { fontSize: 12, fontWeight: '700', color: '#4338ca' },
+    briefingBody: {
+        fontSize: 13,
+        lineHeight: 21,
+        color: '#1f2937',
+        fontFamily: Platform.OS === 'ios' ? 'Menlo' : 'monospace',
+    },
     header: {
         flexDirection: 'row',
         justifyContent: 'space-between',
