@@ -16,7 +16,9 @@ export type SourceId =
     | 'notion-export-reimport'
     | 'ahnlab-push-result'
     | 'ahnlab-user-info'
-    | 'ahnlab-unregistered';
+    | 'ahnlab-unregistered'
+    | 'backup-integrity-report'
+    | 'scheduler-mode';
 
 // 한 행에서 어떤 Notion 필드를 어떤 값으로 업데이트할지
 export interface FieldUpdate {
@@ -281,6 +283,62 @@ export const SOURCES: SourceDef[] = [
         },
         unmatchedBehavior: 'candidate',
         historyLabel: () => '알약 미등록 사용자 임포트 → Agent 확인 과제 등록',
+    },
+
+    // ------------------------------------------------------------------------
+    // 5. 분기백업 정합성 리포트 (backup_automation_project / Office/Final_Integrity_Report.csv)
+    //    헤더: DeviceName, ManifestSource, CheckFileFound, ..., FINAL_VERIFICATION, ResultCode, Reason
+    //    DeviceName=기기코드(=Name). ResultCode(PASS/FAIL_NO_NAS_FOLDER/FAIL_NO_CHECK_FILE/FAIL_MISMATCH)
+    //    → M)분기백업 상태(권위: 실제 백업 결과). 파일명 무관, 헤더 시그니처로 감지.
+    // ------------------------------------------------------------------------
+    {
+        id: 'backup-integrity-report',
+        name: '분기백업 정합성 리포트',
+        emoji: '💾',
+        description: '분기백업 자동화 무결성 결과(PASS/FAIL)를 분기백업 상태로 동기화',
+        sampleFilename: 'Final_Integrity_Report.csv',
+        detect: (headers) => {
+            const set = new Set(headers.map(h => String(h).trim()));
+            return set.has('DeviceName') && set.has('FINAL_VERIFICATION')
+                && set.has('ResultCode') && set.has('ManifestSource');
+        },
+        matchExcelColumn: 'DeviceName',
+        rowToUpdates: (row) => {
+            const updates: FieldUpdate[] = [];
+            const code = String(row['ResultCode'] ?? row['FINAL_VERIFICATION'] ?? '').trim();
+            if (code) updates.push({ field: 'M)분기백업 상태', value: code });
+            return updates;
+        },
+        unmatchedBehavior: 'skip',
+        historyLabel: (row) => `분기백업 정합성 임포트: ${String(row['ResultCode'] ?? row['FINAL_VERIFICATION'] ?? '미상').trim()}`,
+    },
+
+    // ------------------------------------------------------------------------
+    // 6. 스케줄러 MODE 수집 (_dev/Collect_SchedulerMode.ps1 산출 SchedulerMode.csv)
+    //    헤더: DeviceName, SchedulerMode(STAT/COPY). 스케줄러모드=백업 1↔4 의 실제 권위.
+    //    STAT=실시간(1) / COPY=백업(Client)(4) → QA)백업 방법을 권위 정정.
+    //    (#2/#3 오프라인 기기는 스케줄러 없어 이 CSV에 안 나옴 → 미변경)
+    // ------------------------------------------------------------------------
+    {
+        id: 'scheduler-mode',
+        name: '스케줄러 모드(1↔4 확정)',
+        emoji: '⏱',
+        description: '스케줄러 STAT/COPY → 백업방법(실시간/백업Client) 권위 정정',
+        sampleFilename: 'SchedulerMode.csv',
+        detect: (headers) => {
+            const set = new Set(headers.map(h => String(h).trim()));
+            return set.has('DeviceName') && set.has('SchedulerMode') && !set.has('ResultCode');
+        },
+        matchExcelColumn: 'DeviceName',
+        rowToUpdates: (row) => {
+            const updates: FieldUpdate[] = [];
+            const mode = String(row['SchedulerMode'] ?? '').trim().toUpperCase();
+            const method = mode === 'STAT' ? '실시간백업기기' : mode === 'COPY' ? '백업(client)' : '';
+            if (method) updates.push({ field: 'QA)백업 방법', value: method });
+            return updates;
+        },
+        unmatchedBehavior: 'skip',
+        historyLabel: (row) => `스케줄러모드 정정: ${String(row['SchedulerMode'] ?? '').trim()} → 백업방법`,
     },
 ];
 
