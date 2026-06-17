@@ -7,7 +7,7 @@
  *   surveyFieldsFor(asset, schema) 에서 schema 필터.
  */
 import { ONLINE_KINDS, SITES, classifyBackup } from './assetGovernance';
-import { type LayoutsStore, roomKey, floorOrder } from './layouts';
+import { type LayoutsStore, roomKey, floorOrder, FLOOR_PLAN_ROOM } from './layouts';
 
 type V = Record<string, any>;
 const g = (v: V, ...keys: string[]): string => {
@@ -81,13 +81,16 @@ export const buildSurveyPlan = (
     const building = g(v, 'L)건물') || '(건물미정)';
     const floor = g(v, 'L)층') || '(층미정)';
     const room = g(v, 'L)연구실') || '(연구실미정)';
+    // 사이트(사이트 컬럼)는 자산마다 들쭉날쭉이라 그룹 키에서 제외 — 건물 기준으로 묶는다.
+    //   같은 방이 사이트 값 차이로 쪼개지던 버그 fix. 사이트는 표시용으로만.
     const site = siteOf ? siteOf(a) : (g(v, '사이트') || '');
-    const key = `${site}|${building}|${floor}|${room}`;
+    const key = `${building}|${floor}|${room}`;
     const fields = surveyFieldsFor(v, schema);
     const pending = fields.filter(f => f.pending).length;
     const dev: SurveyDevice = { id: a.id, name: g(v, titleField) || '(이름없음)', pending, total: fields.length };
     if (!stops.has(key)) stops.set(key, { key, site, building, floor, room, order: 0, devices: [], pending: 0 });
     const s = stops.get(key)!;
+    if (!s.site && site) s.site = site;
     s.devices.push(dev);
     s.pending += pending;
   }
@@ -106,13 +109,24 @@ export const buildSurveyPlan = (
       return a.name.localeCompare(b.name, 'ko', { numeric: true });
     });
   }
-  // 정거장 정렬: 사이트 → 건물 → 층(floorOrder) → 연구실. 미확인 0인 정거장은 뒤로.
+  // 방 방문 순서 — 층 평면도(실험실 타일 order)에 설정돼 있으면 그 순서, 없으면 이름순(9999).
+  const roomOrderOf = (s: SurveyStop): number => {
+    const fp = layouts?.rooms?.[roomKey(s.building, s.floor, FLOOR_PLAN_ROOM)];
+    if (!fp) return 9999;
+    for (const o of fp.objects || []) {
+      const oo = o as any;
+      if (oo.type === 'lab' && String(oo.roomName ?? '').trim() === s.room && typeof oo.order === 'number') return oo.order;
+    }
+    return 9999;
+  };
+  // 정거장 정렬: (미확인 0은 뒤로) → 건물 → 층(floorOrder) → 층평면도 방순서 → 연구실명.
+  //   사이트는 정렬에서 제외(불안정). 건물 단위로 묶여 동선이 흩어지지 않음.
   const arr = [...stops.values()];
   arr.sort((a, b) =>
     (a.pending === 0 ? 1 : 0) - (b.pending === 0 ? 1 : 0)
-    || a.site.localeCompare(b.site, 'ko')
     || a.building.localeCompare(b.building, 'ko', { numeric: true })
     || floorOrder(a.floor) - floorOrder(b.floor)
+    || roomOrderOf(a) - roomOrderOf(b)
     || a.room.localeCompare(b.room, 'ko', { numeric: true }),
   );
   arr.forEach((s, i) => { s.order = i + 1; });
