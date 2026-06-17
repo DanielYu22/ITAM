@@ -34,8 +34,33 @@ export const PREFIX_LABEL: Record<Prefix, string> = {
 export const ONLINE_KINDS = ['온라인', '폐쇄망', '알약대상아님'] as const;
 /** 사이트 — 반드시 하나. '기타'/빈값 불허. */
 export const SITES = ['용인', '마곡', '향남'] as const;
-/** 백업방법 — NAS 가동(온라인) 기기엔 아래 두 값이 오면 정합성 위반. */
-export const OFFLINE_BACKUP_METHODS = ['IT현장백업', 'USB불출'] as const;
+/**
+ * 백업방식 5분류 (Daniel 연구소 운영 기준).
+ *   1 실시간백업기기 — 실험기기PC가 로데이터를 계속 생성, 그 경로가 시놀로지 클라 폴더 (NAS)
+ *   2 IT현장백업    — OS구형/네트워크X, 현장 로보카피 직접 (비NAS)
+ *   3 USB사용자백업  — PC없는 실험기기, USB 직접 꽂아 제출 (비NAS)
+ *   4 백업(Client)  — 네트워크+시놀로지 클라이언트 일반 (NAS)
+ *   5 백업대상아님   — 제외
+ *   NAS 사용 = {1, 4}. 1은 4와 외형 같아(로데이터 경로=시놀로지드라이브) 혼동되기 쉬움.
+ */
+export type BackupClass = 'realtime' | 'it-field' | 'usb-user' | 'client' | 'none' | 'unknown';
+/** DB 실제 select 문자열이 표기 흔들려도(대소문/슬래시 등) 분류되도록 패턴 매칭. */
+export const classifyBackup = (raw: string): BackupClass => {
+  const v = String(raw || '').replace(/\s/g, '').toLowerCase();
+  if (!v) return 'unknown';
+  if (/대상아님|해당없음|제외/.test(v)) return 'none';
+  if (/실시간/.test(v)) return 'realtime';
+  if (/usb/.test(v)) return 'usb-user';
+  if (/it.?현장|현장백업/.test(v)) return 'it-field';
+  if (/백업\(?client|client백업|클라이언트/.test(v)) return 'client';
+  return 'unknown';
+};
+/** NAS(시놀로지) 사용 방식 = 실시간(1) / 백업Client(4) */
+export const NAS_BACKUP_CLASSES: BackupClass[] = ['realtime', 'client'];
+/** 비NAS(오프라인) 방식 = IT현장(2) / USB사용자(3) */
+export const OFFLINE_BACKUP_CLASSES: BackupClass[] = ['it-field', 'usb-user'];
+/** 자산명이 실험기기 코드(CEQ/DEQ/AEQ/BEQ/EQ-)인가 — 1↔4 혼동 점검용 */
+export const isLabEquipCode = (name: string): boolean => /\b[A-Z]?(CEQ|DEQ|AEQ|BEQ|EQ)-/i.test(String(name || ''));
 
 // ── 필드 레지스트리 ────────────────────────────────────────────────────
 export interface GovField {
@@ -88,7 +113,8 @@ export const GOV_FIELDS: GovField[] = [
   { canonical: 'B)스케줄러설치', prefix: 'B', label: '07시 로그 스케줄러 설치 여부', source: 'field-survey', trust: 'authoritative' },
   // NAS 가동 신호 — NAS 서버에 "최신 07시 로그 파일"이 있으면 가동(=NAS설치+온라인)으로 당위 인정.
   { canonical: 'B)NAS가동', current: 'M)Synology Client 설치', prefix: 'B', label: 'NAS 가동(최신 07시 로그 확인)', source: 'nas-scheduler', trust: 'authoritative' },
-  { canonical: 'B)백업방법', current: 'QA)백업 방법', prefix: 'B', label: '백업방법', source: 'derived', trust: 'authoritative' },
+  { canonical: 'B)백업방법', current: 'QA)백업 방법', prefix: 'B', label: '백업방법', source: 'derived', trust: 'authoritative',
+    validate: v => classifyBackup(v) === 'unknown' ? '백업방법 미분류(실시간/IT현장백업/USB사용자백업/백업(Client)/백업대상아님 중 하나)' : null },
 ];
 
 export const fieldByCanonical = (k: string) => GOV_FIELDS.find(f => f.canonical === k);
@@ -131,13 +157,24 @@ export const validateIntegrity = (values: Record<string, any>): Violation[] => {
   const asmConn = read(values, fieldByCanonical('S)접속상태')!).toUpperCase();
   const site = read(values, fieldByCanonical('L)사이트')!);
   const building = read(values, fieldByCanonical('L)건물')!);
-  const truthy = (v: string) => /설치|가동|확인|있음|존재|online|y(es)?|true|^o$|완료/i.test(v);
-  const negatory = (v: string) => /미설치|없음|안됨|미가동|미확인|불가|offline|no?$|false|x/i.test(v);
+  const name = read(values, fieldByCanonical('Name')!);
+  const bclass = classifyBackup(backup);
+  const negatory = (v: string) => /미설치|없음|안\s*됨|미가동|미확인|불가|미배포|안\s*함|offline|false|^\s*(x|n|no)\s*$/i.test(v.trim());
+  // 부정 표현('미설치' 등)이 '설치'를 substring 으로 포함하므로 negatory 우선 배제
+  const truthy = (v: string) => !negatory(v) && /설치|가동|확인|있음|존재|online|true|완료|예|^\s*(o|y|yes)\s*$/i.test(v.trim());
 
-  // R1) NAS 가동(최신 07시 로그 확인 = 온라인) 기기는 백업방법이 IT현장백업·USB불출이면 안 됨(당위)
+  // R1) NAS 가동(최신 07시 로그 = 온라인) 기기는 비NAS 방식(IT현장·USB사용자) 또는 대상아님이면 모순(당위)
   const nasRunning = truthy(nasActive) || online === '온라인';
-  if (nasRunning && OFFLINE_BACKUP_METHODS.includes(backup as any)) {
-    out.push({ field: 'B)백업방법', level: 'integrity', message: `NAS 가동(온라인) 기기인데 백업방법이 '${backup}' — 모순(현장백업/USB불출 불가)` });
+  if (nasRunning && (OFFLINE_BACKUP_CLASSES.includes(bclass) || bclass === 'none')) {
+    out.push({ field: 'B)백업방법', level: 'integrity', message: `NAS 가동(온라인) 기기인데 백업방법이 '${backup}' — 모순(시놀로지 방식=실시간/백업Client 이어야 함)` });
+  }
+  // R1d) NAS 방식(실시간/백업Client) 인데 NAS 가동 신호 없음(스케줄러 미설치+07시 로그 없음) → 점검
+  if (NAS_BACKUP_CLASSES.includes(bclass) && negatory(nasActive) && negatory(schedInstalled)) {
+    out.push({ field: 'B)NAS가동', level: 'integrity', message: `백업방법이 '${backup}'(NAS 방식)인데 스케줄러·07시 로그 신호 없음 — 실제 백업 안 되는 중일 수 있음` });
+  }
+  // R1e) [1↔4 혼동] 실험기기 코드인데 백업(Client=4)로 분류 → 데이터 생성방식 따라 실시간(1)일 수 있음
+  if (bclass === 'client' && isLabEquipCode(name)) {
+    out.push({ field: 'B)백업방법', level: 'integrity', message: '실험기기인데 백업(Client) — 로데이터 계속 생성 타입이면 실시간(1)으로 지정돼야 함, 데이터 생성방식 확인' });
   }
   // R1b) NAS 가동(07시 로그 존재)인데 온라인구분이 온라인이 아니면 모순(당위: 가동=온라인)
   if (truthy(nasActive) && online && online !== '온라인') {
