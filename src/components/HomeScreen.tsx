@@ -42,6 +42,7 @@ import { APP_VERSION } from '../lib/version';
 import { QUICK_TASKS, QuickTaskDef, getMatchingQuickTasks } from '../lib/quickTasks';
 import { type LayoutsStore, parseRoomKey } from '../lib/layouts';
 import { SITES_DEFAULTS, SiteDef, SiteId, getSiteCounts } from '../lib/sites';
+import { validateAsset } from '../lib/assetGovernance';
 
 // [필수값] 장비로서 존재하기 위한 필수 컬럼 — 비어있으면 홈에서 누락 알람.
 //   물리위치 + 기기담당자 + 망구분(백신 온라인/폐쇄망). (hostname/백업/시놀로지는 광범위해 제외)
@@ -246,9 +247,30 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
         return c;
     }, [missingAssets]);
 
+    // [거버넌스] 유효성·정합성 위반 (필수누락은 위 섹션이 담당 → 여기선 제외).
+    //   잘못된 값('오프라인', 사이트 '기타')·정합성 모순(NAS+현장백업 등)을 검출.
+    const govViolations = useMemo(() => {
+        const out: { asset: Asset; name: string; msgs: string[] }[] = [];
+        for (const a of assets) {
+            const vs = validateAsset(a.values as any).filter(x => x.level !== 'required');
+            if (vs.length) out.push({
+                asset: a,
+                name: String((a.values as any)[titleField] ?? '').trim() || '(이름없음)',
+                msgs: vs.map(x => x.message),
+            });
+        }
+        return out;
+    }, [assets, titleField]);
+    const govByRule = useMemo(() => {
+        const c: Record<string, number> = {};
+        for (const g of govViolations) for (const m of g.msgs) c[m] = (c[m] || 0) + 1;
+        return c;
+    }, [govViolations]);
+
     // [접고 펼치기] 홈 알람 섹션 — 화면 정리용. 기본 접힘.
     const [showUnmarked, setShowUnmarked] = useState(false);
     const [showMissing, setShowMissing] = useState(false);
+    const [showGov, setShowGov] = useState(false);
 
     // 글로벌 검색 결과 — 자산만 (기존)
     const searchResults = useMemo(() => {
@@ -632,6 +654,33 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         ))}
                         {showMissing && missingAssets.length > 40 && (
                             <Text style={styles.alarmMore}>외 {missingAssets.length - 40}대… (필터로 전체 보기)</Text>
+                        )}
+                    </View>
+                )}
+
+                {/* [거버넌스] 유효성·정합성 위반 — 잘못된 값('오프라인'·사이트 기타)·교차 모순(NAS+현장백업 등) */}
+                {govViolations.length > 0 && (
+                    <View style={styles.alarmSection}>
+                        <TouchableOpacity style={styles.alarmHeader} onPress={() => setShowGov(v => !v)}>
+                            <Text style={styles.alarmTitle}>🚨 거버넌스 위반 {govViolations.length}대</Text>
+                            <Text style={styles.alarmSummary}>  {Object.entries(govByRule).slice(0, 4).map(([k, n]) => `${k.slice(0, 14)} ${n}`).join(' · ')}</Text>
+                            <View style={{ flex: 1 }} />
+                            <Text style={styles.alarmCaret}>{showGov ? '▾' : '▸'}</Text>
+                        </TouchableOpacity>
+                        {showGov && govViolations.slice(0, 40).map((g, i) => (
+                            <TouchableOpacity
+                                key={`gov-${g.asset.id}-${i}`}
+                                style={styles.alarmRow}
+                                onPress={() => onEditAsset(g.asset)}
+                            >
+                                <Text style={styles.alarmName}>{g.name}</Text>
+                                <View style={{ flex: 1 }} />
+                                <Text style={styles.alarmMissing} numberOfLines={1}>{g.msgs.join(' · ')}</Text>
+                                <Text style={styles.unmarkedArrow}>›</Text>
+                            </TouchableOpacity>
+                        ))}
+                        {showGov && govViolations.length > 40 && (
+                            <Text style={styles.alarmMore}>외 {govViolations.length - 40}대…</Text>
                         )}
                     </View>
                 )}
