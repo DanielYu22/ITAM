@@ -31,3 +31,4 @@ dist-ssr
 
 # Version folders (for local version tracking)
 v*/
+.vercel

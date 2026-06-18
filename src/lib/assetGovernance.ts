@@ -214,9 +214,12 @@ export const validateIntegrity = (values: Record<string, any>): Violation[] => {
   if (NAS_BACKUP_CLASSES.includes(bclass) && negatory(nasActive) && negatory(schedInstalled)) {
     out.push({ field: 'B)NAS가동', level: 'integrity', message: `백업방법이 '${backup}'(NAS 방식)인데 스케줄러·07시 로그 신호 없음 — 실제 백업 안 되는 중일 수 있음` });
   }
-  // R1e) [1↔4 혼동] 실험기기 코드인데 백업(Client=4)로 분류 → 데이터 생성방식 따라 실시간(1)일 수 있음
-  if (bclass === 'client' && isLabEquipCode(name)) {
-    out.push({ field: 'B)백업방법', level: 'integrity', message: '실험기기인데 백업(Client) — 로데이터 계속 생성 타입이면 실시간(1)으로 지정돼야 함, 데이터 생성방식 확인' });
+  // R1e) [1↔4 혼동] 실험기기 코드인데 백업(Client=4)로 분류 → 실시간(1) 가능성 점검.
+  //   "단정"이 아니라 "확인 요청" — 1↔4는 외형(로데이터 경로=시놀로지드라이브)이 같아 헷갈림.
+  //   스케줄러모드(STAT/COPY) 권위값이 있으면 R6가 확정하므로 추측성 알람은 생략.
+  const schedModeForR1e = read(values, fieldByCanonical('B)스케줄러모드')!).toUpperCase();
+  if (bclass === 'client' && isLabEquipCode(name) && !SCHED_MODE_TO_CLASS[schedModeForR1e]) {
+    out.push({ field: 'B)백업방법', level: 'integrity', message: "실험기기인데 백업방법이 '백업(Client)'(4번)으로 분류됨 — 로데이터를 계속 생성하는 기기면 '실시간백업기기'(1번)이어야 함(1↔4 혼동 주의). 스케줄러모드 STAT/COPY로 확정하세요." });
   }
   // R1b) NAS 가동(07시 로그 존재)인데 온라인구분이 온라인이 아니면 모순(당위: 가동=온라인)
   if (truthy(nasActive) && online && online !== '온라인') {
