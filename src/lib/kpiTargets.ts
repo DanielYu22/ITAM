@@ -72,9 +72,12 @@ export const classifyVaccineTarget = (v: V): KpiResult => {
 
   if (online === '폐쇄망') {
     const done = /성공|완료|조치완료|배포/.test(field);
-    return { targetClass: 'closed', targetLabel: '폐쇄망(현장조치)', status: done && !isV3 ? 'ok' : 'action', action: (done ? '현장조치 완료' : '폐쇄망 — 현장 수동 업데이트') + v3suffix };
+    // [2026-06-18] '폐쇄망'은 권위값 아님(미확정·변동가능). 현장서 온라인 설치 가능하면 온라인 전환.
+    //   조치: 보안패치 파일을 사이트에서 받아 USB 지참 → 현장 수동 설치. ('온라인'만 권위값)
+    return { targetClass: 'closed', targetLabel: '폐쇄망(미확정·변동가능)', status: done && !isV3 ? 'ok' : 'action', action: (done ? '현장조치 완료' : '보안패치 USB 지참(사이트 다운로드)·현장 수동 설치 / 온라인 설치 가능하면 온라인 전환') + v3suffix };
   }
-  // 온라인
+  // 온라인 — ASM '온라인' = 권위값
+  // [2026-06-18] online 만 권위, 폐쇄망은 변동가능 — 위 분기에서 미확정 처리.
   const pushOk = /성공|완료/.test(push);
   return { targetClass: 'online', targetLabel: '온라인(알약 관리)', status: pushOk && !isV3 ? 'ok' : (pushOk ? 'action' : 'action'), action: (pushOk ? '정책 푸시 성공' : '정책 재푸시 필요') + v3suffix };
 };
