@@ -45,6 +45,7 @@ import { SITES_DEFAULTS, SiteDef, SiteId, getSiteCounts } from '../lib/sites';
 import { validateAsset } from '../lib/assetGovernance';
 import { classifyBackupTarget, classifyVaccineTarget } from '../lib/kpiTargets';
 import { checkLayoutIntegrity, groupByRoom } from '../lib/layoutIntegrity';
+import { FieldChecklistCard } from './FieldChecklistCard';
 
 // [필수값] 장비로서 존재하기 위한 필수 컬럼 — 비어있으면 홈에서 누락 알람.
 //   물리위치 + 기기담당자 + 망구분(백신 온라인/폐쇄망). (hostname/백업/시놀로지는 광범위해 제외)
@@ -658,6 +659,14 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         </Text>
                     </View>
                 )}
+
+                {/* [현장툴] 출장 현장 과제 체크리스트 — 모바일 체크오프, localStorage 영속 */}
+                <FieldChecklistCard
+                    currentSite={currentSite}
+                    onOpenFieldSurvey={onOpenFieldSurvey}
+                    onSourceImport={onSourceImport}
+                    onOpenInfrastructure={onOpenInfrastructure}
+                />
 
                 {/* [필수값] 누락 알람 — 존재 필수 컬럼(위치·담당자·망구분) 비어있는 기기. 접고 펼치기 */}
                 {missingAssets.length > 0 && (
