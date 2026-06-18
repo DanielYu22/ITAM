@@ -624,6 +624,9 @@ const SiteFloorFirst: React.FC<{
                 const fkey = `ff:${siteId}/${fl}`;
                 const fopen = expanded.has(fkey);
                 const roomTotal = wings.reduce((a, w) => a + w.rooms.length, 0);
+                const flCount = (w: { building: string; rooms: RoomInfo[] }, r: RoomInfo) => liveCountByRoom?.[`${w.building}|${fl}|${r.name}`] || 0;
+                const flAssigned = wings.reduce((a, w) => a + w.rooms.filter(r => flCount(w, r) > 0).length, 0);
+                const flDevices = wings.reduce((a, w) => a + w.rooms.reduce((s, r) => s + flCount(w, r), 0), 0);
                 return (
                     <View key={fl} style={styles.floorBlock}>
                         <Pressable style={({ hovered }: any) => [styles.floorHeader, hovered && styles.rowHover]}>
@@ -631,12 +634,14 @@ const SiteFloorFirst: React.FC<{
                                 {fopen ? <ChevronDown size={11} color="#64748b" /> : <ChevronRight size={11} color="#64748b" />}
                                 <Text style={styles.floorName}>{fl}</Text>
                                 <Text style={styles.floorCount}>{wings.length}개 동 · {roomTotal}개 공간</Text>
+                                {flAssigned > 0 && <Text style={styles.roomDataCount}>할당 {flAssigned}실 · {flDevices}대</Text>}
                             </TouchableOpacity>
                         </Pressable>
                         {fopen && wings.map(w => {
                             const wkey = `ffw:${siteId}/${fl}/${w.building}`;
                             const wopen = expanded.has(wkey);
                             const wAssigned = w.rooms.filter(r => (liveCountByRoom?.[`${w.building}|${fl}|${r.name}`] || 0) > 0).length;
+                            const wDevices = w.rooms.reduce((s, r) => s + (liveCountByRoom?.[`${w.building}|${fl}|${r.name}`] || 0), 0);
                             return (
                                 <View key={w.building} style={{ marginLeft: 12 }}>
                                     <Pressable style={({ hovered }: any) => [styles.floorHeader, hovered && styles.rowHover]}>
@@ -645,7 +650,7 @@ const SiteFloorFirst: React.FC<{
                                             <Building2 size={11} color={siteColor} />
                                             <Text style={styles.floorName}>{w.building}</Text>
                                             <Text style={styles.floorCount}>{w.rooms.length}개 공간</Text>
-                                            {wAssigned > 0 && <Text style={styles.roomDataCount}>할당 {wAssigned}실</Text>}
+                                            {wAssigned > 0 && <Text style={styles.roomDataCount}>할당 {wAssigned}실 · {wDevices}대</Text>}
                                         </TouchableOpacity>
                                         {onOpenFloorPlan && (() => {
                                             const planSet = !!floorPlanSet?.has(`${w.building}|${fl}`);
@@ -761,7 +766,8 @@ const FloorNode: React.FC<{
                     <Text style={styles.floorCount}>{floor.rooms.length}개 공간</Text>
                     {(() => {
                         const a = floor.rooms.filter(r => (liveCountByRoom?.[`${buildingName}|${floor.name}|${r.name}`] || 0) > 0).length;
-                        return a > 0 ? <Text style={styles.roomDataCount}>할당 {a}실</Text> : null;
+                        const dev = floor.rooms.reduce((s, r) => s + (liveCountByRoom?.[`${buildingName}|${floor.name}|${r.name}`] || 0), 0);
+                        return a > 0 ? <Text style={styles.roomDataCount}>할당 {a}실 · {dev}대</Text> : null;
                     })()}
                 </TouchableOpacity>
                 {onOpenFloorPlan && (() => {
@@ -800,7 +806,7 @@ const RoomRow: React.FC<{ room: RoomInfo; onEdit: () => void; dataCount?: number
             <Text style={styles.roomName}>{room.name}</Text>
             {/* 라이브 데이터 할당 수 (현재 자산 L)연구실 기준) — 레이아웃 미편집이어도 표시 */}
             {!!dataCount && (
-                <Text style={styles.roomDataCount}>할당 {dataCount}</Text>
+                <Text style={styles.roomDataCount}>할당 {dataCount}대</Text>
             )}
             {!!room.assetCount && (
                 <Text style={styles.roomMeta}>{room.assetCount}대</Text>
