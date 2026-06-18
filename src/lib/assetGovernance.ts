@@ -88,6 +88,32 @@ const looksLikeIp = (v: string) => /\b\d{1,3}(\.\d{1,3}){3}\b/.test(v);
 const ipSentinel = (v: string) => /^(없음|미상|n\/?a|na|[-–]|dhcp|자동|동적|미할당|확인필요)$/i.test(v.trim());
 const validateIp = (v: string): string | null => (!v || looksLikeIp(v) || ipSentinel(v)) ? null : 'IP 형식 확인 필요';
 
+// ── IP 대역(방화벽 정책 기반) ──────────────────────────────────────────
+//   마곡 실험기기는 FA 고정망 세팅이 덜 돼 OA 게스트망(WiFi)에 붙은 경우가 있고, 그 IP는 '오염값'.
+//   고정IP 미배정이라 정확한 IP는 없어도 대역으로 오염 여부를 거른다.
+export interface IpBand { cidr: string; site: string; kind: 'fa' | 'oa-wireless' | 'oa-wired' | 'nas'; label: string; }
+export const IP_BANDS: IpBand[] = [
+  { cidr: '10.9.130.0/23', site: '마곡', kind: 'fa', label: '마곡 FA(고정망)' },
+  { cidr: '10.9.160.0/20', site: '마곡', kind: 'oa-wireless', label: '마곡 OA 무선(게스트 WiFi)' },
+  { cidr: '10.9.50.0/23', site: '용인', kind: 'fa', label: '용인 FA' },
+  { cidr: '192.168.244.239/32', site: '용인', kind: 'nas', label: '용인 NAS2' },
+  { cidr: '192.168.244.245/32', site: '용인', kind: 'nas', label: '용인 NAS1' },
+];
+const ipToInt = (ip: string): number => ip.trim().split('.').reduce((a, o) => ((a << 8) + (parseInt(o, 10) || 0)) >>> 0, 0) >>> 0;
+const ipInCidr = (ip: string, cidr: string): boolean => {
+  const [base, bitsStr] = cidr.split('/');
+  const bits = parseInt(bitsStr, 10);
+  const mask = bits === 0 ? 0 : (~0 << (32 - bits)) >>> 0;
+  return (ipToInt(ip) & mask) === (ipToInt(base) & mask);
+};
+const firstIpToken = (v: string): string | null => (String(v).match(/\b\d{1,3}(\.\d{1,3}){3}\b/) || [])[0] || null;
+/** IP 가 속한 방화벽 대역. 없으면 null. */
+export const classifyIpBand = (raw: string): IpBand | null => {
+  const ip = firstIpToken(raw);
+  if (!ip) return null;
+  return IP_BANDS.find(b => ipInCidr(ip, b.cidr)) || null;
+};
+
 export const GOV_FIELDS: GovField[] = [
   { canonical: 'Name', current: 'Name', prefix: 'ID', label: '기기코드', source: 'field-survey', trust: 'authoritative', required: true },
   // 위치 — 현장조사 권위
@@ -227,6 +253,19 @@ export const validateIntegrity = (values: Record<string, any>): Violation[] => {
   if (modeClass && bclass !== 'unknown' && modeClass !== bclass) {
     const want = modeClass === 'realtime' ? '실시간(1)' : '백업(Client)(4)';
     out.push({ field: 'B)백업방법', level: 'integrity', message: `스케줄러 ${schedMode} 모드 → 실제는 ${want} — 백업방법 '${backup}' 정정 필요` });
+  }
+
+  // R7) IP 대역 오염/불일치(방화벽 정책 기반)
+  //   - OA 게스트망(WiFi) 대역 = 오염값(마곡 실험기기 FA 미세팅분) → 걸러야 함.
+  //   - IP 대역 사이트가 자산 사이트와 다르면 이동/오염 추정(IP는 추정값이라 soft).
+  const netIp = read(values, fieldByCanonical('S)네트워크IP')!) || read(values, fieldByCanonical('S)기기IP')!);
+  if (netIp) {
+    const band = classifyIpBand(netIp);
+    if (band?.kind === 'oa-wireless') {
+      out.push({ field: 'S)네트워크IP', level: 'integrity', message: `오염 IP: ${band.label} 연결 — FA 고정망 값 아님(고정IP 미배정, 걸러야 함)` });
+    } else if (band && site && band.site !== site) {
+      out.push({ field: 'S)네트워크IP', level: 'integrity', message: `IP 대역이 ${band.label}(${band.site}) — 자산 사이트 '${site}'와 불일치(이동/오염 추정)` });
+    }
   }
   return out;
 };
