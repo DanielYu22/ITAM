@@ -219,7 +219,7 @@ export const validateIntegrity = (values: Record<string, any>): Violation[] => {
   //   스케줄러모드(STAT/COPY) 권위값이 있으면 R6가 확정하므로 추측성 알람은 생략.
   const schedModeForR1e = read(values, fieldByCanonical('B)스케줄러모드')!).toUpperCase();
   if (bclass === 'client' && isLabEquipCode(name) && !SCHED_MODE_TO_CLASS[schedModeForR1e]) {
-    out.push({ field: 'B)백업방법', level: 'integrity', message: "실험기기인데 백업방법이 '백업(Client)'(4번)으로 분류됨 — 로데이터를 계속 생성하는 기기면 '실시간백업기기'(1번)이어야 함(1↔4 혼동 주의). 스케줄러모드 STAT/COPY로 확정하세요." });
+    out.push({ field: 'B)백업방법', level: 'integrity', message: "실험기기인데 백업(Client)(4번) — 스케줄러모드(STAT/COPY) 확인" });
   }
   // R1b) NAS 가동(07시 로그 존재)인데 온라인구분이 온라인이 아니면 모순(당위: 가동=온라인)
   if (truthy(nasActive) && online && online !== '온라인') {
