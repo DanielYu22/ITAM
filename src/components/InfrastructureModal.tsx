@@ -234,6 +234,20 @@ export const InfrastructureModal: React.FC<Props> = ({
         }
     }, [assets, effectiveSites, data, onCreateRoom, onReload]);
 
+    // [라이브 할당 수] 현재 자산을 L)건물|층|연구실로 집계 — 트리 저장값(시드시점)과 별개로 실시간.
+    const liveCountByRoom = useMemo(() => {
+        const m: Record<string, number> = {};
+        for (const a of assets) {
+            const v = a.values as any;
+            const b = String(v['L)건물'] ?? '').trim();
+            const f = String(v['L)층'] ?? '').trim();
+            const r = String(v['L)연구실'] ?? '').trim();
+            if (!b || !f || !r) continue;
+            m[`${b}|${f}|${r}`] = (m[`${b}|${f}|${r}`] || 0) + 1;
+        }
+        return m;
+    }, [assets]);
+
     // ── 노드 편집/저장 헬퍼 (Phase B: row 단위 API) ──────────
     const findNode = useCallback((building: string, floor: string, name: string): RoomNode | undefined => {
         if (!nodesById) return undefined;
@@ -441,6 +455,7 @@ export const InfrastructureModal: React.FC<Props> = ({
                                             onAddRoom={(floor) => openAdd({ kind: 'room', building: b.name, floor })}
                                             onEditRoom={(floor, room) => setEditingRoom({ building: b.name, floor, room })}
                                             onOpenFloorPlan={onOpenLayout ? (floor) => onOpenLayout(b.name, floor, FLOOR_PLAN_ROOM) : undefined}
+                                            liveCountByRoom={liveCountByRoom}
                                         />
                                     ))}
                                 </View>
@@ -552,7 +567,8 @@ const BuildingNode: React.FC<{
     onAddRoom: (floor: string) => void;
     onEditRoom: (floor: string, room: RoomInfo) => void;
     onOpenFloorPlan?: (floor: string) => void;
-}> = ({ building, expanded, onToggle, siteColor, onAddFloor, onAddRoom, onEditRoom, onOpenFloorPlan }) => {
+    liveCountByRoom?: Record<string, number>;
+}> = ({ building, expanded, onToggle, siteColor, onAddFloor, onAddRoom, onEditRoom, onOpenFloorPlan, liveCountByRoom }) => {
     const key = `b:${building.name}`;
     const open = expanded.has(key);
     const roomCount = building.floors.reduce((a, f) => a + f.rooms.length, 0);
@@ -587,6 +603,7 @@ const BuildingNode: React.FC<{
                     onAddRoom={() => onAddRoom(f.name)}
                     onEditRoom={(room) => onEditRoom(f.name, room)}
                     onOpenFloorPlan={onOpenFloorPlan ? () => onOpenFloorPlan(f.name) : undefined}
+                    liveCountByRoom={liveCountByRoom}
                 />
             ))}
         </View>
@@ -601,7 +618,8 @@ const FloorNode: React.FC<{
     onAddRoom: () => void;
     onEditRoom: (room: RoomInfo) => void;
     onOpenFloorPlan?: () => void;
-}> = ({ floor, buildingName, expanded, onToggle, onAddRoom, onEditRoom, onOpenFloorPlan }) => {
+    liveCountByRoom?: Record<string, number>;
+}> = ({ floor, buildingName, expanded, onToggle, onAddRoom, onEditRoom, onOpenFloorPlan, liveCountByRoom }) => {
     const key = `f:${buildingName}/${floor.name}`;
     const open = expanded.has(key);
     return (
@@ -632,6 +650,7 @@ const FloorNode: React.FC<{
                 <RoomRow
                     key={r.name}
                     room={r}
+                    dataCount={liveCountByRoom?.[`${buildingName}|${floor.name}|${r.name}`] || 0}
                     onEdit={() => onEditRoom(r)}
                 />
             ))}
@@ -639,13 +658,17 @@ const FloorNode: React.FC<{
     );
 };
 
-const RoomRow: React.FC<{ room: RoomInfo; onEdit: () => void }> = ({ room, onEdit }) => {
+const RoomRow: React.FC<{ room: RoomInfo; onEdit: () => void; dataCount?: number }> = ({ room, onEdit, dataCount }) => {
     const type = room.type || 'lab';
     const emoji = ROOM_TYPE_EMOJI[type];
     return (
         <TouchableOpacity style={styles.roomRow} onPress={onEdit} activeOpacity={0.6}>
             <Text style={styles.roomEmoji}>{emoji}</Text>
             <Text style={styles.roomName}>{room.name}</Text>
+            {/* 라이브 데이터 할당 수 (현재 자산 L)연구실 기준) — 레이아웃 미편집이어도 표시 */}
+            {!!dataCount && (
+                <Text style={styles.roomDataCount}>할당 {dataCount}</Text>
+            )}
             {!!room.assetCount && (
                 <Text style={styles.roomMeta}>{room.assetCount}대</Text>
             )}
@@ -822,6 +845,7 @@ const styles = StyleSheet.create({
     roomEmoji: { fontSize: 11 },
     roomName: { fontSize: 12, color: '#1f2937', flex: 1 },
     roomMeta: { fontSize: 10, color: '#94a3b8', maxWidth: 100 },
+    roomDataCount: { fontSize: 10, fontWeight: '700', color: '#0f766e', backgroundColor: '#ccfbf1', borderRadius: 7, paddingHorizontal: 6, paddingVertical: 1 },
 
     // 추가 다이얼로그
     addOverlay: {
