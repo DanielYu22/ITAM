@@ -5,7 +5,7 @@
  */
 import {
   classifyBackup, type BackupClass, NAS_BACKUP_CLASSES,
-  SCHED_MODE_TO_CLASS, isLabEquipCode,
+  SCHED_MODE_TO_CLASS, isLabEquipCode, normalizeOnlineKind,
 } from './assetGovernance';
 
 type V = Record<string, any>;
@@ -60,24 +60,24 @@ export const classifyBackupTarget = (v: V): KpiResult => {
 
 /** 백신업데이트 KPI(알약 + V3 PoC) — 타겟 분류 + 액션 */
 export const classifyVaccineTarget = (v: V): KpiResult => {
-  const online = g(v, 'M)알약 온라인구분', 'M)온라인구분');
+  const online = normalizeOnlineKind(g(v, 'M)알약 온라인구분', 'M)온라인구분')); // 구 '폐쇄망'→'단독형'
   const v3 = g(v, 'V3 POC', 'M)V3PoC대상', 'V3 PoC 대상 PC');
   const push = g(v, 'M)ASM Push');
   const field = g(v, 'M)알약 현장조치');
   const isV3 = /대상|poc|^y|^o|예|true/i.test(v3) && !/아님|^n|no|false/i.test(v3);
   const v3suffix = isV3 ? ' · V3 PoC 설치/검증' : '';
 
-  if (!online) return { targetClass: 'unknown', targetLabel: '온라인구분 미정', status: 'action', action: '온라인구분 필수확인(온라인/폐쇄망/알약대상아님)' };
+  if (!online) return { targetClass: 'unknown', targetLabel: '온라인구분 미정', status: 'action', action: '온라인구분 필수확인(온라인/단독형/알약대상아님)' };
   if (online === '알약대상아님') return { targetClass: 'none', targetLabel: '알약대상아님', status: isV3 ? 'action' : 'na', action: isV3 ? 'V3 PoC 대상 — V3 설치/검증' : '—' };
 
-  if (online === '폐쇄망') {
+  if (online === '단독형') {
     const done = /성공|완료|조치완료|배포/.test(field);
-    // [2026-06-18] '폐쇄망'은 권위값 아님(미확정·변동가능). 현장서 온라인 설치 가능하면 온라인 전환.
+    // [2026-06-18] '단독형'(구 폐쇄망)은 권위값 아님(미확정·변동가능). 현장서 온라인 설치 가능하면 온라인 전환.
     //   조치: 보안패치 파일을 사이트에서 받아 USB 지참 → 현장 수동 설치. ('온라인'만 권위값)
-    return { targetClass: 'closed', targetLabel: '폐쇄망(미확정·변동가능)', status: done && !isV3 ? 'ok' : 'action', action: (done ? '현장조치 완료' : '보안패치 USB 지참(사이트 다운로드)·현장 수동 설치 / 온라인 설치 가능하면 온라인 전환') + v3suffix };
+    return { targetClass: 'closed', targetLabel: '단독형(미확정·변동가능)', status: done && !isV3 ? 'ok' : 'action', action: (done ? '현장조치 완료' : '보안패치 USB 지참(사이트 다운로드)·현장 수동 설치 / 온라인 설치 가능하면 온라인 전환') + v3suffix };
   }
-  // 온라인 — ASM '온라인' = 권위값
-  // [2026-06-18] online 만 권위, 폐쇄망은 변동가능 — 위 분기에서 미확정 처리.
+  // 온라인 — ASM 최근 1달 사용이력 = 네트워크 가용 = '온라인' 타입 권위값
+  // [2026-06-18] online 만 권위, 단독형은 변동가능 — 위 분기에서 미확정 처리.
   const pushOk = /성공|완료/.test(push);
   return { targetClass: 'online', targetLabel: '온라인(알약 관리)', status: pushOk && !isV3 ? 'ok' : (pushOk ? 'action' : 'action'), action: (pushOk ? '정책 푸시 성공' : '정책 재푸시 필요') + v3suffix };
 };

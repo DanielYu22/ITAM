@@ -47,7 +47,9 @@ export const SYNOLOGY_CLIENT_OPTIONS = ['설치됨', '미설치', '설치불가'
 
 // 알약 온라인구분의 정상 운영 값 — 이 값이 아니거나 비어있으면 점검 대상
 // '미등록'은 별도 흐름(임포트 → Quick Task 'unregistered-check')이므로 여기서 제외
-export const ALYAK_STATUS_NORMAL = ['온라인', '폐쇄망', '오프라인', '알약대상아님', '알약대상아님(나보타)'];
+// [2026-06-18] 타입 = 온라인/단독형(구 폐쇄망)/알약대상아님. '오프라인'은 분류값 아님(일시 상태) → 제외.
+//   구 '폐쇄망'은 레거시 데이터 호환 위해 당분간 정상값에 유지(마이그레이션 후 제거 가능).
+export const ALYAK_STATUS_NORMAL = ['온라인', '단독형', '폐쇄망', '알약대상아님', '알약대상아님(나보타)'];
 
 // 완료 시 어떻게 클리어할지에 대한 규칙
 export interface ClearRule {
@@ -156,22 +158,24 @@ export const QUICK_TASKS: QuickTaskDef[] = [
     },
 
     // ------------------------------------------------------------------------
-    // 알약 - 오프라인(폐쇄망) 현장 패치
+    // 알약 - 단독형(구 폐쇄망) 현장 패치
     // 매월 워크플로우:
-    //   1. '월간 초기화' 액션 → 폐쇄망 기기의 M)알약 현장조치에 '폐쇄망조치필요' 추가
+    //   1. '월간 초기화' 액션 → 단독형 기기의 M)알약 현장조치에 '단독형조치필요' 추가
     //   2. 이 Quick Task / 통합 큐 / 과제 대시보드에서 매칭되어 표시됨
-    //   3. 현장에서 완료 → '폐쇄망조치필요' 제거 + '폐쇄망완료' 추가
+    //   3. 현장에서 완료 → 조치필요 태그 제거 + '단독형완료' 추가
     //   4. 다음 달에 다시 초기화 → 사이클 반복
+    //   ※ 단독형 = 네트워크 미연결 독립기기 → 보안패치 USB 지참(사이트 다운로드) 후 현장 수동 설치.
+    //   ※ 레거시 '폐쇄망조치필요' 태그도 매칭(마이그레이션 전 데이터 호환).
     // ------------------------------------------------------------------------
     {
         id: 'ahnlab-offline-patch',
         group: '알약',
-        name: '오프라인 알약 현장 패치',
-        shortLabel: '폐쇄망 패치 완료',
+        name: '단독형 알약 현장 패치',
+        shortLabel: '단독형 패치 완료',
         emoji: '📴',
         color: '#a16207',
         bgColor: '#fef3c7',
-        description: '폐쇄망조치필요 마킹된 기기 처리',
+        description: '단독형(USB 수동패치) 조치필요 기기 처리',
         buildConfig: ({ now }) => ({
             locationHierarchy: ['L)건물', 'L)층', 'L)연구실'],
             sortColumn: 'L)연구실',
@@ -186,7 +190,7 @@ export const QUICK_TASKS: QuickTaskDef[] = [
                             id: `qt-offline-c1-${now.getTime()}`,
                             column: 'M)알약 현장조치',
                             type: 'contains',
-                            values: ['폐쇄망조치필요'],
+                            values: ['단독형조치필요', '폐쇄망조치필요'], // 신규 + 레거시
                         },
                     ],
                 },
@@ -194,15 +198,15 @@ export const QUICK_TASKS: QuickTaskDef[] = [
             editableFields: ['M)알약 현장조치', 'M)알약 온라인구분', 'PC Hostname'],
         }),
         clearOnComplete: [
-            // 멀티셀렉트: '폐쇄망조치필요' 제거 후 '폐쇄망완료' 추가
+            // 멀티셀렉트: 조치필요 태그(신규+레거시) 제거 후 '단독형완료' 추가
             // computeClearUpdates 가 removeValues 와 setValue 를 합쳐서 처리해줌
             {
                 field: 'M)알약 현장조치',
-                removeValues: ['폐쇄망조치필요'],
-                setValue: '폐쇄망완료',
+                removeValues: ['단독형조치필요', '폐쇄망조치필요'],
+                setValue: '단독형완료',
             },
         ],
-        buildHistoryLabel: ({ now }) => `${getCurrentMonthLabel(now)} 오프라인 알약 현장 패치 완료`,
+        buildHistoryLabel: ({ now }) => `${getCurrentMonthLabel(now)} 단독형 알약 현장 패치 완료`,
     },
 
     // ------------------------------------------------------------------------

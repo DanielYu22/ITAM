@@ -47,7 +47,7 @@ import { classifyBackupTarget, classifyVaccineTarget } from '../lib/kpiTargets';
 import { checkLayoutIntegrity, groupByRoom } from '../lib/layoutIntegrity';
 
 // [필수값] 장비로서 존재하기 위한 필수 컬럼 — 비어있으면 홈에서 누락 알람.
-//   물리위치 + 기기담당자 + 망구분(백신 온라인/폐쇄망). (hostname/백업/시놀로지는 광범위해 제외)
+//   물리위치 + 기기담당자 + 망구분(백신 온라인/단독형). (hostname/백업/시놀로지는 광범위해 제외)
 const REQUIRED_FIELDS: { col: string; label: string }[] = [
     { col: 'L)건물', label: '건물' },
     { col: 'L)층', label: '층' },
@@ -90,7 +90,7 @@ interface HomeScreenProps {
     onRefresh?: () => void;
     // 현장지원 접수 모달 열기
     onSubmitFieldSupport?: () => void;
-    // 월간 정기 큐 초기화 (폐쇄망 등)
+    // 월간 정기 큐 초기화 (단독형 등)
     onMonthlyReset?: () => void;
     // 레이아웃 편집 진입
     onEditLayout?: () => void;

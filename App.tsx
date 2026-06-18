@@ -380,7 +380,7 @@ export default function App() {
               operator: 'or',
               conditions: [
                 // 멀티셀렉트에서도 동작하도록 contains 사용 (아이템 단위 매칭)
-                { id: `c-${now}-1`, column: 'M)알약 현장조치', type: 'contains', values: ['폐쇄망조치필요'] },
+                { id: `c-${now}-1`, column: 'M)알약 현장조치', type: 'contains', values: ['단독형조치필요', '폐쇄망조치필요'] },
                 { id: `c-${now}-2`, column: 'M)알약 현장조치', type: 'contains', values: ['알약대상인지 현장확인'] },
                 { id: `c-${now}-3`, column: 'OS type', type: 'equals', values: ['확인필요'] },
                 { id: `c-${now}-4`, column: 'PC Hostname', type: 'equals', values: ['POC업데이트 필요'] },

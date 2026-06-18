@@ -4,8 +4,8 @@
  * 사용자가 매월/매분기 정기적으로 일을 다시 시작할 때 큐를 초기화.
  *
  * 지원 사이클:
- *  - 폐쇄망 알약 (월간): M)알약 온라인구분=폐쇄망 인 기기의
- *    M)알약 현장조치에 '폐쇄망조치필요' 추가
+ *  - 단독형 알약 (월간): M)알약 온라인구분=단독형(구 폐쇄망) 인 기기의
+ *    M)알약 현장조치에 '단독형조치필요' 추가
  *  - IT/현장백업 (분기): QA)백업 방법 contains IT/현장백업 인 기기의
  *    M)분기백업 상태에 '백업필요' 추가
  *
@@ -83,17 +83,18 @@ interface CycleDef {
 const CYCLE_DEFS: CycleDef[] = [
     {
         id: 'closed-network',
-        title: '폐쇄망 알약 (월간)',
+        title: '단독형 알약 (월간)',
         get badge() { return `월간 · ${getCurrentMonthLabel()}`; },
         emoji: '📴',
         color: '#a16207',
         bgColor: '#fef3c7',
-        description: '폐쇄망 기기에 폐쇄망조치필요 마킹',
-        targetFilter: (a) => String((a.values as any)['M)알약 온라인구분'] ?? '').includes('폐쇄망'),
+        description: '단독형(구 폐쇄망) 기기에 단독형조치필요 마킹',
+        // 단독형 = 네트워크 미연결 독립기기(USB 수동패치). 레거시 '폐쇄망' 값도 매칭.
+        targetFilter: (a) => { const o = String((a.values as any)['M)알약 온라인구분'] ?? ''); return o.includes('단독형') || o.includes('폐쇄망'); },
         statusField: 'M)알약 현장조치',
-        needTag: '폐쇄망조치필요',
-        completedTag: '폐쇄망완료',
-        historyLabel: (now) => `${getCurrentMonthLabel(now)} 폐쇄망 큐 초기화 (폐쇄망조치필요 마킹)`,
+        needTag: '단독형조치필요',
+        completedTag: '단독형완료',
+        historyLabel: (now) => `${getCurrentMonthLabel(now)} 단독형 큐 초기화 (단독형조치필요 마킹)`,
     },
     {
         id: 'quarterly-backup',
@@ -146,7 +147,7 @@ const CYCLE_DEFS: CycleDef[] = [
         completedTag: '백업완료',
         historyLabel: (now) => `${getCurrentQuarterLabel(now)} 분기백업 전체 큐 초기화 (백업필요 마킹)`,
     },
-    // [거버넌스] 백신 조치 전체(월간) — 알약 관리대상(온라인/폐쇄망) 백신 조치여부 초기화.
+    // [거버넌스] 백신 조치 전체(월간) — 알약 관리대상(온라인/단독형) 백신 조치여부 초기화.
     {
         id: 'vaccine-action-all',
         title: '백신 조치 전체 (월간)',
@@ -154,10 +155,10 @@ const CYCLE_DEFS: CycleDef[] = [
         emoji: '🛡',
         color: '#1d4ed8',
         bgColor: '#dbeafe',
-        description: '알약 관리대상(온라인·폐쇄망) 백신 조치여부 초기화',
+        description: '알약 관리대상(온라인·단독형) 백신 조치여부 초기화',
         targetFilter: (a) => {
             const o = String((a.values as any)['M)알약 온라인구분'] ?? '').trim();
-            return o === '온라인' || o === '폐쇄망';
+            return o === '온라인' || o === '단독형' || o === '폐쇄망'; // 레거시 폐쇄망 포함
         },
         statusField: 'M)알약 현장조치',
         needTag: '백신조치필요',
@@ -374,8 +375,8 @@ export const MonthlyResetModal: React.FC<Props> = ({
                             <View style={styles.intro2Box}>
                                 <Text style={styles.introTitle}>{activeCycle.title}</Text>
                                 <Text style={styles.introBody}>
-                                    {activeCycle.targetFilter.toString().includes('폐쇄망')
-                                        ? `M)알약 온라인구분이 '폐쇄망'인 기기의 ${activeCycle.statusField}에 '${activeCycle.needTag}'를 추가합니다.`
+                                    {activeCycle.id === 'closed-network'
+                                        ? `M)알약 온라인구분이 '단독형'(구 폐쇄망)인 기기의 ${activeCycle.statusField}에 '${activeCycle.needTag}'를 추가합니다.`
                                         : `QA)백업 방법에 'IT/현장백업'이 포함된 기기의 ${activeCycle.statusField}에 '${activeCycle.needTag}'를 추가합니다.`}
                                     {' '}현장에서 ✓ 완료 누르면 '{activeCycle.needTag}'가 제거되고 '{activeCycle.completedTag}'로 바뀝니다.
                                 </Text>

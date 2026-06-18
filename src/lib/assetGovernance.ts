@@ -31,8 +31,34 @@ export const PREFIX_LABEL: Record<Prefix, string> = {
 };
 
 // ── 고정 도메인(유효성 enum) ───────────────────────────────────────────
-/** M)온라인구분 — 정확히 이 3종만. '오프라인'은 존재하지 않음. 빈값=필수확인 위반. */
-export const ONLINE_KINDS = ['온라인', '폐쇄망', '알약대상아님'] as const;
+/**
+ * M)온라인구분 — 정확히 이 3종만. 빈값=필수확인 위반.
+ *   · 온라인   = 네트워크에 연결된 가용 기기(ASM 관리형). ASM에 최근 1달 내 사용이력이 있으면
+ *               당위적으로 '온라인' 타입 — PC가 그 시점 꺼져 ASM에 '오프라인'으로 찍혀도 온라인 타입.
+ *   · 단독형   = (구 '폐쇄망') 네트워크 미연결 독립 기기. ASM으로 판별 불가, 현장에서 확정.
+ *               보안패치는 사이트에서 받아 USB로 수동 설치. '온라인'만 권위값, 단독형은 미확정·변동가능.
+ *   · 알약대상아님
+ *   '오프라인'은 분류값이 아님(일시 상태) — 금지. 구 '폐쇄망' 값은 '단독형'으로 정규화/마이그레이션.
+ */
+export const ONLINE_KINDS = ['온라인', '단독형', '알약대상아님'] as const;
+
+/** 레거시 정규화: 구 '폐쇄망' → '단독형'. '오프라인'(일시상태)은 분류값 아님 → 빈값 취급. */
+export const normalizeOnlineKind = (v: string): string => {
+  const t = (v || '').trim();
+  if (t === '폐쇄망') return '단독형';
+  if (t === '오프라인') return '';
+  return t;
+};
+
+/** ASM 최근접속이 기준일(기본 31일) 이내인가 — 최근 사용이력=네트워크 가용=‘온라인’ 타입 당위 신호. */
+export const asmRecentlyActive = (lastSeen: string, withinDays = 31): boolean => {
+  const s = (lastSeen || '').trim();
+  if (!s) return false;
+  const m = s.match(/(\d{4})[-./](\d{1,2})[-./](\d{1,2})/);
+  let t = m ? new Date(+m[1], +m[2] - 1, +m[3]).getTime() : Date.parse(s);
+  if (isNaN(t)) return false;
+  return (Date.now() - t) <= withinDays * 86400000;
+};
 /** 사이트 — 반드시 하나. '기타'/빈값 불허. */
 export const SITES = ['용인', '마곡', '향남'] as const;
 /**
@@ -136,11 +162,13 @@ export const GOV_FIELDS: GovField[] = [
   { canonical: 'U)소속팀', current: 'User)소속팀', prefix: 'U', label: '소속팀', source: 'master-file', trust: 'authoritative' },
   { canonical: 'U)기기관리자', current: 'User)기기관리자', prefix: 'U', label: '기기관리자', source: 'master-file', trust: 'authoritative', required: true },
   // 보안관리 — 알약/ASM
-  { canonical: 'M)온라인구분', current: 'M)알약 온라인구분', prefix: 'M', label: '알약 온라인구분', source: 'derived', trust: 'authoritative', required: true, allowed: ONLINE_KINDS,
+  { canonical: 'M)온라인구분', current: 'M)알약 온라인구분', prefix: 'M', label: '온라인구분(온라인/단독형)', source: 'derived', trust: 'authoritative', required: true, allowed: ONLINE_KINDS,
     validate: v => {
-      const t = v.trim();
-      if (!t) return null; // 빈값은 required 로 별도 처리
-      if (t === '오프라인') return "'오프라인'은 허용되지 않음 — 온라인/폐쇄망/알약대상아님 중 하나";
+      const t = normalizeOnlineKind(v); // 구 '폐쇄망'→'단독형', '오프라인'→빈값
+      if (!t) {
+        if (v.trim() === '오프라인') return "'오프라인'은 분류값 아님(일시 상태) — 온라인/단독형/알약대상아님 중 하나";
+        return null; // 빈값은 required 로 별도 처리
+      }
       if (!ONLINE_KINDS.includes(t as any)) return `온라인구분은 ${ONLINE_KINDS.join('/')} 중 하나`;
       return null;
     } },
@@ -192,7 +220,7 @@ export const validateValidity = (values: Record<string, any>): Violation[] => {
 /** 정합성(교차 필드) 검사 — Daniel 룰 기반 */
 export const validateIntegrity = (values: Record<string, any>): Violation[] => {
   const out: Violation[] = [];
-  const online = read(values, fieldByCanonical('M)온라인구분')!);
+  const online = normalizeOnlineKind(read(values, fieldByCanonical('M)온라인구분')!));
   const backup = read(values, fieldByCanonical('B)백업방법')!);
   const schedInstalled = read(values, fieldByCanonical('B)스케줄러설치')!);
   const nasActive = read(values, fieldByCanonical('B)NAS가동')!);
@@ -229,9 +257,11 @@ export const validateIntegrity = (values: Record<string, any>): Violation[] => {
   if (truthy(schedInstalled) && negatory(nasActive)) {
     out.push({ field: 'B)NAS가동', level: 'integrity', message: '스케줄러 설치됨인데 NAS 최신 07시 로그 없음 — C:\\SynologyDrive 부재/네트워크 끊김 점검' });
   }
-  // R2) ASM 접속상태 ON ↔ 온라인구분: ON 인데 폐쇄망이면 점검(폐쇄망은 통상 ASM 미접속)
-  if (asmConn === 'ON' && online === '폐쇄망') {
-    out.push({ field: 'M)온라인구분', level: 'integrity', message: 'ASM 접속 ON 인데 폐쇄망으로 표기 — 재확인 필요' });
+  // R2) ASM 최근 1달 사용이력 = 네트워크 가용 = '온라인' 타입 당위.
+  //   PC가 그 시점 꺼져 ASM '오프라인'으로 찍혀도 온라인 타입. 단독형/미정 표기면 정정 필요.
+  const lastSeen = read(values, fieldByCanonical('S)최근접속')!);
+  if ((asmRecentlyActive(lastSeen) || asmConn === 'ON') && online && online !== '온라인') {
+    out.push({ field: 'M)온라인구분', level: 'integrity', message: `ASM 최근 1달 사용이력 있음 → '온라인' 타입이어야 함(현재 '${online}')` });
   }
   // R3) 사이트 ↔ 건물 일관성(건물이 있으면 사이트는 그 건물의 사이트여야 함; 여기선 둘 다 있는데 사이트 미정만 잡음)
   if (building && !site) {

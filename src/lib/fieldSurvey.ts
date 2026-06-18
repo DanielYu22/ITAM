@@ -41,7 +41,7 @@ export const SURVEY_FIELD_DEFS: SurveyFieldDef[] = [
   { col: 'B)스케줄러모드', label: '스케줄러모드', input: 'enum', options: ['STAT', 'COPY'], hint: 'STAT=실시간/COPY=백업Client (신규 컬럼)' },
   { col: 'V3 POC', label: 'V3 PoC 대상', input: 'yesno' },
   { col: 'User)기기관리자', label: '기기관리자', input: 'text' },
-  { col: 'M)알약 현장조치', label: '알약 현장조치', input: 'text', hint: '폐쇄망 등 현장 조치 메모' },
+  { col: 'M)알약 현장조치', label: '알약 현장조치', input: 'text', hint: '단독형(USB 수동패치) 등 현장 조치 메모' },
 ];
 
 export interface SurveyFieldState extends SurveyFieldDef { current: string; pending: boolean; error: string | null; }
