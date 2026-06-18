@@ -82,7 +82,11 @@ export interface GovField {
   validate?: (raw: string) => string | null;
 }
 
-const ipOk = (v: string) => /^\d{1,3}(\.\d{1,3}){3}$/.test(v.trim());
+// IP 검증은 오탐 방지를 위해 관대하게: IPv4 토큰이 들어있으면 통과(여분 텍스트·다중 IP 허용),
+//   사유값(없음/DHCP/자동 등)도 통과. 명백한 비IP 텍스트만 '확인 필요'.
+const looksLikeIp = (v: string) => /\b\d{1,3}(\.\d{1,3}){3}\b/.test(v);
+const ipSentinel = (v: string) => /^(없음|미상|n\/?a|na|[-–]|dhcp|자동|동적|미할당|확인필요)$/i.test(v.trim());
+const validateIp = (v: string): string | null => (!v || looksLikeIp(v) || ipSentinel(v)) ? null : 'IP 형식 확인 필요';
 
 export const GOV_FIELDS: GovField[] = [
   { canonical: 'Name', current: 'Name', prefix: 'ID', label: '기기코드', source: 'field-survey', trust: 'authoritative', required: true },
@@ -94,8 +98,9 @@ export const GOV_FIELDS: GovField[] = [
     validate: v => (v && !SITES.includes(v.trim() as any)) ? `사이트는 ${SITES.join('/')} 중 하나여야 함('기타'·빈값 불허)` : null },
   // 시스템 출력 — ASM Console 권위 (단 IP 는 export 시점값=추정 성격)
   { canonical: 'S)Hostname', current: 'PC Hostname', prefix: 'S', label: '컴퓨터 이름', source: 'asm-export', trust: 'authoritative' },
-  { canonical: 'S)IP', current: 'QA)기기 IP', prefix: 'S', label: 'IP(시점값)', source: 'asm-export', trust: 'authoritative',
-    validate: v => (v && !ipOk(v)) ? 'IPv4 형식 아님' : null },
+  // IP 2종 — PC 내부망 IP(ASM 출력) + PC↔실험기기 연결 IP(현장 확인). 둘 다 시점/추정 성격.
+  { canonical: 'S)네트워크IP', current: 'QA)네트워크 IP', prefix: 'S', label: 'PC 내부망 IP(시점값)', source: 'asm-export', trust: 'authoritative', validate: validateIp },
+  { canonical: 'S)기기IP', current: 'QA)기기 IP', prefix: 'S', label: 'PC↔실험기기 연결 IP', source: 'field-survey', trust: 'authoritative', validate: validateIp },
   { canonical: 'S)OS', current: 'OS type', prefix: 'S', label: 'OS', source: 'asm-export', trust: 'authoritative' },
   { canonical: 'S)접속상태', prefix: 'S', label: 'ASM 접속상태(ON/OFF)', source: 'asm-export', trust: 'authoritative' },
   { canonical: 'S)정책명', prefix: 'S', label: '알약 정책명', source: 'asm-export', trust: 'authoritative' },
@@ -246,8 +251,7 @@ export const detectAsmExport = (headers: string[]): AsmExportKind => {
 /** ASM 출력 헤더명 → 권위 필드(canonical). 매핑 안 되는 건 참고용. */
 export const ASM_HEADER_MAP: Record<string, string> = {
   '컴퓨터 이름': 'S)Hostname',
-  'IP': 'S)IP',
-  'Connected IP': 'S)IP',
+  'IP': 'S)네트워크IP',
   '접속 상태': 'S)접속상태',
   'OS': 'S)OS',
   '정책명': 'S)정책명',

@@ -14,7 +14,7 @@ const g = (v: V, ...keys: string[]): string => {
   for (const k of keys) { const x = v[k]; if (x != null && String(x).trim()) return String(x).trim(); }
   return '';
 };
-const ipOk = (v: string) => /^\d{1,3}(\.\d{1,3}){3}$/.test(v.trim());
+const ipOk = (v: string) => /\b\d{1,3}(\.\d{1,3}){3}\b/.test(v); // IPv4 토큰 포함이면 통과(오탐 방지)
 
 export interface SurveyFieldDef {
   /** 쓰기 대상 Notion 컬럼명(실제 존재해야 함) */ col: string;
