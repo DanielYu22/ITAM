@@ -619,6 +619,7 @@ const SiteFloorFirst: React.FC<{
                         {fopen && wings.map(w => {
                             const wkey = `ffw:${siteId}/${fl}/${w.building}`;
                             const wopen = expanded.has(wkey);
+                            const wAssigned = w.rooms.filter(r => (liveCountByRoom?.[`${w.building}|${fl}|${r.name}`] || 0) > 0).length;
                             return (
                                 <View key={w.building} style={{ marginLeft: 12 }}>
                                     <View style={styles.floorHeader}>
@@ -627,6 +628,7 @@ const SiteFloorFirst: React.FC<{
                                             <Building2 size={11} color={siteColor} />
                                             <Text style={styles.floorName}>{w.building}</Text>
                                             <Text style={styles.floorCount}>{w.rooms.length}개 공간</Text>
+                                            {wAssigned > 0 && <Text style={styles.roomDataCount}>할당 {wAssigned}실</Text>}
                                         </TouchableOpacity>
                                         {onOpenFloorPlan && (
                                             <TouchableOpacity style={[styles.miniBtn, { backgroundColor: '#eef2ff', borderColor: '#c7d2fe' }]} onPress={() => onOpenFloorPlan(w.building, fl)}>
@@ -639,10 +641,11 @@ const SiteFloorFirst: React.FC<{
                                             <Text style={styles.miniBtnText}>공간</Text>
                                         </TouchableOpacity>
                                     </View>
-                                    {wopen && w.rooms.map(r => (
+                                    {wopen && w.rooms.map((r, ri) => (
                                         <RoomRow
                                             key={r.name}
                                             room={r}
+                                            index={ri}
                                             dataCount={liveCountByRoom?.[`${w.building}|${fl}|${r.name}`] || 0}
                                             onEdit={() => onEditRoom(w.building, fl, r)}
                                         />
@@ -733,6 +736,10 @@ const FloorNode: React.FC<{
                         : <ChevronRight size={11} color="#64748b" />}
                     <Text style={styles.floorName}>{floor.name}</Text>
                     <Text style={styles.floorCount}>{floor.rooms.length}개 공간</Text>
+                    {(() => {
+                        const a = floor.rooms.filter(r => (liveCountByRoom?.[`${buildingName}|${floor.name}|${r.name}`] || 0) > 0).length;
+                        return a > 0 ? <Text style={styles.roomDataCount}>할당 {a}실</Text> : null;
+                    })()}
                 </TouchableOpacity>
                 {onOpenFloorPlan && (
                     <TouchableOpacity style={[styles.miniBtn, { backgroundColor: '#eef2ff', borderColor: '#c7d2fe' }]} onPress={onOpenFloorPlan}>
@@ -745,10 +752,11 @@ const FloorNode: React.FC<{
                     <Text style={styles.miniBtnText}>공간</Text>
                 </TouchableOpacity>
             </View>
-            {open && floor.rooms.map(r => (
+            {open && floor.rooms.map((r, ri) => (
                 <RoomRow
                     key={r.name}
                     room={r}
+                    index={ri}
                     dataCount={liveCountByRoom?.[`${buildingName}|${floor.name}|${r.name}`] || 0}
                     onEdit={() => onEditRoom(r)}
                 />
@@ -757,11 +765,11 @@ const FloorNode: React.FC<{
     );
 };
 
-const RoomRow: React.FC<{ room: RoomInfo; onEdit: () => void; dataCount?: number }> = ({ room, onEdit, dataCount }) => {
+const RoomRow: React.FC<{ room: RoomInfo; onEdit: () => void; dataCount?: number; index?: number }> = ({ room, onEdit, dataCount, index }) => {
     const type = room.type || 'lab';
     const emoji = ROOM_TYPE_EMOJI[type];
     return (
-        <TouchableOpacity style={styles.roomRow} onPress={onEdit} activeOpacity={0.6}>
+        <TouchableOpacity style={[styles.roomRow, (index ?? 0) % 2 === 1 && styles.roomRowAlt]} onPress={onEdit} activeOpacity={0.6}>
             <Text style={styles.roomEmoji}>{emoji}</Text>
             <Text style={styles.roomName}>{room.name}</Text>
             {/* 라이브 데이터 할당 수 (현재 자산 L)연구실 기준) — 레이아웃 미편집이어도 표시 */}
@@ -939,8 +947,11 @@ const styles = StyleSheet.create({
         alignItems: 'center',
         gap: 6,
         paddingHorizontal: 22,
-        paddingVertical: 6,
+        paddingVertical: 7,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
     },
+    roomRowAlt: { backgroundColor: '#f8fafc' },
     roomEmoji: { fontSize: 11 },
     roomName: { fontSize: 12, color: '#1f2937', flex: 1 },
     roomMeta: { fontSize: 10, color: '#94a3b8', maxWidth: 100 },
