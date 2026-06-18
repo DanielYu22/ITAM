@@ -47,7 +47,7 @@ import {
 } from '../lib/infrastructure';
 import { RoomNode } from '../lib/infrastructureDb';
 import { CompanyInfo } from '../lib/companiesDb';
-import { FLOOR_PLAN_ROOM } from '../lib/layouts';
+import { FLOOR_PLAN_ROOM, floorOrder } from '../lib/layouts';
 import { InfraAsset } from '../lib/infrastructureAssetsDb';
 import { RoomEditDialog } from './RoomEditDialog';
 
@@ -187,8 +187,16 @@ export const InfrastructureModal: React.FC<Props> = ({
     const allKeys = useMemo(() => {
         const keys: string[] = [];
         for (const b of filteredData.buildings) {
-            keys.push(`b:${b.name}`);
-            for (const f of b.floors) keys.push(`f:${b.name}/${f.name}`);
+            if (b.siteId === 'magok') {
+                // 마곡은 floor-first 렌더 — ff(층)/ffw(층/동) 키 사용
+                for (const f of b.floors) {
+                    keys.push(`ff:magok/${f.name}`);
+                    keys.push(`ffw:magok/${f.name}/${b.name}`);
+                }
+            } else {
+                keys.push(`b:${b.name}`);
+                for (const f of b.floors) keys.push(`f:${b.name}/${f.name}`);
+            }
         }
         return keys;
     }, [filteredData]);
@@ -444,7 +452,20 @@ export const InfrastructureModal: React.FC<Props> = ({
                                             <Text style={[styles.addInlineText, { color: siteDef.color }]}>건물</Text>
                                         </TouchableOpacity>
                                     </View>
-                                    {buildings.map(b => (
+                                    {/* [마곡] 동측/서측이 한 건물의 동(wing)+층 공유 → 층 먼저, 그 아래 동측/서측 */}
+                                    {siteDef.id === 'magok' ? (
+                                        <SiteFloorFirst
+                                            buildings={buildings}
+                                            siteId={siteDef.id}
+                                            siteColor={siteDef.color}
+                                            expanded={expanded}
+                                            onToggle={toggle}
+                                            onAddRoom={(building, floor) => openAdd({ kind: 'room', building, floor })}
+                                            onEditRoom={(building, floor, room) => setEditingRoom({ building, floor, room })}
+                                            onOpenFloorPlan={onOpenLayout ? (building, floor) => onOpenLayout(building, floor, FLOOR_PLAN_ROOM) : undefined}
+                                            liveCountByRoom={liveCountByRoom}
+                                        />
+                                    ) : buildings.map(b => (
                                         <BuildingNode
                                             key={b.name}
                                             building={b}
@@ -557,6 +578,84 @@ export const InfrastructureModal: React.FC<Props> = ({
 // ---------------------------------------------------------------------------
 // 트리 노드들
 // ---------------------------------------------------------------------------
+
+// [마곡 등] 한 건물의 동(wing)이 동측/서측으로 나뉘고 층을 공유하는 사이트 — 층 먼저, 그 아래 동측/서측.
+const SiteFloorFirst: React.FC<{
+    buildings: BuildingInfo[];
+    siteId: string;
+    siteColor: string;
+    expanded: Set<string>;
+    onToggle: (key: string) => void;
+    onAddRoom: (building: string, floor: string) => void;
+    onEditRoom: (building: string, floor: string, room: RoomInfo) => void;
+    onOpenFloorPlan?: (building: string, floor: string) => void;
+    liveCountByRoom?: Record<string, number>;
+}> = ({ buildings, siteId, siteColor, expanded, onToggle, onAddRoom, onEditRoom, onOpenFloorPlan, liveCountByRoom }) => {
+    // floor -> [{building(wing), rooms}]
+    const byFloor = new Map<string, { building: string; rooms: RoomInfo[] }[]>();
+    for (const b of buildings) for (const f of b.floors) {
+        if (!byFloor.has(f.name)) byFloor.set(f.name, []);
+        byFloor.get(f.name)!.push({ building: b.name, rooms: f.rooms });
+    }
+    const floors = Array.from(byFloor.keys()).sort(
+        (a, b) => floorOrder(a) - floorOrder(b) || a.localeCompare(b, 'ko', { numeric: true }),
+    );
+    return (
+        <>
+            {floors.map(fl => {
+                const wings = byFloor.get(fl)!.slice().sort((a, b) => a.building.localeCompare(b.building, 'ko', { numeric: true }));
+                const fkey = `ff:${siteId}/${fl}`;
+                const fopen = expanded.has(fkey);
+                const roomTotal = wings.reduce((a, w) => a + w.rooms.length, 0);
+                return (
+                    <View key={fl} style={styles.floorBlock}>
+                        <View style={styles.floorHeader}>
+                            <TouchableOpacity style={styles.floorHeaderTap} onPress={() => onToggle(fkey)}>
+                                {fopen ? <ChevronDown size={11} color="#64748b" /> : <ChevronRight size={11} color="#64748b" />}
+                                <Text style={styles.floorName}>{fl}</Text>
+                                <Text style={styles.floorCount}>{wings.length}개 동 · {roomTotal}개 공간</Text>
+                            </TouchableOpacity>
+                        </View>
+                        {fopen && wings.map(w => {
+                            const wkey = `ffw:${siteId}/${fl}/${w.building}`;
+                            const wopen = expanded.has(wkey);
+                            return (
+                                <View key={w.building} style={{ marginLeft: 12 }}>
+                                    <View style={styles.floorHeader}>
+                                        <TouchableOpacity style={styles.floorHeaderTap} onPress={() => onToggle(wkey)}>
+                                            {wopen ? <ChevronDown size={11} color="#94a3b8" /> : <ChevronRight size={11} color="#94a3b8" />}
+                                            <Building2 size={11} color={siteColor} />
+                                            <Text style={styles.floorName}>{w.building}</Text>
+                                            <Text style={styles.floorCount}>{w.rooms.length}개 공간</Text>
+                                        </TouchableOpacity>
+                                        {onOpenFloorPlan && (
+                                            <TouchableOpacity style={[styles.miniBtn, { backgroundColor: '#eef2ff', borderColor: '#c7d2fe' }]} onPress={() => onOpenFloorPlan(w.building, fl)}>
+                                                <Building2 size={11} color="#4338ca" />
+                                                <Text style={[styles.miniBtnText, { color: '#4338ca' }]}>평면도</Text>
+                                            </TouchableOpacity>
+                                        )}
+                                        <TouchableOpacity style={styles.miniBtn} onPress={() => onAddRoom(w.building, fl)}>
+                                            <Plus size={11} color="#475569" />
+                                            <Text style={styles.miniBtnText}>공간</Text>
+                                        </TouchableOpacity>
+                                    </View>
+                                    {wopen && w.rooms.map(r => (
+                                        <RoomRow
+                                            key={r.name}
+                                            room={r}
+                                            dataCount={liveCountByRoom?.[`${w.building}|${fl}|${r.name}`] || 0}
+                                            onEdit={() => onEditRoom(w.building, fl, r)}
+                                        />
+                                    ))}
+                                </View>
+                            );
+                        })}
+                    </View>
+                );
+            })}
+        </>
+    );
+};
 
 const BuildingNode: React.FC<{
     building: BuildingInfo;
