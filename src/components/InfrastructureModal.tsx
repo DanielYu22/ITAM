@@ -10,6 +10,7 @@ import {
     View,
     Text,
     TouchableOpacity,
+    Pressable,
     ScrollView,
     StyleSheet,
     Modal,
@@ -609,20 +610,20 @@ const SiteFloorFirst: React.FC<{
                 const roomTotal = wings.reduce((a, w) => a + w.rooms.length, 0);
                 return (
                     <View key={fl} style={styles.floorBlock}>
-                        <View style={styles.floorHeader}>
+                        <Pressable style={({ hovered }: any) => [styles.floorHeader, hovered && styles.rowHover]}>
                             <TouchableOpacity style={styles.floorHeaderTap} onPress={() => onToggle(fkey)}>
                                 {fopen ? <ChevronDown size={11} color="#64748b" /> : <ChevronRight size={11} color="#64748b" />}
                                 <Text style={styles.floorName}>{fl}</Text>
                                 <Text style={styles.floorCount}>{wings.length}개 동 · {roomTotal}개 공간</Text>
                             </TouchableOpacity>
-                        </View>
+                        </Pressable>
                         {fopen && wings.map(w => {
                             const wkey = `ffw:${siteId}/${fl}/${w.building}`;
                             const wopen = expanded.has(wkey);
                             const wAssigned = w.rooms.filter(r => (liveCountByRoom?.[`${w.building}|${fl}|${r.name}`] || 0) > 0).length;
                             return (
                                 <View key={w.building} style={{ marginLeft: 12 }}>
-                                    <View style={styles.floorHeader}>
+                                    <Pressable style={({ hovered }: any) => [styles.floorHeader, hovered && styles.rowHover]}>
                                         <TouchableOpacity style={styles.floorHeaderTap} onPress={() => onToggle(wkey)}>
                                             {wopen ? <ChevronDown size={11} color="#94a3b8" /> : <ChevronRight size={11} color="#94a3b8" />}
                                             <Building2 size={11} color={siteColor} />
@@ -640,7 +641,7 @@ const SiteFloorFirst: React.FC<{
                                             <Plus size={11} color="#475569" />
                                             <Text style={styles.miniBtnText}>공간</Text>
                                         </TouchableOpacity>
-                                    </View>
+                                    </Pressable>
                                     {wopen && w.rooms.map((r, ri) => (
                                         <RoomRow
                                             key={r.name}
@@ -676,7 +677,7 @@ const BuildingNode: React.FC<{
     const roomCount = building.floors.reduce((a, f) => a + f.rooms.length, 0);
     return (
         <View style={styles.buildingBlock}>
-            <View style={styles.buildingHeader}>
+            <Pressable style={({ hovered }: any) => [styles.buildingHeader, hovered && styles.rowHover]}>
                 <TouchableOpacity
                     style={styles.buildingHeaderTap}
                     onPress={() => onToggle(key)}
@@ -694,7 +695,7 @@ const BuildingNode: React.FC<{
                     <Plus size={11} color="#475569" />
                     <Text style={styles.miniBtnText}>층</Text>
                 </TouchableOpacity>
-            </View>
+            </Pressable>
             {open && building.floors.map(f => (
                 <FloorNode
                     key={f.name}
@@ -726,7 +727,7 @@ const FloorNode: React.FC<{
     const open = expanded.has(key);
     return (
         <View style={styles.floorBlock}>
-            <View style={styles.floorHeader}>
+            <Pressable style={({ hovered }: any) => [styles.floorHeader, hovered && styles.rowHover]}>
                 <TouchableOpacity
                     style={styles.floorHeaderTap}
                     onPress={() => onToggle(key)}
@@ -751,7 +752,7 @@ const FloorNode: React.FC<{
                     <Plus size={11} color="#475569" />
                     <Text style={styles.miniBtnText}>공간</Text>
                 </TouchableOpacity>
-            </View>
+            </Pressable>
             {open && floor.rooms.map((r, ri) => (
                 <RoomRow
                     key={r.name}
@@ -769,7 +770,7 @@ const RoomRow: React.FC<{ room: RoomInfo; onEdit: () => void; dataCount?: number
     const type = room.type || 'lab';
     const emoji = ROOM_TYPE_EMOJI[type];
     return (
-        <TouchableOpacity style={[styles.roomRow, (index ?? 0) % 2 === 1 && styles.roomRowAlt]} onPress={onEdit} activeOpacity={0.6}>
+        <Pressable style={({ hovered }: any) => [styles.roomRow, (index ?? 0) % 2 === 1 && styles.roomRowAlt, hovered && styles.rowHover]} onPress={onEdit}>
             <Text style={styles.roomEmoji}>{emoji}</Text>
             <Text style={styles.roomName}>{room.name}</Text>
             {/* 라이브 데이터 할당 수 (현재 자산 L)연구실 기준) — 레이아웃 미편집이어도 표시 */}
@@ -783,7 +784,7 @@ const RoomRow: React.FC<{ room: RoomInfo; onEdit: () => void; dataCount?: number
                 <Text style={styles.roomMeta} numberOfLines={1}>{room.features.join(' · ')}</Text>
             )}
             <Pencil size={10} color="#cbd5e1" />
-        </TouchableOpacity>
+        </Pressable>
     );
 };
 
@@ -905,6 +906,8 @@ const styles = StyleSheet.create({
         paddingHorizontal: 14,
         paddingVertical: 8,
         gap: 6,
+        borderBottomWidth: 1,
+        borderBottomColor: '#eef2f6',
     },
     buildingHeaderTap: {
         flex: 1,
@@ -932,6 +935,8 @@ const styles = StyleSheet.create({
         paddingHorizontal: 12,
         paddingVertical: 6,
         gap: 6,
+        borderBottomWidth: 1,
+        borderBottomColor: '#f1f5f9',
     },
     floorHeaderTap: {
         flex: 1,
@@ -952,6 +957,7 @@ const styles = StyleSheet.create({
         borderBottomColor: '#f1f5f9',
     },
     roomRowAlt: { backgroundColor: '#f8fafc' },
+    rowHover: { backgroundColor: '#eef2ff' },
     roomEmoji: { fontSize: 11 },
     roomName: { fontSize: 12, color: '#1f2937', flex: 1 },
     roomMeta: { fontSize: 10, color: '#94a3b8', maxWidth: 100 },
