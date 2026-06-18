@@ -2064,7 +2064,9 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 16,
+    paddingLeft: 16,
+    // 우측 상단 플로팅 요소(모드 토글/플로팅 컨트롤)에 아이콘이 가리지 않게 여백 확보
+    paddingRight: 56,
     paddingVertical: 12,
     backgroundColor: '#ffffff',
     borderBottomWidth: 1,
