@@ -44,6 +44,7 @@ import { type LayoutsStore, parseRoomKey } from '../lib/layouts';
 import { SITES_DEFAULTS, SiteDef, SiteId, getSiteCounts } from '../lib/sites';
 import { validateAsset } from '../lib/assetGovernance';
 import { classifyBackupTarget, classifyVaccineTarget } from '../lib/kpiTargets';
+import { checkLayoutIntegrity, groupByRoom } from '../lib/layoutIntegrity';
 
 // [필수값] 장비로서 존재하기 위한 필수 컬럼 — 비어있으면 홈에서 누락 알람.
 //   물리위치 + 기기담당자 + 망구분(백신 온라인/폐쇄망). (hostname/백업/시놀로지는 광범위해 제외)
@@ -291,6 +292,13 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     const [showGov, setShowGov] = useState(false);
     const [showKpiBk, setShowKpiBk] = useState(false);
     const [showKpiVac, setShowKpiVac] = useState(false);
+    const [showLayoutInteg, setShowLayoutInteg] = useState(false);
+
+    // [레이아웃 정합성] 레이아웃↔데이터 어긋남(유령배치·누락·동선 일부/구멍) 방 단위 요약.
+    const layoutIntegRooms = useMemo(
+        () => groupByRoom(checkLayoutIntegrity(assets, layoutsStore, titleField)),
+        [assets, layoutsStore, titleField],
+    );
 
     // 글로벌 검색 결과 — 자산만 (기존)
     const searchResults = useMemo(() => {
@@ -753,6 +761,35 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                         )}
                     </View>
                 )}
+
+                {/* [레이아웃 정합성] 유령배치·레이아웃누락·동선 일부/구멍 — 항상 상태 표시(이상없으면 ✓) */}
+                <View style={styles.alarmSection}>
+                    <TouchableOpacity
+                        style={styles.alarmHeader}
+                        onPress={() => layoutIntegRooms.length > 0 && setShowLayoutInteg(v => !v)}
+                        disabled={layoutIntegRooms.length === 0}
+                    >
+                        {layoutIntegRooms.length > 0
+                            ? <Text style={styles.alarmTitle}>🧩 레이아웃 정합성 {layoutIntegRooms.length}곳</Text>
+                            : <Text style={[styles.alarmTitle, { color: '#16a34a' }]}>🧩 레이아웃 정합성 ✓ 이상 없음</Text>}
+                        <View style={{ flex: 1 }} />
+                        {layoutIntegRooms.length > 0 && <Text style={styles.alarmCaret}>{showLayoutInteg ? '▾' : '▸'}</Text>}
+                    </TouchableOpacity>
+                    {showLayoutInteg && layoutIntegRooms.slice(0, 40).map((g, i) => (
+                        <TouchableOpacity
+                            key={`li-${g.roomKey}-${i}`}
+                            style={styles.alarmRow}
+                            onPress={() => onOpenRoomLayout?.(g.building, g.floor, g.room)}
+                        >
+                            <View style={{ flex: 1, gap: 2 }}>
+                                <Text style={styles.alarmName}>{g.building} {g.floor} · {g.room}</Text>
+                                <Text style={[styles.alarmMissing, { fontWeight: '500' }]}>{g.messages.join(' · ')}</Text>
+                            </View>
+                            <Text style={styles.unmarkedArrow}>›</Text>
+                        </TouchableOpacity>
+                    ))}
+                    {showLayoutInteg && layoutIntegRooms.length > 40 && <Text style={styles.alarmMore}>외 {layoutIntegRooms.length - 40}곳…</Text>}
+                </View>
 
                 {/* [B] 동선 미마킹 검출 — 순서 안 매긴 연구실. 접고 펼치기. 클릭 시 그 방 레이아웃 편집기로 */}
                 {unmarkedRooms.length > 0 && (
