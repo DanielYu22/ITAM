@@ -48,7 +48,7 @@ import {
 } from '../lib/infrastructure';
 import { RoomNode } from '../lib/infrastructureDb';
 import { CompanyInfo } from '../lib/companiesDb';
-import { FLOOR_PLAN_ROOM, floorOrder } from '../lib/layouts';
+import { FLOOR_PLAN_ROOM, floorOrder, parseRoomKey, type LayoutsStore } from '../lib/layouts';
 import { InfraAsset } from '../lib/infrastructureAssetsDb';
 import { RoomEditDialog } from './RoomEditDialog';
 
@@ -67,6 +67,8 @@ interface Props {
     onArchiveInfraAsset?: (id: string) => Promise<void>;
     assets: Asset[];
     effectiveSites?: SiteDef[];
+    /** 평면도 설정 여부 표시용 — 층 평면도 레이아웃에 객체가 있는지 */
+    layoutsStore?: LayoutsStore;
     /** @deprecated Phase A 호환용. 사용되지 않음. */
     onSave: (next: InfrastructureData) => Promise<void>;
     /** Phase B: row 단위 CRUD */
@@ -99,6 +101,7 @@ export const InfrastructureModal: React.FC<Props> = ({
     onArchiveInfraAsset,
     assets,
     effectiveSites,
+    layoutsStore,
     onSave,
     onCreateRoom,
     onUpdateRoom,
@@ -256,6 +259,16 @@ export const InfrastructureModal: React.FC<Props> = ({
         }
         return m;
     }, [assets]);
+
+    // [평면도 설정 여부] 층 평면도 레이아웃에 객체가 1개라도 있으면 'building|floor' 등록 — 은근한 표시용.
+    const floorPlanSet = useMemo(() => {
+        const s = new Set<string>();
+        for (const [k, layout] of Object.entries(layoutsStore?.rooms ?? {})) {
+            const { building, floor, room } = parseRoomKey(k);
+            if (room === FLOOR_PLAN_ROOM && (layout.objects ?? []).length > 0) s.add(`${building}|${floor}`);
+        }
+        return s;
+    }, [layoutsStore]);
 
     // ── 노드 편집/저장 헬퍼 (Phase B: row 단위 API) ──────────
     const findNode = useCallback((building: string, floor: string, name: string): RoomNode | undefined => {
@@ -465,6 +478,7 @@ export const InfrastructureModal: React.FC<Props> = ({
                                             onEditRoom={(building, floor, room) => setEditingRoom({ building, floor, room })}
                                             onOpenFloorPlan={onOpenLayout ? (building, floor) => onOpenLayout(building, floor, FLOOR_PLAN_ROOM) : undefined}
                                             liveCountByRoom={liveCountByRoom}
+                                            floorPlanSet={floorPlanSet}
                                         />
                                     ) : buildings.map(b => (
                                         <BuildingNode
@@ -478,6 +492,7 @@ export const InfrastructureModal: React.FC<Props> = ({
                                             onEditRoom={(floor, room) => setEditingRoom({ building: b.name, floor, room })}
                                             onOpenFloorPlan={onOpenLayout ? (floor) => onOpenLayout(b.name, floor, FLOOR_PLAN_ROOM) : undefined}
                                             liveCountByRoom={liveCountByRoom}
+                                            floorPlanSet={floorPlanSet}
                                         />
                                     ))}
                                 </View>
@@ -591,7 +606,8 @@ const SiteFloorFirst: React.FC<{
     onEditRoom: (building: string, floor: string, room: RoomInfo) => void;
     onOpenFloorPlan?: (building: string, floor: string) => void;
     liveCountByRoom?: Record<string, number>;
-}> = ({ buildings, siteId, siteColor, expanded, onToggle, onAddRoom, onEditRoom, onOpenFloorPlan, liveCountByRoom }) => {
+    floorPlanSet?: Set<string>;
+}> = ({ buildings, siteId, siteColor, expanded, onToggle, onAddRoom, onEditRoom, onOpenFloorPlan, liveCountByRoom, floorPlanSet }) => {
     // floor -> [{building(wing), rooms}]
     const byFloor = new Map<string, { building: string; rooms: RoomInfo[] }[]>();
     for (const b of buildings) for (const f of b.floors) {
@@ -631,12 +647,15 @@ const SiteFloorFirst: React.FC<{
                                             <Text style={styles.floorCount}>{w.rooms.length}개 공간</Text>
                                             {wAssigned > 0 && <Text style={styles.roomDataCount}>할당 {wAssigned}실</Text>}
                                         </TouchableOpacity>
-                                        {onOpenFloorPlan && (
-                                            <TouchableOpacity style={[styles.miniBtn, { backgroundColor: '#eef2ff', borderColor: '#c7d2fe' }]} onPress={() => onOpenFloorPlan(w.building, fl)}>
-                                                <Building2 size={11} color="#4338ca" />
-                                                <Text style={[styles.miniBtnText, { color: '#4338ca' }]}>평면도</Text>
-                                            </TouchableOpacity>
-                                        )}
+                                        {onOpenFloorPlan && (() => {
+                                            const planSet = !!floorPlanSet?.has(`${w.building}|${fl}`);
+                                            return (
+                                                <TouchableOpacity style={[styles.miniBtn, planSet ? styles.planBtnSet : styles.planBtnEmpty]} onPress={() => onOpenFloorPlan(w.building, fl)}>
+                                                    <Building2 size={11} color={planSet ? '#4338ca' : '#cbd5e1'} />
+                                                    <Text style={[styles.miniBtnText, { color: planSet ? '#4338ca' : '#cbd5e1' }]}>평면도</Text>
+                                                </TouchableOpacity>
+                                            );
+                                        })()}
                                         <TouchableOpacity style={styles.miniBtn} onPress={() => onAddRoom(w.building, fl)}>
                                             <Plus size={11} color="#475569" />
                                             <Text style={styles.miniBtnText}>공간</Text>
@@ -671,7 +690,8 @@ const BuildingNode: React.FC<{
     onEditRoom: (floor: string, room: RoomInfo) => void;
     onOpenFloorPlan?: (floor: string) => void;
     liveCountByRoom?: Record<string, number>;
-}> = ({ building, expanded, onToggle, siteColor, onAddFloor, onAddRoom, onEditRoom, onOpenFloorPlan, liveCountByRoom }) => {
+    floorPlanSet?: Set<string>;
+}> = ({ building, expanded, onToggle, siteColor, onAddFloor, onAddRoom, onEditRoom, onOpenFloorPlan, liveCountByRoom, floorPlanSet }) => {
     const key = `b:${building.name}`;
     const open = expanded.has(key);
     const roomCount = building.floors.reduce((a, f) => a + f.rooms.length, 0);
@@ -707,6 +727,7 @@ const BuildingNode: React.FC<{
                     onEditRoom={(room) => onEditRoom(f.name, room)}
                     onOpenFloorPlan={onOpenFloorPlan ? () => onOpenFloorPlan(f.name) : undefined}
                     liveCountByRoom={liveCountByRoom}
+                    floorPlanSet={floorPlanSet}
                 />
             ))}
         </View>
@@ -722,7 +743,8 @@ const FloorNode: React.FC<{
     onEditRoom: (room: RoomInfo) => void;
     onOpenFloorPlan?: () => void;
     liveCountByRoom?: Record<string, number>;
-}> = ({ floor, buildingName, expanded, onToggle, onAddRoom, onEditRoom, onOpenFloorPlan, liveCountByRoom }) => {
+    floorPlanSet?: Set<string>;
+}> = ({ floor, buildingName, expanded, onToggle, onAddRoom, onEditRoom, onOpenFloorPlan, liveCountByRoom, floorPlanSet }) => {
     const key = `f:${buildingName}/${floor.name}`;
     const open = expanded.has(key);
     return (
@@ -742,12 +764,15 @@ const FloorNode: React.FC<{
                         return a > 0 ? <Text style={styles.roomDataCount}>할당 {a}실</Text> : null;
                     })()}
                 </TouchableOpacity>
-                {onOpenFloorPlan && (
-                    <TouchableOpacity style={[styles.miniBtn, { backgroundColor: '#eef2ff', borderColor: '#c7d2fe' }]} onPress={onOpenFloorPlan}>
-                        <Building2 size={11} color="#4338ca" />
-                        <Text style={[styles.miniBtnText, { color: '#4338ca' }]}>평면도</Text>
-                    </TouchableOpacity>
-                )}
+                {onOpenFloorPlan && (() => {
+                    const planSet = !!floorPlanSet?.has(`${buildingName}|${floor.name}`);
+                    return (
+                        <TouchableOpacity style={[styles.miniBtn, planSet ? styles.planBtnSet : styles.planBtnEmpty]} onPress={onOpenFloorPlan}>
+                            <Building2 size={11} color={planSet ? '#4338ca' : '#cbd5e1'} />
+                            <Text style={[styles.miniBtnText, { color: planSet ? '#4338ca' : '#cbd5e1' }]}>평면도</Text>
+                        </TouchableOpacity>
+                    );
+                })()}
                 <TouchableOpacity style={styles.miniBtn} onPress={onAddRoom}>
                     <Plus size={11} color="#475569" />
                     <Text style={styles.miniBtnText}>공간</Text>
@@ -958,6 +983,9 @@ const styles = StyleSheet.create({
     },
     roomRowAlt: { backgroundColor: '#f8fafc' },
     rowHover: { backgroundColor: '#eef2ff' },
+    // 평면도 설정됨(은근한 강조) vs 빈 상태(흐리게)
+    planBtnSet: { backgroundColor: '#eef2ff', borderColor: '#c7d2fe' },
+    planBtnEmpty: { backgroundColor: 'transparent', borderColor: '#eef2f6', opacity: 0.7 },
     roomEmoji: { fontSize: 11 },
     roomName: { fontSize: 12, color: '#1f2937', flex: 1 },
     roomMeta: { fontSize: 10, color: '#94a3b8', maxWidth: 100 },

@@ -1848,6 +1848,7 @@ export default function App() {
           onArchiveInfraAsset={handleArchiveInfraAsset}
           assets={assets}
           effectiveSites={effectiveSites}
+          layoutsStore={layoutsStore}
           onSave={handleSaveInfrastructure}
           onCreateRoom={handleCreateRoom}
           onUpdateRoom={handleUpdateRoom}
