@@ -5,7 +5,7 @@
  */
 import {
   classifyBackup, type BackupClass, NAS_BACKUP_CLASSES,
-  SCHED_MODE_TO_CLASS, isLabEquipCode, normalizeOnlineKind,
+  SCHED_MODE_TO_CLASS, isLabEquipCode, normalizeOnlineKind, manifestFresh,
 } from './assetGovernance';
 
 type V = Record<string, any>;
@@ -80,4 +80,23 @@ export const classifyVaccineTarget = (v: V): KpiResult => {
   // [2026-06-18] online 만 권위, 단독형은 변동가능 — 위 분기에서 미확정 처리.
   const pushOk = /성공|완료/.test(push);
   return { targetClass: 'online', targetLabel: '온라인(알약 관리)', status: pushOk && !isV3 ? 'ok' : (pushOk ? 'action' : 'action'), action: (pushOk ? '정책 푸시 성공' : '정책 재푸시 필요') + v3suffix };
+};
+
+/**
+ * [2026-06-19] 작업스케줄러(07시 manifest) 설치/확인 타겟 분류.
+ *   smb://nas1.daewoong.co.kr/<기기명>/Manifest_SynologyDriveRoot.txt 최근 30일 생성 = 설치+가동.
+ *   없으면: NAS백업기기 → 설치필요(높음) / 온라인이지만 미분류 → 확인필요 / 단독형·대상아님 → 비대상.
+ *   ⚠️ SMB 폴더·파일만 존재 ≠ 설치(수동폴더 가능성) — manifest 만 신뢰.
+ */
+export const classifySchedulerTarget = (v: V): KpiResult => {
+  const online = normalizeOnlineKind(g(v, 'M)알약 온라인구분', 'M)온라인구분'));
+  const backup = g(v, 'QA)백업 방법', 'B)백업방법');
+  const nasActive = g(v, 'B)NAS가동', 'M)Synology Client 설치');
+  const cls = classifyBackup(backup);
+  const isNas = NAS_BACKUP_CLASSES.includes(cls);
+
+  if (manifestFresh(nasActive)) return { targetClass: 'sched-ok', targetLabel: '스케줄러 정상', status: 'ok', action: '최근 manifest 확인(설치+가동)' };
+  if (isNas) return { targetClass: 'sched-install', targetLabel: '스케줄러 설치/확인', status: 'action', action: 'NAS백업기기인데 최근 manifest 없음 — 07시 작업스케줄러 설치/확인(현장)' };
+  if (online === '온라인' && (cls === 'unknown' || cls === 'none')) return { targetClass: 'sched-verify', targetLabel: '스케줄러 확인', status: 'action', action: '온라인 PC — 백업 대상이면 스케줄러 설치 필요. 현장 확인' };
+  return { targetClass: 'na', targetLabel: '스케줄러 비대상', status: 'na', action: '—' };
 };

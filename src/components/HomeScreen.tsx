@@ -43,7 +43,7 @@ import { QUICK_TASKS, QuickTaskDef, getMatchingQuickTasks } from '../lib/quickTa
 import { type LayoutsStore, parseRoomKey } from '../lib/layouts';
 import { SITES_DEFAULTS, SiteDef, SiteId, getSiteCounts } from '../lib/sites';
 import { validateAsset } from '../lib/assetGovernance';
-import { classifyBackupTarget, classifyVaccineTarget } from '../lib/kpiTargets';
+import { classifyBackupTarget, classifyVaccineTarget, classifySchedulerTarget } from '../lib/kpiTargets';
 import { checkLayoutIntegrity, groupByRoom } from '../lib/layoutIntegrity';
 
 // [필수값] 장비로서 존재하기 위한 필수 컬럼 — 비어있으면 홈에서 누락 알람.
@@ -276,14 +276,17 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     const kpiActions = useMemo(() => {
         const backup: { asset: Asset; name: string; label: string; action: string }[] = [];
         const vaccine: { asset: Asset; name: string; label: string; action: string }[] = [];
+        const scheduler: { asset: Asset; name: string; label: string; action: string }[] = [];
         for (const a of assets) {
             const nm = String((a.values as any)[titleField] ?? '').trim() || '(이름없음)';
             const b = classifyBackupTarget(a.values as any);
             if (b.status === 'action') backup.push({ asset: a, name: nm, label: b.targetLabel, action: b.action });
             const vc = classifyVaccineTarget(a.values as any);
             if (vc.status === 'action') vaccine.push({ asset: a, name: nm, label: vc.targetLabel, action: vc.action });
+            const sc = classifySchedulerTarget(a.values as any);
+            if (sc.status === 'action') scheduler.push({ asset: a, name: nm, label: sc.targetLabel, action: sc.action });
         }
-        return { backup, vaccine };
+        return { backup, vaccine, scheduler };
     }, [assets, titleField]);
 
     // [접고 펼치기] 홈 알람 섹션 — 화면 정리용. 기본 접힘.
@@ -292,6 +295,7 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
     const [showGov, setShowGov] = useState(false);
     const [showKpiBk, setShowKpiBk] = useState(false);
     const [showKpiVac, setShowKpiVac] = useState(false);
+    const [showKpiSched, setShowKpiSched] = useState(false);
     const [showLayoutInteg, setShowLayoutInteg] = useState(false);
 
     // [레이아웃 정합성] 레이아웃↔데이터 어긋남(유령배치·누락·동선 일부/구멍) 방 단위 요약.
@@ -731,6 +735,30 @@ export const HomeScreen: React.FC<HomeScreenProps> = ({
                             </TouchableOpacity>
                         ))}
                         {showKpiVac && kpiActions.vaccine.length > 50 && <Text style={styles.alarmMore}>외 {kpiActions.vaccine.length - 50}대…</Text>}
+                    </View>
+                )}
+
+                {/* [스케줄러] 07시 manifest 없음 → 작업스케줄러 설치/확인 필요(현장) */}
+                {kpiActions.scheduler.length > 0 && (
+                    <View style={styles.alarmSection}>
+                        <TouchableOpacity style={styles.alarmHeader} onPress={() => setShowKpiSched(v => !v)}>
+                            <Text style={styles.alarmTitle}>🗓 스케줄러 설치/확인 {kpiActions.scheduler.length}대</Text>
+                            <View style={{ flex: 1 }} />
+                            <Text style={styles.alarmCaret}>{showKpiSched ? '▾' : '▸'}</Text>
+                        </TouchableOpacity>
+                        {showKpiSched && kpiActions.scheduler.slice(0, 50).map((m, i) => (
+                            <TouchableOpacity key={`ksc-${m.asset.id}-${i}`} style={styles.alarmRow} onPress={() => onEditAsset(m.asset)}>
+                                <View style={{ flex: 1, gap: 2 }}>
+                                    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                                        <Text style={styles.alarmName}>{m.name}</Text>
+                                        <Text style={{ fontSize: 10, color: '#64748b' }}>{m.label}</Text>
+                                    </View>
+                                    <Text style={[styles.alarmMissing, { fontWeight: '500' }]}>{m.action}</Text>
+                                </View>
+                                <Text style={styles.unmarkedArrow}>›</Text>
+                            </TouchableOpacity>
+                        ))}
+                        {showKpiSched && kpiActions.scheduler.length > 50 && <Text style={styles.alarmMore}>외 {kpiActions.scheduler.length - 50}대…</Text>}
                     </View>
                 )}
 

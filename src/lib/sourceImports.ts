@@ -18,7 +18,8 @@ export type SourceId =
     | 'ahnlab-user-info'
     | 'ahnlab-unregistered'
     | 'backup-integrity-report'
-    | 'scheduler-mode';
+    | 'scheduler-mode'
+    | 'nas-manifest-scan';
 
 // 한 행에서 어떤 Notion 필드를 어떤 값으로 업데이트할지
 export interface FieldUpdate {
@@ -343,6 +344,33 @@ export const SOURCES: SourceDef[] = [
         },
         unmatchedBehavior: 'skip',
         historyLabel: (row) => `스케줄러모드 정정: ${String(row['SchedulerMode'] ?? '').trim()} → 백업방법`,
+    },
+    {
+        // smb://nas1.daewoong.co.kr/<기기명>/Manifest_SynologyDriveRoot.txt 스캔 결과.
+        //   ManifestDate(최종생성일) → B)NAS가동. 최근 30일이면 manifestFresh()가 가동으로 판정.
+        //   폴더만 있고 manifest 없으면 ManifestDate 빈값/FolderOnly=Y → '폴더만(수동가능성)' 기록(설치 신호 아님).
+        id: 'nas-manifest-scan',
+        name: 'NAS manifest 스캔(스케줄러 신호)',
+        emoji: '🗓',
+        description: '기기 폴더의 Manifest_SynologyDriveRoot.txt 생성일 → B)NAS가동 (07시 스케줄러 가동 판정)',
+        sampleFilename: 'NasManifestScan.csv',
+        detect: (headers) => {
+            const set = new Set(headers.map(h => String(h).trim()));
+            return set.has('DeviceName') && (set.has('ManifestDate') || set.has('Manifest') || set.has('ManifestExists'));
+        },
+        matchExcelColumn: 'DeviceName',
+        rowToUpdates: (row) => {
+            const updates: FieldUpdate[] = [];
+            const date = String(row['ManifestDate'] ?? row['Manifest'] ?? '').trim();
+            const exists = String(row['ManifestExists'] ?? '').trim().toLowerCase();
+            const folderOnly = /^(y|yes|true|1|o)$/i.test(String(row['FolderOnly'] ?? '').trim());
+            if (date && /\d{4}[-./]\d{1,2}[-./]\d{1,2}/.test(date)) updates.push({ field: 'B)NAS가동', value: date });
+            else if (folderOnly || /^(no|n|false|0|x|없음)$/i.test(exists)) updates.push({ field: 'B)NAS가동', value: '폴더만(수동가능성)' });
+            else if (/^(y|yes|true|1|o|있음)$/i.test(exists)) updates.push({ field: 'B)NAS가동', value: '가동' });
+            return updates;
+        },
+        unmatchedBehavior: 'skip',
+        historyLabel: (row) => `NAS manifest: ${String(row['DeviceName'] ?? '').trim()} ${String(row['ManifestDate'] ?? row['Manifest'] ?? row['ManifestExists'] ?? '').trim()}`,
     },
 ];
 

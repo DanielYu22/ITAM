@@ -59,6 +59,24 @@ export const asmRecentlyActive = (lastSeen: string, withinDays = 31): boolean =>
   if (isNaN(t)) return false;
   return (Date.now() - t) <= withinDays * 86400000;
 };
+
+/**
+ * NAS 작업스케줄러 신호 — smb://nas1.daewoong.co.kr/<기기명>/ 에 07시 스케줄러가 남기는
+ * 'Manifest_SynologyDriveRoot.txt' 가 최근 30일 내 생성됐는가.
+ *   최근 manifest 확인 시 당위: ① SynologyClient 설치 ② 백업방법 ∈ {실시간/백업(Client)} ③ 온라인구분=온라인.
+ *   ⚠️ SMB 폴더·파일 존재 ≠ 설치(수동으로 폴더만 만들었을 수 있음) → '폴더만/수동' 표기는 신호 아님.
+ *   B)NAS가동 값이 날짜면 30일 이내로 판정, 가동/설치 등 truthy 텍스트면 가동으로 간주.
+ */
+export const MANIFEST_FILE = 'Manifest_SynologyDriveRoot.txt';
+export const MANIFEST_FRESH_DAYS = 30;
+export const manifestFresh = (nasActiveVal: string): boolean => {
+  const v = (nasActiveVal || '').trim();
+  if (!v) return false;
+  if (/폴더만|수동|manual|폴더\s*생성|미설치|없음|안\s*됨|미가동|미확인|false|^\s*(x|n|no)\s*$/i.test(v)) return false;
+  if (/\d{4}[-./]\d{1,2}[-./]\d{1,2}/.test(v)) return asmRecentlyActive(v, MANIFEST_FRESH_DAYS); // 날짜면 30일 이내
+  return /가동|설치|있음|존재|예|true|online|^\s*(o|y|yes)\s*$/i.test(v);
+};
+
 /** 사이트 — 반드시 하나. '기타'/빈값 불허. */
 export const SITES = ['용인', '마곡', '향남'] as const;
 /**
@@ -233,14 +251,19 @@ export const validateIntegrity = (values: Record<string, any>): Violation[] => {
   // 부정 표현('미설치' 등)이 '설치'를 substring 으로 포함하므로 negatory 우선 배제
   const truthy = (v: string) => !negatory(v) && /설치|가동|확인|있음|존재|online|true|완료|예|^\s*(o|y|yes)\s*$/i.test(v.trim());
 
-  // R1) NAS 가동(최신 07시 로그 = 온라인) 기기는 비NAS 방식(IT현장·USB사용자) 또는 대상아님이면 모순(당위)
-  const nasRunning = truthy(nasActive) || online === '온라인';
+  // R1) 최근 manifest(07시 스케줄러 신호) = NAS가동·온라인. 비NAS 방식(IT현장·USB)·대상아님이면 모순(당위)
+  const nasRunning = manifestFresh(nasActive) || online === '온라인';
   if (nasRunning && (OFFLINE_BACKUP_CLASSES.includes(bclass) || bclass === 'none')) {
     out.push({ field: 'B)백업방법', level: 'integrity', message: `NAS 가동(온라인) 기기인데 백업방법이 '${backup}' — 모순(시놀로지 방식=실시간/백업Client 이어야 함)` });
   }
-  // R1d) NAS 방식(실시간/백업Client) 인데 NAS 가동 신호 없음(스케줄러 미설치+07시 로그 없음) → 점검
-  if (NAS_BACKUP_CLASSES.includes(bclass) && negatory(nasActive) && negatory(schedInstalled)) {
-    out.push({ field: 'B)NAS가동', level: 'integrity', message: `백업방법이 '${backup}'(NAS 방식)인데 스케줄러·07시 로그 신호 없음 — 실제 백업 안 되는 중일 수 있음` });
+  // R1d) [스케줄러 설치/확인 필요] NAS백업방식(실시간/Client)인데 최근 30일 manifest 없음 →
+  //   07시 작업스케줄러 미설치/미확인. 현장 설치·확인 대상.(폴더만 존재≠설치이므로 manifest 기준)
+  if (NAS_BACKUP_CLASSES.includes(bclass) && !manifestFresh(nasActive)) {
+    out.push({ field: 'B)NAS가동', level: 'integrity', message: `NAS백업기기인데 최근 30일 manifest 없음 — 07시 작업스케줄러 설치/확인 필요(현장)` });
+  }
+  // R1f) 최근 manifest 있음(스케줄러 동작 중) 인데 스케줄러설치=미설치 표기 → 정정(설치됨으로)
+  if (manifestFresh(nasActive) && negatory(schedInstalled)) {
+    out.push({ field: 'B)스케줄러설치', level: 'integrity', message: '최근 manifest 존재(스케줄러 동작 중)인데 스케줄러설치=미설치 표기 — 설치됨으로 정정' });
   }
   // R1e) [1↔4 혼동] 실험기기 코드인데 백업(Client=4)로 분류 → 실시간(1) 가능성 점검.
   //   "단정"이 아니라 "확인 요청" — 1↔4는 외형(로데이터 경로=시놀로지드라이브)이 같아 헷갈림.
@@ -249,13 +272,13 @@ export const validateIntegrity = (values: Record<string, any>): Violation[] => {
   if (bclass === 'client' && isLabEquipCode(name) && !SCHED_MODE_TO_CLASS[schedModeForR1e]) {
     out.push({ field: 'B)백업방법', level: 'integrity', message: "실험기기인데 백업(Client)(4번) — 스케줄러모드(STAT/COPY) 확인" });
   }
-  // R1b) NAS 가동(07시 로그 존재)인데 온라인구분이 온라인이 아니면 모순(당위: 가동=온라인)
-  if (truthy(nasActive) && online && online !== '온라인') {
-    out.push({ field: 'M)온라인구분', level: 'integrity', message: `NAS 최신 07시 로그 존재(가동)인데 온라인구분이 '${online}' — 당위상 '온라인'이어야 함` });
+  // R1b) 최근 manifest 존재(가동)인데 온라인구분이 온라인이 아니면 모순(당위 ③: manifest=온라인)
+  if (manifestFresh(nasActive) && online && online !== '온라인') {
+    out.push({ field: 'M)온라인구분', level: 'integrity', message: `최근 manifest 존재(07시 스케줄러 가동)인데 온라인구분이 '${online}' — 당위상 '온라인'이어야 함` });
   }
-  // R1c) 스케줄러는 설치됐는데 NAS 최신 07시 로그가 안 옴 → SynologyDrive 부재/네트워크 끊김 점검
-  if (truthy(schedInstalled) && negatory(nasActive)) {
-    out.push({ field: 'B)NAS가동', level: 'integrity', message: '스케줄러 설치됨인데 NAS 최신 07시 로그 없음 — C:\\SynologyDrive 부재/네트워크 끊김 점검' });
+  // R1c) 스케줄러는 설치됐는데 최근 manifest 안 옴 → SynologyDrive 부재/네트워크 끊김/스케줄러 중단 점검
+  if (truthy(schedInstalled) && !manifestFresh(nasActive)) {
+    out.push({ field: 'B)NAS가동', level: 'integrity', message: '스케줄러 설치됨인데 최근 30일 manifest 없음 — C:\\SynologyDrive 부재/네트워크/스케줄러 중단 점검' });
   }
   // R2) ASM 최근 1달 사용이력 = 네트워크 가용 = '온라인' 타입 당위.
   //   PC가 그 시점 꺼져 ASM '오프라인'으로 찍혀도 온라인 타입. 단독형/미정 표기면 정정 필요.
