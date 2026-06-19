@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  NAS manifest 주간 자동 동기화 (launchd)
+  설치:
+    cp ~/Projects/NEXUS-ITAM/scripts/com.atlas.nasmanifest.plist ~/Library/LaunchAgents/
+    launchctl load ~/Library/LaunchAgents/com.atlas.nasmanifest.plist
+  해제:  launchctl unload ~/Library/LaunchAgents/com.atlas.nasmanifest.plist
+  즉시 1회: launchctl start com.atlas.nasmanifest
+  ※ 자격증명은 ~/.atlas/nas_sync.env 에서 읽음(NAS_USER, NOTION_TOKEN). 매주 월 08:10 실행.
+  ※ Mac이 꺼져 있던 시간의 실행은 다음 부팅 후 한 번 보충 실행됨.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.atlas.nasmanifest</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/daniel/Projects/NEXUS-ITAM/scripts/sync_nas_to_nexus.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key><integer>1</integer>
+    <key>Hour</key><integer>8</integer>
+    <key>Minute</key><integer>10</integer>
+  </dict>
+  <key>RunAtLoad</key><false/>
+  <key>StandardOutPath</key><string>/Users/daniel/.atlas/nas_sync.out.log</string>
+  <key>StandardErrorPath</key><string>/Users/daniel/.atlas/nas_sync.err.log</string>
+</dict>
+</plist>
