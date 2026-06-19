@@ -27,8 +27,9 @@ set -uo pipefail
 NAS_HOST="${NAS_HOST:-nas1.daewoong.co.kr}"
 NAS_USER="${NAS_USER:-}"
 MANIFEST="Manifest_SynologyDriveRoot.txt"
-# 기기 공유 패턴(시스템 공유 home/web/photo 등 제외). 필요시 수정.
-DEVICE_RE="${DEVICE_RE:-^[A-Z]{2,4}-?[0-9]+$|^[A-Z]+[0-9]+-[0-9]+$}"
+# 기기 공유 필터(bash 정규식). 기본은 빈값 = 시스템 공유만 제외하고 전부 스캔.
+#   특정 패턴만 원하면: DEVICE_RE='^[A-Z]{2,4}-?[0-9]+$' 처럼 지정.
+DEVICE_RE="${DEVICE_RE:-}"
 OUT="${OUT:-$HOME/Desktop/NasManifestScan_$(date +%Y%m%d_%H%M).csv}"
 
 emit_header() { echo "DeviceName,ManifestExists,ManifestDate,FolderOnly" > "$OUT"; }
@@ -76,9 +77,9 @@ trap cleanup EXIT
 while IFS= read -r share; do
   [ -z "$share" ] && continue
   # 시스템/관리 공유 제외
-  case "$share" in homes|home|web|photo|music|video|NetBackup|usbshare*|*\$) continue;; esac
-  # 기기 공유 패턴만(원하면 DEVICE_RE 비워서 전부 스캔)
-  if [ -n "$DEVICE_RE" ] && ! echo "$share" | grep -Eq "$DEVICE_RE"; then continue; fi
+  case "$share" in homes|home|web|web_packages|photo|music|video|NetBackup|ActiveBackup*|Surveillance|surveillance|docker|Drive|chat|MailPlus*|usbshare*|@*|\#*|*\$) continue;; esac
+  # 추가 필터(선택): DEVICE_RE 지정 시 bash 정규식으로(BSD grep {n,m} 회피)
+  if [ -n "$DEVICE_RE" ] && ! [[ "$share" =~ $DEVICE_RE ]]; then continue; fi
   umount "$TMPMNT" 2>/dev/null
   if mount_smbfs -N "//${NAS_USER}@${NAS_HOST}/${share}" "$TMPMNT" 2>/dev/null; then
     check_dir "$share" "$TMPMNT"
