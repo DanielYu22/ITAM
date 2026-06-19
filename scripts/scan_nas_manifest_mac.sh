@@ -66,7 +66,7 @@ fi
 # ── 모드 1: 공유(share) 자동 열거 ─────────────────────────────────────────
 [ -z "$NAS_USER" ] && { echo "NAS_USER 환경변수가 필요합니다. 예: NAS_USER=hong ./scan_nas_manifest_mac.sh"; exit 1; }
 echo "[모드1] //$NAS_USER@$NAS_HOST 공유 열거..."
-SHARES="$(smbutil view "//${NAS_USER}@${NAS_HOST}" 2>/dev/null | awk 'NR>3 && $1!="" && $1!~"^-" {print $1}')"
+SHARES="$(smbutil view "//${NAS_USER}@${NAS_HOST}" 2>/dev/null | awk '$2=="Disk"{print $1}')"
 [ -z "$SHARES" ] && { echo "공유 목록을 못 가져왔습니다. Finder로 한 번 접속(Keychain 저장) 후 재시도하거나, 모드2(마운트 경로)를 쓰세요."; exit 1; }
 
 TMPMNT="$(mktemp -d /tmp/nasman.XXXXXX)"
