@@ -195,7 +195,9 @@ export const GOV_FIELDS: GovField[] = [
   // 7시 로그 스케줄러 — PC에 설치(배포)했는지. C:\SynologyDrive 존재 시 매일 07시 로그를 남기도록 등록.
   { canonical: 'B)스케줄러설치', prefix: 'B', label: '07시 로그 스케줄러 설치 여부', source: 'field-survey', trust: 'authoritative' },
   // NAS 가동 신호 — NAS 서버에 "최신 07시 로그 파일"이 있으면 가동(=NAS설치+온라인)으로 당위 인정.
-  { canonical: 'B)NAS가동', current: 'M)Synology Client 설치', prefix: 'B', label: 'NAS 가동(최신 07시 로그 확인)', source: 'nas-scheduler', trust: 'authoritative' },
+  // [2026-06-19] 전용 컬럼 신설 — Manifest_SynologyDriveRoot.txt 최근 생성일(또는 '폴더만') 저장.
+  //   기존 'M)Synology Client 설치'(select 설치됨/미설치)와 분리: 클라이언트 설치 ≠ manifest 신호.
+  { canonical: 'B)NAS가동', prefix: 'B', label: 'NAS 가동(최근 manifest 생성일)', source: 'nas-scheduler', trust: 'authoritative' },
   { canonical: 'B)백업방법', current: 'QA)백업 방법', prefix: 'B', label: '백업방법', source: 'derived', trust: 'authoritative',
     validate: v => classifyBackup(v) === 'unknown' ? '백업방법 미분류(실시간/IT현장백업/USB사용자백업/백업(Client)/백업대상아님 중 하나)' : null },
   // 분기백업 자동화 산출물 — 실제 백업 결과(권위). 데이터상(백업방법) vs 실제(이 값) 오차 검출용.
